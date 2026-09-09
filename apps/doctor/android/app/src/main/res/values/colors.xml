@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive launcher icon ground. The Coracure mark is two-tone green and
+         is only ever shown on white or on Surfie Green (brand guidelines). -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
