@@ -77,7 +77,7 @@ export default defineConfig({
       { find: /^react-native-svg$/, replacement: 'react-native-svg-web' },
       // The workspace libraries, matching tsconfig.base.json.
       { find: '@coracure/brand', replacement: resolve(workspace, 'libs/brand/src/index.ts') },
-      { find: '@coracure/ui', replacement: resolve(workspace, 'libs/ui/src/index.ts') },
+      { find: '@coracure/ui', replacement: resolve(workspace, 'libs/ui/src/index.tsx') },
       { find: '@coracure/api', replacement: resolve(workspace, 'libs/api/src/index.ts') },
       { find: '@coracure/i18n', replacement: resolve(workspace, 'libs/i18n/src/index.tsx') },
     ],
@@ -102,29 +102,41 @@ export default defineConfig({
      * which it imports as a default export — leaving that un-optimised throws
      * "does not provide an export named 'default'" at runtime.
      */
-    include: ['react', 'react-dom', 'react-native-web', 'react-native-svg-web'],
+    include: [
+      'react',
+      'react-dom',
+      'react-native-web',
+      'react-native-svg-web',
+      'use-latest-callback',
+      'fast-deep-equal',
+      'escape-string-regexp',
+      'warn-once',
+      'react-is',
+    ],
 
     /**
      * *** NOT pre-bundled. ***
-     *
-     * Dependency optimisation resolves imports before `resolve.alias` and
-     * `resolve.extensions` apply, so it follows these into
-     * `react-native/Libraries/...` — raw Flow source the bundler cannot parse
-     * ("Flow is not supported"). Excluding them sends the packages through the
-     * normal transform pipeline, where the alias to `react-native-web` and the
-     * `.web.js` extension preference both work.
-     *
-     * This is why `vite build` passes while the dev server did not: the build
-     * does not pre-bundle.
      */
-    exclude: ['react-native', 'react-native-safe-area-context', 'react-native-keychain'],
+    exclude: [
+      'react-native',
+      'react-native-safe-area-context',
+      'react-native-keychain',
+      'react-native-screens',
+      'react-native-razorpay',
+    ],
   },
 
   server: {
     port: 4200,
-    // `true` binds every interface, so a phone on the same Wi-Fi can open the
-    // preview at http://<your-LAN-IP>:4200 — useful for looking at it on a real
-    // screen without a build.
+    host: true,
+    open: true,
+    fs: {
+      allow: [workspace],
+    },
+  },
+
+  preview: {
+    port: 4200,
     host: true,
     open: true,
   },

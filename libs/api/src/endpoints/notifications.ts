@@ -1,33 +1,22 @@
-import { api } from '../http';
-import type { Notification, UnreadCount } from '../types';
+import { apiClient } from '../client';
+import type { NotificationRecord } from '../types';
 
-/**
- * The in-app inbox (FR-16.1).
- *
- * The row IS the notification; a push is an attempt to put the same copy on a
- * lock screen. So the inbox is complete even for a patient who never allowed
- * notifications.
- */
+export const getNotifications = (params?: Record<string, string | number | boolean>): Promise<NotificationRecord[]> => {
+  return apiClient.get('/me/notifications', params);
+};
 
-export const listNotifications = (query: {
-  unreadOnly?: boolean;
-  limit?: number;
-  before?: string;
-} = {}): Promise<Notification[]> =>
-  api.get<Notification[]>('/me/notifications', {
-    query: {
-      unreadOnly: query.unreadOnly,
-      limit: query.limit,
-      before: query.before,
-    },
-  });
+export const getUnreadCount = (): Promise<{ count: number }> => {
+  return apiClient.get('/me/notifications/unread-count');
+};
 
-export const getUnreadCount = (): Promise<UnreadCount> =>
-  api.get<UnreadCount>('/me/notifications/unread-count');
+export const markRead = (id: string): Promise<void> => {
+  return apiClient.post(`/me/notifications/${id}/read`);
+};
 
-/** Reading is a timestamp, not a status. Marking an already-read one is fine. */
-export const markNotificationRead = (notificationId: string): Promise<void> =>
-  api.post<void>(`/me/notifications/${notificationId}/read`);
+export const markAllRead = (): Promise<{ marked: number }> => {
+  return apiClient.post('/me/notifications/read-all');
+};
 
-export const markAllNotificationsRead = (): Promise<{ marked: number }> =>
-  api.post<{ marked: number }>('/me/notifications/read-all');
+export const listNotifications = getNotifications;
+export const markNotificationRead = markRead;
+export const markAllNotificationsRead = markAllRead;

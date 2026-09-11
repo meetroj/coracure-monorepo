@@ -1,73 +1,87 @@
-import { api } from '../http';
-import type { Consultation } from '../types';
+import { apiClient } from '../client';
+import type { ConsultationRecord } from '../types';
 
-/**
- * The patient's bookings (FR-4.6, FR-6.5).
- *
- * *** THERE IS NO ENDPOINT HERE THAT TAKES A PROVIDER, AND THERE MUST NOT BE. ***
- * The patient chooses a service and a time; the backend assigns. The only path
- * in the whole platform that names a provider is an admin override.
- */
-
-export const listConsultations = (query: { upcoming?: boolean; limit?: number } = {}): Promise<
-  Consultation[]
-> =>
-  api.get<Consultation[]>('/me/consultations', {
-    query: { upcoming: query.upcoming, limit: query.limit },
-  });
-
-export const getConsultation = (consultationId: string): Promise<Consultation> =>
-  api.get<Consultation>(`/me/consultations/${consultationId}`);
-
-/**
- * Books a scheduled consultation.
- *
- * Returns `pending_payment` with a `holdExpiresAt` — that row IS the slot hold
- * and it expires, so the screen that calls this owns a visible countdown and an
- * expiry path. A free service comes back `scheduled` outright.
- *
- * Refusal with `NO_PROVIDER_AVAILABLE` is a designed outcome carrying the
- * soonest time the pool can cover, not an error toast.
- */
-export const bookConsultation = (input: {
-  specialtyId: string;
+export interface BookScheduledInput {
+  serviceId?: string;
+  specialtyId?: string;
   startsAt: string;
-  concernId?: string;
+  concernId?: string | null;
   intakeAnswers?: Record<string, unknown>;
-}): Promise<Consultation> => {
-  const body: Record<string, unknown> = {
-    specialtyId: input.specialtyId,
-    startsAt: input.startsAt,
-  };
-  if (input.concernId) body.concernId = input.concernId;
-  if (input.intakeAnswers) body.intakeAnswers = input.intakeAnswers;
-  return api.post<Consultation>('/me/consultations', body);
+}
+
+export interface RequestInstantInput {
+  serviceId?: string;
+  specialtyId?: string;
+  concernId?: string | null;
+  intakeAnswers?: Record<string, unknown>;
+}
+
+export const listConsultations = (params?: Record<string, string | number | boolean>): Promise<ConsultationRecord[]> => {
+  return apiClient.get('/me/consultations', params);
 };
 
-/** Consult Now. Created with no provider yet; M-13 offers and re-routes it. */
-export const requestInstantConsultation = (input: {
-  specialtyId: string;
-  concernId?: string;
-  intakeAnswers?: Record<string, unknown>;
-}): Promise<Consultation> => {
-  const body: Record<string, unknown> = { specialtyId: input.specialtyId };
-  if (input.concernId) body.concernId = input.concernId;
-  if (input.intakeAnswers) body.intakeAnswers = input.intakeAnswers;
-  return api.post<Consultation>('/me/consultations/instant', body);
+export const getConsultation = (id: string): Promise<ConsultationRecord> => {
+  return apiClient.get(`/me/consultations/${id}`);
 };
 
-export const cancelConsultation = (consultationId: string, reason?: string): Promise<Consultation> =>
-  api.post<Consultation>(
-    `/me/consultations/${consultationId}/cancel`,
-    reason ? { reason } : {},
-  );
+export const bookScheduled = (input: BookScheduledInput): Promise<ConsultationRecord> => {
+  const body: Record<string, unknown> = { startsAt: input.startsAt };
+  if (input.serviceId) body.serviceId = input.serviceId;
+  if (input.specialtyId) body.specialtyId = input.specialtyId;
+  if (input.concernId) body.concernId = input.concernId;
+  if (input.intakeAnswers) body.intakeAnswers = input.intakeAnswers;
+  return apiClient.post('/me/consultations', body);
+};
 
-export const rescheduleConsultation = (
-  consultationId: string,
-  startsAt: string,
-): Promise<Consultation> =>
-  api.post<Consultation>(`/me/consultations/${consultationId}/reschedule`, { startsAt });
+export const requestInstant = (input: RequestInstantInput): Promise<ConsultationRecord> => {
+  const body: Record<string, unknown> = {};
+  if (input.serviceId) body.serviceId = input.serviceId;
+  if (input.specialtyId) body.specialtyId = input.specialtyId;
+  if (input.concernId) body.concernId = input.concernId;
+  if (input.intakeAnswers) body.intakeAnswers = input.intakeAnswers;
+  return apiClient.post('/me/consultations/instant', body);
+};
 
-/** FR-4.4. The reason is required — a decline with none tells nobody anything. */
-export const declineProvider = (consultationId: string, reason: string): Promise<Consultation> =>
-  api.post<Consultation>(`/me/consultations/${consultationId}/decline-provider`, { reason });
+export const cancelConsultation = (id: string, reason?: string): Promise<ConsultationRecord> => {
+  return apiClient.post(`/me/consultations/${id}/cancel`, reason ? { reason } : {});
+};
+
+export const declineProvider = (id: string, reason?: string): Promise<ConsultationRecord> => {
+  return apiClient.post(`/me/consultations/${id}/decline-provider`, reason ? { reason } : {});
+};
+
+export const rescheduleConsultation = (id: string, startsAt: string): Promise<ConsultationRecord> => {
+  return apiClient.post(`/me/consultations/${id}/reschedule`, { startsAt });
+};
+
+export const getConsultationBill = (id: string): Promise<import('../types').BillRecord> => {
+  return apiClient.get(`/me/consultations/${id}/bill`);
+};
+
+export const submitFeedback = (id: string, feedback: import('../types').ConsultationFeedback): Promise<void> => {
+  return apiClient.put(`/me/consultations/${id}/feedback`, feedback);
+};
+
+export const getFeedback = (id: string): Promise<import('../types').ConsultationFeedback> => {
+  return apiClient.get(`/me/consultations/${id}/feedback`);
+};
+
+export const getVideoReadiness = (id: string): Promise<{ ready: boolean; estimatedWaitSeconds?: number }> => {
+  return apiClient.get(`/consultations/${id}/video/readiness`);
+};
+
+export const getVideoToken = (id: string): Promise<import('../types').VideoSessionInfo> => {
+  return apiClient.post(`/consultations/${id}/video/token`);
+};
+
+export const getCarePlan = (id: string): Promise<import('../types').CarePlanRecord> => {
+  return apiClient.get(`/me/consultations/${id}/care-plan`);
+};
+
+export const getCareRecord = (id: string): Promise<import('../types').CareRecord> => {
+  return apiClient.get(`/me/consultations/${id}/care-record`);
+};
+
+export const bookConsultation = bookScheduled;
+export const requestInstantConsultation = requestInstant;
+

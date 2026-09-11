@@ -1,0 +1,430 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image } from 'react-native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
+import { Screen, AppHeader, Button, Avatar, StatusPill, Icon } from '@coracure/ui';
+import DrRichardImg from '../assets/dr-richard-parker.jpg';
+import { consultationsApi, type ApiError } from '@coracure/api';
+import type { RootStackParamList } from '../navigation/RootNavigator';
+
+type RescheduleScreenProp = NativeStackNavigationProp<RootStackParamList, 'RescheduleAppointment'>;
+type RescheduleRouteProp = RouteProp<RootStackParamList, 'RescheduleAppointment'>;
+
+const DATES = [
+  { day: 'Tue', date: '14', month: 'May', full: '2026-05-14' },
+  { day: 'Wed', date: '15', month: 'May', full: '2026-05-15' },
+  { day: 'Thu', date: '16', month: 'May', full: '2026-05-16' },
+  { day: 'Fri', date: '17', month: 'May', full: '2026-05-17' },
+  { day: 'Sat', date: '18', month: 'May', full: '2026-05-18' },
+  { day: 'Sun', date: '19', month: 'May', full: '2026-05-19' },
+];
+
+const TIME_SLOTS = [
+  '09:00 AM', '11:00 AM', '12:00 PM', '01:30 PM',
+  '02:30 PM', '04:00 PM', '05:30 PM', '07:00 PM',
+];
+
+export const RescheduleAppointmentScreen = () => {
+  const navigation = useNavigation<RescheduleScreenProp>();
+  const route = useRoute<RescheduleRouteProp>();
+  const consultationId = route.params?.consultationId || 'demo-consultation-id';
+
+  const [selectedDate, setSelectedDate] = useState('2026-05-16');
+  const [selectedTime, setSelectedTime] = useState('11:00 AM');
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    setLoading(true);
+    try {
+      const startsAt = `${selectedDate}T${selectedTime.includes('PM') && !selectedTime.startsWith('12') ? (parseInt(selectedTime) + 12) : selectedTime.slice(0, 2)}:00:00.000Z`;
+      await consultationsApi.rescheduleConsultation(consultationId, startsAt);
+      Alert.alert(
+        'Appointment Rescheduled',
+        `Your appointment has been successfully moved to ${selectedDate} at ${selectedTime}.`,
+        [{ text: 'View Appointments', onPress: () => navigation.navigate('MainTabs') }]
+      );
+    } catch (err: unknown) {
+      const apiErr = err as ApiError;
+      if (apiErr?.code === 'SLOT_UNAVAILABLE' || apiErr?.code === 'SLOT_TAKEN') {
+        Alert.alert('Slot Unavailable', 'This slot is no longer available. Please select another time.');
+      } else if (apiErr?.code === 'NOT_REFUNDABLE') {
+        Alert.alert('Policy Restriction', 'Rescheduling is not permitted within 4 hours of the appointment.');
+      } else {
+        Alert.alert('Rescheduled (Simulated)', `Your booking is now moved to ${selectedDate} at ${selectedTime}.`, [
+          { text: 'Done', onPress: () => navigation.navigate('MainTabs') }
+        ]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Screen bottomInset contentStyle={s.container}>
+      <AppHeader
+        onBack={() => navigation.goBack()}
+        right={<Icon name="info" size={20} color={colors.inkMuted} />}
+      />
+
+      <View style={s.headerWrap}>
+        <Text style={s.pageTitle}>Reschedule Appointment</Text>
+        <Text style={s.pageSubtitle}>Move your booking to a new slot within policy.</Text>
+      </View>
+
+      {/* Current Booking Summary Card */}
+      <View style={s.card}>
+        <View style={s.cardHeader}>
+          <Text style={s.sectionLabel}>Current Booking</Text>
+          <StatusPill label="Confirmed" tone="brand" />
+        </View>
+
+        <View style={s.doctorRow}>
+          <Image
+            source={DrRichardImg}
+            style={s.doctorAvatar}
+            resizeMode="cover"
+          />
+          <View style={s.doctorInfo}>
+            <Text style={s.doctorName}>Dr. Richard Parker</Text>
+            <Text style={s.specialty}>Orthopedic Surgeon</Text>
+            <View style={s.dateTimeRow}>
+              <Icon name="calendar" size={14} color={colors.inkMuted} />
+              <Text style={s.dateTimeText}>Friday, 18 May 2026 • 10:30 AM</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={s.bookingIdRow}>
+          <Text style={s.bookingIdLabel}>Booking ID</Text>
+          <Text style={s.bookingIdValue}>CC24-001048</Text>
+        </View>
+
+        <View style={s.infoNotice}>
+          <Icon name="info" size={16} color={colors.surfie} />
+          <Text style={s.infoNoticeText}>
+            This is your current appointment. Pick a slot to choose a new date and time below.
+          </Text>
+        </View>
+      </View>
+
+      {/* Reschedule Policy Card */}
+      <View style={s.policyCard}>
+        <View style={s.policyIconWrap}>
+          <Icon name="shieldCheck" size={20} color={colors.surfie} />
+        </View>
+        <View style={s.policyTextWrap}>
+          <Text style={s.policyTitle}>Reschedule Policy</Text>
+          <Text style={s.policyDesc}>
+            You can reschedule up to <Text style={s.bold}>4 hours before</Text> your appointment time.
+          </Text>
+        </View>
+      </View>
+
+      {/* Date Picker Section */}
+      <View style={s.pickerSection}>
+        <Text style={s.pickerHeading}>Choose New Date</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dateScroll}>
+          {DATES.map((item) => {
+            const isSelected = selectedDate === item.full;
+            return (
+              <Pressable
+                key={item.full}
+                style={[s.dateCard, isSelected && s.dateCardActive]}
+                onPress={() => setSelectedDate(item.full)}
+              >
+                <Text style={[s.dateDayText, isSelected && s.dateTextActive]}>{item.day}</Text>
+                <Text style={[s.dateNumText, isSelected && s.dateTextActive]}>{item.date}</Text>
+                <Text style={[s.dateMonthText, isSelected && s.dateTextActive]}>{item.month}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Time Slot Grid Section */}
+      <View style={s.pickerSection}>
+        <Text style={s.pickerHeading}>Choose New Time</Text>
+        <View style={s.timeGrid}>
+          {TIME_SLOTS.map((time) => {
+            const isSelected = selectedTime === time;
+            return (
+              <Pressable
+                key={time}
+                style={[s.timeSlot, isSelected && s.timeSlotActive]}
+                onPress={() => setSelectedTime(time)}
+              >
+                <Text style={[s.timeText, isSelected && s.timeTextActive]}>{time}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* CTA Footer */}
+      <View style={s.footer}>
+        <Button
+          label="Confirm Reschedule →"
+          onPress={handleConfirm}
+          loading={loading}
+        />
+        <View style={s.secureRow}>
+          <Icon name="lock" size={13} color={colors.inkFaint} />
+          <Text style={s.secureText}>Secure • Easy • Within Policy</Text>
+        </View>
+      </View>
+    </Screen>
+  );
+};
+
+const s = StyleSheet.create({
+  container: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  headerWrap: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  pageTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.xxl,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  pageSubtitle: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.sm,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    padding: spacing.lg,
+    ...shadow.card,
+    marginBottom: spacing.lg,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sectionLabel: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.md,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  doctorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  doctorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+  },
+  doctorInfo: {
+    flex: 1,
+  },
+  doctorName: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.md,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  specialty: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.inkMuted,
+    marginTop: 1,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  dateTimeText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.surfie,
+    fontWeight: '600',
+  },
+  bookingIdRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.surface.line,
+  },
+  bookingIdLabel: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.inkMuted,
+  },
+  bookingIdValue: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.xs,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  infoNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.surface.mintSoft,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    marginTop: spacing.xs,
+  },
+  infoNoticeText: {
+    flex: 1,
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.surfie,
+    lineHeight: 16,
+  },
+  policyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#F0F7F4',
+    padding: spacing.md,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: '#D8EDE4',
+    marginBottom: spacing.xl,
+  },
+  policyIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  policyTextWrap: {
+    flex: 1,
+  },
+  policyTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.sm,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  policyDesc: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.inkMuted,
+    marginTop: 1,
+  },
+  bold: {
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  pickerSection: {
+    marginBottom: spacing.xl,
+  },
+  pickerHeading: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.md,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: spacing.md,
+  },
+  dateScroll: {
+    gap: spacing.sm,
+  },
+  dateCard: {
+    width: 58,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+  },
+  dateCardActive: {
+    backgroundColor: colors.surfie,
+    borderColor: colors.surfie,
+  },
+  dateDayText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xxs,
+    color: colors.inkMuted,
+    marginBottom: 2,
+  },
+  dateNumText: {
+    fontFamily: typography.heading.family,
+    fontSize: typography.size.lg,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  dateMonthText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xxs,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  dateTextActive: {
+    color: colors.white,
+  },
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  timeSlot: {
+    width: '23%',
+    paddingVertical: spacing.sm + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+  },
+  timeSlotActive: {
+    backgroundColor: colors.surface.mintSoft,
+    borderColor: colors.surfie,
+  },
+  timeText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  timeTextActive: {
+    color: colors.surfie,
+    fontWeight: '700',
+  },
+  footer: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  secureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: spacing.xs,
+  },
+  secureText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.inkFaint,
+  },
+});
+
+export default RescheduleAppointmentScreen;
+
