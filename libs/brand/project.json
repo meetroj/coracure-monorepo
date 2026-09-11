@@ -1,0 +1,8 @@
+{
+  "name": "brand",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/brand/src",
+  "projectType": "library",
+  "tags": ["scope:shared"],
+  "targets": {}
+}

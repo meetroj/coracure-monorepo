@@ -8,7 +8,9 @@
     "doctor:ios": "nx run-ios doctor",
     "patient:start": "nx start patient",
     "patient:android": "nx run-android patient",
-    "patient:ios": "nx run-ios patient"
+    "patient:ios": "nx run-ios patient",
+    "patient:web": "vite --config apps/patient/vite.config.mts",
+    "patient:web:build": "vite build --config apps/patient/vite.config.mts"
   },
   "private": true,
   "devDependencies": {
@@ -62,7 +64,7 @@
     "react-native-svg-transformer": "~1.5.1",
     "react-native-svg-web": "~1.0.9",
     "react-native-web": "~0.21.0",
-    "react-test-renderer": "^19.2.0",
+    "react-test-renderer": "19.2.3",
     "ts-jest": "^29.4.7",
     "ts-node": "10.9.1",
     "tslib": "^2.3.0",
@@ -72,9 +74,11 @@
     "vitest": "~4.1.0"
   },
   "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "~0.84.1",
+    "react-native-keychain": "^10.0.0",
+    "react-native-razorpay": "^3.0.0",
     "react-native-safe-area-context": "^5.9.1"
   }
 }

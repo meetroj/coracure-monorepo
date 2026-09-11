@@ -6,7 +6,7 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx","types": ["jest", "node"]
   },
-  "files": ["src/test-setup.ts"],
+  "files": ["src/test-setup.ts", "../../node_modules/@nx/react-native/typings/svg.d.ts"],
   "include": [
     "jest.config.ts",
     "jest.config.cts",
