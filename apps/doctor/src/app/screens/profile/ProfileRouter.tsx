@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 import type { VerificationStatus } from '../../../data/doctor';
 import { PendingStatusScreen, RejectedStatusScreen, ApprovedStatusScreen } from './AccountStatusScreens';
@@ -32,9 +32,27 @@ export const ProfileRouter = ({
   onContactAdmin: () => void;
   onResubmit: () => void;
 }) => {
-  if (status === 'pending') return <PendingStatusScreen onContact={onContactAdmin} />;
-  if (status === 'rejected') return <RejectedStatusScreen onResubmit={onResubmit} onContact={onContactAdmin} />;
-  if (!acknowledged) return <ApprovedStatusScreen onAcknowledge={onAcknowledge} />;
+  // The status tabs are a preview control: they swap the state on screen so the
+  // three account states can be reviewed without a backend. `status` remains
+  // the real value and is what the app lands on.
+  const [preview, setPreview] = useState<VerificationStatus | null>(null);
+  const shown = preview ?? status;
+
+  if (shown === 'pending') {
+    return <PendingStatusScreen onContact={onContactAdmin} onSelectPhase={setPreview} />;
+  }
+  if (shown === 'rejected') {
+    return (
+      <RejectedStatusScreen
+        onResubmit={onResubmit}
+        onContact={onContactAdmin}
+        onSelectPhase={setPreview}
+      />
+    );
+  }
+  if (!acknowledged || preview === 'approved') {
+    return <ApprovedStatusScreen onAcknowledge={onAcknowledge} onSelectPhase={setPreview} />;
+  }
   return <ProfileScreen onLogout={onLogout} onOpen={onOpen} />;
 };
 

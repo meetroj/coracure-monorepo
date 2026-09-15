@@ -1,3 +1,4 @@
+import { typeStyles } from '../../../../../libs/typography/src';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -306,33 +307,33 @@ export const DoctorLoginScreen = ({
                   <View style={styles.portalAvatar}>
                     <PersonIcon />
                   </View>
-                  <Text style={styles.portalText}>Doctor Portal</Text>
+                  <Text style={[typeStyles.body, styles.portalText]}>Doctor Portal</Text>
                 </View>
               </View>
 
               {isOtp ? (
                 <>
-                  <Text testID="heading" style={styles.heading}>
+                  <Text testID="heading" style={[typeStyles.body, styles.heading]}>
                     Verify your{'\n'}
                     <Text style={styles.headingAccent}>number</Text>
                   </Text>
-                  <Text style={styles.subheading}>
+                  <Text style={[typeStyles.body, styles.subheading]}>
                     Enter the {OTP_LENGTH}-digit code sent to
                   </Text>
-                  <Text style={styles.phoneEcho}>
+                  <Text style={[typeStyles.body, styles.phoneEcho]}>
                     {DIAL_CODE} {formattedPhone}
                   </Text>
                 </>
               ) : (
                 <>
-                  <Text testID="heading" style={styles.heading}>
+                  <Text testID="heading" style={[typeStyles.body, styles.heading]}>
                     Doctor login
                   </Text>
-                  <Text style={styles.subheading}>
+                  <Text style={[typeStyles.body, styles.subheading]}>
                     Access your Coracure account to continue providing better care.
                   </Text>
                   <View style={styles.bannerDivider} />
-                  <Text style={styles.bannerNote}>
+                  <Text style={[typeStyles.body, styles.bannerNote]}>
                     Only verified Coracure doctors can sign in.
                   </Text>
                 </>
@@ -360,11 +361,11 @@ export const DoctorLoginScreen = ({
                         ref={(r) => {
                           otpRefs.current[i] = r;
                         }}
-                        style={[
+                        style={[typeStyles.input, [
                           styles.otpBox,
                           focusedBox === i && styles.otpBoxActive,
                           digit !== '' && styles.otpBoxFilled,
-                        ]}
+                        ]]}
                         value={digit}
                         onChangeText={(t) => onChangeOtp(i, t)}
                         onKeyPress={(e) => onOtpKeyPress(i, e)}
@@ -379,15 +380,15 @@ export const DoctorLoginScreen = ({
                   </View>
 
                   <Pressable hitSlop={8} onPress={backToPhone}>
-                    <Text style={styles.changeNumber}>Change mobile number</Text>
+                    <Text style={[typeStyles.body, styles.changeNumber]}>Change mobile number</Text>
                   </Pressable>
 
-                  <Text style={styles.resendTitle}>Didn&apos;t receive the code?</Text>
+                  <Text style={[typeStyles.body, styles.resendTitle]}>Didn&apos;t receive the code?</Text>
                   {secondsLeft > 0 ? (
-                    <Text style={styles.resendTimer}>Resend in {countdown}</Text>
+                    <Text style={[typeStyles.body, styles.resendTimer]}>Resend in {countdown}</Text>
                   ) : (
                     <Pressable hitSlop={8} onPress={resend}>
-                      <Text style={styles.resendLink}>Resend code</Text>
+                      <Text style={[typeStyles.body, styles.resendLink]}>Resend code</Text>
                     </Pressable>
                   )}
 
@@ -406,7 +407,7 @@ export const DoctorLoginScreen = ({
                       <ActivityIndicator color={colors.white} />
                     ) : (
                       <>
-                        <Text style={styles.ctaText}>Verify &amp; Continue</Text>
+                        <Text style={[typeStyles.body, styles.ctaText]}>Verify &amp; Continue</Text>
                         <ArrowRightIcon />
                       </>
                     )}
@@ -415,7 +416,7 @@ export const DoctorLoginScreen = ({
                   <View style={styles.secureRow}>
                     <LockIcon />
                     <View style={styles.secureCopy}>
-                      <Text style={styles.secureBody}>
+                      <Text style={[typeStyles.body, styles.secureBody]}>
                         OTP verification keeps your doctor account secure.
                       </Text>
                     </View>
@@ -424,30 +425,30 @@ export const DoctorLoginScreen = ({
                   <View style={styles.spacer} />
 
                   <View style={styles.needAccessRow}>
-                    <Text style={styles.needAccessText}>Need help? </Text>
+                    <Text style={[typeStyles.body, styles.needAccessText]}>Need help? </Text>
                     <Pressable hitSlop={8}>
-                      <Text style={styles.needAccessLink}>Contact administrator</Text>
+                      <Text style={[typeStyles.body, styles.needAccessLink]}>Contact administrator</Text>
                     </Pressable>
                   </View>
                 </>
               ) : (
                 /* ------------------------ phone step ------------------------ */
                 <>
-                  <Text style={styles.fieldLabel}>Mobile Number</Text>
-                  <Text style={styles.fieldHelp}>Enter your registered mobile number</Text>
+                  <Text style={[typeStyles.body, styles.fieldLabel]}>Mobile Number</Text>
+                  <Text style={[typeStyles.body, styles.fieldHelp]}>Enter your registered mobile number</Text>
 
                   <View style={styles.inputRow}>
                     <Pressable style={styles.countryBox} hitSlop={4}>
-                      <Text style={styles.flag}>🇮🇳</Text>
+                      <Text style={[typeStyles.body, styles.flag]}>🇮🇳</Text>
                       <ChevronDownIcon />
                     </Pressable>
 
                     <View style={styles.dialDivider} />
-                    <Text style={styles.dialCode}>{DIAL_CODE}</Text>
+                    <Text style={[typeStyles.body, styles.dialCode]}>{DIAL_CODE}</Text>
 
                     <TextInput
                       testID="phone-input"
-                      style={styles.input}
+                      style={[typeStyles.input, styles.input]}
                       value={formattedPhone}
                       onChangeText={onChangePhone}
                       placeholder="98765 43210"
@@ -474,7 +475,7 @@ export const DoctorLoginScreen = ({
                       <ActivityIndicator color={colors.white} />
                     ) : (
                       <>
-                        <Text style={styles.ctaText}>Get verification code</Text>
+                        <Text style={[typeStyles.body, styles.ctaText]}>Get verification code</Text>
                         <ArrowRightIcon />
                       </>
                     )}
@@ -483,8 +484,8 @@ export const DoctorLoginScreen = ({
                   <View style={styles.secureRow}>
                     <ShieldCheckIcon />
                     <View style={styles.secureCopy}>
-                      <Text style={styles.secureTitle}>Secure login</Text>
-                      <Text style={styles.secureBody}>
+                      <Text style={[typeStyles.body, styles.secureTitle]}>Secure login</Text>
+                      <Text style={[typeStyles.body, styles.secureBody]}>
                         Your information is encrypted and accessible only to authorized
                         Coracure doctors.
                       </Text>
@@ -494,9 +495,9 @@ export const DoctorLoginScreen = ({
                   <View style={styles.spacer} />
 
                   <View style={styles.needAccessRow}>
-                    <Text style={styles.needAccessText}>Need access? </Text>
+                    <Text style={[typeStyles.body, styles.needAccessText]}>Need access? </Text>
                     <Pressable hitSlop={8}>
-                      <Text style={styles.needAccessLink}>Contact administrator</Text>
+                      <Text style={[typeStyles.body, styles.needAccessLink]}>Contact administrator</Text>
                     </Pressable>
                   </View>
                 </>
@@ -506,11 +507,11 @@ export const DoctorLoginScreen = ({
 
               <View style={styles.footerRow}>
                 <Pressable hitSlop={8}>
-                  <Text style={styles.footerLink}>Privacy Policy</Text>
+                  <Text style={[typeStyles.body, styles.footerLink]}>Privacy Policy</Text>
                 </Pressable>
-                <Text style={styles.footerSep}>|</Text>
+                <Text style={[typeStyles.body, styles.footerSep]}>|</Text>
                 <Pressable hitSlop={8}>
-                  <Text style={styles.footerLink}>Support</Text>
+                  <Text style={[typeStyles.body, styles.footerLink]}>Support</Text>
                 </Pressable>
               </View>
             </View>
@@ -571,40 +572,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 6,
   },
-  portalText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.surfie,
-    fontWeight: '600',
-  },
-  heading: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    lineHeight: 33,
-    fontWeight: typography.heading.weight,
-    color: colors.ink,
-    // Gap below the pinned logo row. This is the ONLY control for how far the
-    // left-hand copy sits down the banner — the banner's own paddingTop must
-    // stay small so the logo row stays pinned at the top. Applies to both the
-    // phone and OTP states.
-    marginTop: 74,
-  },
+  portalText: { ...typeStyles.caption, color: colors.surfie },
+  heading: { ...typeStyles.pageTitle, color: colors.ink, marginTop: 74 },
   headingAccent: { color: colors.surfie },
-  subheading: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.md,
-    lineHeight: 22,
-    color: colors.inkMuted,
-    marginTop: spacing.sm,
-    maxWidth: 172,
-  },
-  phoneEcho: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.md,
-    fontWeight: '700',
-    color: colors.ink,
-    marginTop: 2,
-  },
+  subheading: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: spacing.sm, maxWidth: 172 },
+  phoneEcho: { ...typeStyles.body, color: colors.ink, marginTop: 2 },
   bannerDivider: {
     width: 34,
     height: 2,
@@ -612,13 +584,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paris,
     marginTop: spacing.lg,
   },
-  bannerNote: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkFaint,
-    marginTop: spacing.sm,
-    maxWidth: 178,
-  },
+  bannerNote: { ...typeStyles.bodySmall, color: colors.inkFaint, marginTop: spacing.sm, maxWidth: 178 },
 
   /* card */
   card: {
@@ -635,63 +601,17 @@ const styles = StyleSheet.create({
 
   /* otp */
   otpRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  otpBox: {
-    width: 50,
-    height: 58,
-    borderWidth: 1,
-    borderColor: colors.surface.inputBorder,
-    borderRadius: radius.md,
-    fontFamily: typography.heading.family,
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.ink,
-    backgroundColor: colors.white,
-    padding: 0,
-  },
+  otpBox: { ...typeStyles.body, width: 50, height: 58, borderWidth: 1, borderColor: colors.surface.inputBorder, borderRadius: radius.md, color: colors.ink, backgroundColor: colors.white, padding: 0 },
   otpBoxFilled: { borderColor: colors.surface.line },
   otpBoxActive: { borderColor: colors.paris, borderWidth: 2 },
-  changeNumber: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
-    color: colors.surfie,
-    marginTop: spacing.xl,
-  },
-  resendTitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
-    color: colors.ink,
-    marginTop: spacing.xl,
-  },
-  resendTimer: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkFaint,
-    marginTop: 2,
-  },
-  resendLink: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
-    color: colors.surfie,
-    marginTop: 2,
-    textDecorationLine: 'underline',
-  },
+  changeNumber: { ...typeStyles.body, color: colors.surfie, marginTop: spacing.xl },
+  resendTitle: { ...typeStyles.cardTitle, color: colors.ink, marginTop: spacing.xl },
+  resendTimer: { ...typeStyles.number, color: colors.inkFaint, marginTop: 2 },
+  resendLink: { ...typeStyles.button, color: colors.surfie, marginTop: 2, textDecorationLine: 'underline' },
 
   /* phone */
-  fieldLabel: {
-    fontFamily: typography.heading.family,
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  fieldHelp: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    marginTop: 2,
-  },
+  fieldLabel: { ...typeStyles.label, color: colors.ink },
+  fieldHelp: { ...typeStyles.body, color: colors.inkMuted, marginTop: 2 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -704,27 +624,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   countryBox: { flexDirection: 'row', alignItems: 'center' },
-  flag: { fontSize: 18, marginRight: 4 },
+  flag: { ...typeStyles.body, marginRight: 4 },
   dialDivider: {
     width: 1,
     height: 24,
     backgroundColor: colors.surface.line,
     marginHorizontal: spacing.md,
   },
-  dialCode: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.md,
-    color: colors.ink,
-    fontWeight: '600',
-  },
-  input: {
-    flex: 1,
-    marginLeft: spacing.md,
-    fontFamily: typography.body.family,
-    fontSize: typography.size.md,
-    color: colors.ink,
-    padding: 0,
-  },
+  dialCode: { ...typeStyles.body, color: colors.ink },
+  input: { ...typeStyles.input, flex: 1, marginLeft: spacing.md, color: colors.ink, padding: 0 },
 
   /* shared */
   cta: {
@@ -739,27 +647,11 @@ const styles = StyleSheet.create({
   },
   ctaDisabled: { opacity: 0.45 },
   ctaPressed: { opacity: 0.85 },
-  ctaText: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '700',
-    color: colors.white,
-  },
+  ctaText: { ...typeStyles.button, color: colors.white },
   secureRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg },
   secureCopy: { flex: 1, marginLeft: spacing.md },
-  secureTitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  secureBody: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    lineHeight: 16,
-    color: colors.inkMuted,
-    marginTop: 2,
-  },
+  secureTitle: { ...typeStyles.cardTitle, color: colors.ink },
+  secureBody: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
   spacer: { flex: 1, minHeight: spacing.xl },
   needAccessRow: {
     flexDirection: 'row',
@@ -767,18 +659,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.xl,
   },
-  needAccessText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-  },
-  needAccessLink: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.surfie,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
+  needAccessText: { ...typeStyles.body, color: colors.inkMuted },
+  needAccessLink: { ...typeStyles.button, color: colors.surfie, textDecorationLine: 'underline' },
   footerDivider: { height: 1, backgroundColor: colors.surface.line },
   footerRow: {
     flexDirection: 'row',
@@ -789,11 +671,7 @@ const styles = StyleSheet.create({
     // small nudge left of centre (shifts the pair by half this value)
     paddingRight: 16,
   },
-  footerLink: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.inkMuted,
-  },
+  footerLink: { ...typeStyles.buttonSmall, color: colors.inkMuted },
   footerSep: { color: colors.surface.line },
 });
 

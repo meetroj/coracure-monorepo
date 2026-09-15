@@ -1,3 +1,4 @@
+import { typeStyles, fontWeight } from '../../../../libs/typography/src';
 import React, { type ReactNode } from 'react';
 import {
   View,
@@ -7,10 +8,14 @@ import {
   ScrollView,
   ActivityIndicator,
   StatusBar,
+  Image,
   type ViewStyle,
   type StyleProp,
+  type ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useResponsive, MAX_CONTENT_WIDTH } from '../theme/responsive';
 
 import LogoWide from '../assets/brand/logo-wide.svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/brand';
@@ -38,12 +43,18 @@ export const Screen = ({
   bottomInset?: boolean;
 }) => {
   const insets = useSafeAreaInsets();
+  const { isTablet } = useResponsive();
   const pad = {
     paddingTop: insets.top,
+    // landscape notches eat into the sides, so honour those insets too
     paddingLeft: insets.left,
     paddingRight: insets.right,
     paddingBottom: bottomInset ? insets.bottom : 0,
   };
+  // Past tablet width a single column of clinical text becomes unreadable, so
+  // cap it and centre rather than stretching every row edge to edge.
+  const cap = isTablet ? { maxWidth: MAX_CONTENT_WIDTH, width: '100%' as const, alignSelf: 'center' as const } : null;
+
   return (
     <View style={s.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface.page} />
@@ -51,14 +62,16 @@ export const Screen = ({
         {scroll ? (
           <ScrollView
             style={s.flex}
-            contentContainerStyle={[s.scrollContent, contentStyle]}
+            contentContainerStyle={[s.scrollContent, cap, contentStyle]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            // large accessibility text needs the extra room at the bottom
+            keyboardDismissMode="on-drag"
           >
             {children}
           </ScrollView>
         ) : (
-          <View style={[s.flex, contentStyle]}>{children}</View>
+          <View style={[s.flex, cap, contentStyle]}>{children}</View>
         )}
       </View>
     </View>
@@ -95,13 +108,15 @@ export const IconButton = ({
   onPress,
   badge = false,
   label,
+  testID,
 }: {
   name: IconName;
   onPress?: () => void;
   badge?: boolean;
   label?: string;
+  testID?: string;
 }) => (
-  <Pressable onPress={onPress} hitSlop={8} style={s.iconBtn} accessibilityRole="button" accessibilityLabel={label ?? name}>
+  <Pressable testID={testID} onPress={onPress} hitSlop={8} style={s.iconBtn} accessibilityRole="button" accessibilityLabel={label ?? name}>
     <Icon name={name} size={21} color={colors.ink} />
     {badge && <View style={s.badgeDot} />}
   </Pressable>
@@ -111,8 +126,8 @@ export const IconButton = ({
 
 export const PageTitle = ({ title, subtitle }: { title: string; subtitle?: string }) => (
   <View style={s.pageTitleWrap}>
-    <Text style={s.pageTitle}>{title}</Text>
-    {!!subtitle && <Text style={s.pageSubtitle}>{subtitle}</Text>}
+    <Text style={[typeStyles.body, s.pageTitle]}>{title}</Text>
+    {!!subtitle && <Text style={[typeStyles.body, s.pageSubtitle]}>{subtitle}</Text>}
   </View>
 );
 
@@ -129,12 +144,12 @@ export const SectionHeader = ({
 }) => (
   <View style={s.sectionHeader}>
     <View style={s.flex}>
-      <Text style={s.sectionTitle}>{title}</Text>
-      {!!subtitle && <Text style={s.sectionSubtitle}>{subtitle}</Text>}
+      <Text style={[typeStyles.body, s.sectionTitle]}>{title}</Text>
+      {!!subtitle && <Text style={[typeStyles.body, s.sectionSubtitle]}>{subtitle}</Text>}
     </View>
     {!!actionLabel && (
       <Pressable onPress={onAction} hitSlop={8} style={s.sectionAction}>
-        <Text style={s.sectionActionText}>{actionLabel}</Text>
+        <Text style={[typeStyles.body, s.sectionActionText]}>{actionLabel}</Text>
         <Icon name="chevronRight" size={15} color={colors.surfie} />
       </Pressable>
     )}
@@ -148,21 +163,34 @@ export const Card = ({
   style,
   onPress,
   tone = 'default',
+  testID,
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   tone?: 'default' | 'mint' | 'warn' | 'danger';
+  /** Lets a pressable card be targeted directly rather than through its label. */
+  testID?: string;
 }) => {
   const toneStyle =
     tone === 'mint' ? s.cardMint : tone === 'warn' ? s.cardWarn : tone === 'danger' ? s.cardDanger : null;
-  const content = <View style={[s.card, toneStyle, style]}>{children}</View>;
-  if (!onPress) return content;
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && s.pressed}>
-      {content}
-    </Pressable>
-  );
+
+  // The card styles must land on the OUTERMOST node. Previously the pressable
+  // variant wrapped a styled View, so layout props like `flex: 1` applied to
+  // the inner view while the unflexed Pressable sized to content — which broke
+  // side-by-side rows.
+  if (onPress) {
+    return (
+      <Pressable
+        testID={testID}
+        onPress={onPress}
+        style={({ pressed }) => [s.card, toneStyle, style, pressed && s.pressed]}
+      >
+        {children}
+      </Pressable>
+    );
+  }
+  return <View testID={testID} style={[s.card, toneStyle, style]}>{children}</View>;
 };
 
 /* --------------------------------- pills ---------------------------------- */
@@ -196,7 +224,7 @@ export const StatusPill = ({
       ) : (
         dot && <View style={[s.pillDot, { backgroundColor: c.fg }]} />
       )}
-      <Text style={[s.pillText, { color: c.fg }]}>{label}</Text>
+      <Text style={[typeStyles.body, [s.pillText, { color: c.fg }]]}>{label}</Text>
     </View>
   );
 };
@@ -211,24 +239,39 @@ export const FilterChip = ({
   onPress?: () => void;
 }) => (
   <Pressable onPress={onPress} style={[s.chip, active && s.chipActive]} accessibilityRole="button">
-    <Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text>
+    <Text style={[typeStyles.body, [s.chipText, active && s.chipTextActive]]}>{label}</Text>
   </Pressable>
 );
 
 /* -------------------------------- avatar ---------------------------------- */
 
+/**
+ * `photo` wins when supplied; `initials` is the fallback and stays required so
+ * an avatar can never render empty while an image is missing or still loading.
+ */
 export const Avatar = ({
   initials,
   size = 46,
   online,
+  photo,
 }: {
   initials: string;
   size?: number;
   online?: boolean;
+  photo?: ImageSourcePropType;
 }) => (
   <View>
     <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={[s.avatarText, { fontSize: size * 0.34 }]}>{initials}</Text>
+      {photo ? (
+        <Image
+          source={photo}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      ) : (
+        <Text style={[typeStyles.body, [s.avatarText, { ...typeStyles.body }]]}>{initials}</Text>
+      )}
     </View>
     {online && <View style={s.avatarDot} />}
   </View>
@@ -241,6 +284,7 @@ export const Button = ({
   onPress,
   variant = 'primary',
   icon,
+  iconRight = false,
   disabled,
   loading,
   size = 'md',
@@ -249,8 +293,15 @@ export const Button = ({
 }: {
   label: string;
   onPress?: () => void;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  /**
+   * `accent` is the Paris Green CTA used on dark Surfie surfaces, where a
+   * `primary` button would disappear into the background. Ink label, not
+   * white — white on Paris Green fails contrast.
+   */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
   icon?: IconName;
+  /** Place the icon after the label instead of before it. */
+  iconRight?: boolean;
   disabled?: boolean;
   loading?: boolean;
   size?: 'sm' | 'md';
@@ -259,7 +310,7 @@ export const Button = ({
 }) => {
   const isPrimary = variant === 'primary';
   const isDanger = variant === 'danger';
-  const fg = isPrimary || isDanger ? colors.white : colors.surfie;
+  const fg = variant === 'accent' ? colors.ink : isPrimary || isDanger ? colors.white : colors.surfie;
   return (
     <Pressable
       testID={testID}
@@ -273,6 +324,7 @@ export const Button = ({
         variant === 'secondary' && s.btnSecondary,
         variant === 'ghost' && s.btnGhost,
         variant === 'danger' && s.btnDanger,
+        variant === 'accent' && s.btnAccent,
         (disabled || loading) && s.btnDisabled,
         pressed && !disabled && s.pressed,
         style,
@@ -282,8 +334,9 @@ export const Button = ({
         <ActivityIndicator color={fg} size="small" />
       ) : (
         <>
-          {icon && <Icon name={icon} size={size === 'sm' ? 15 : 17} color={fg} />}
-          <Text style={[s.btnText, size === 'sm' && s.btnTextSm, { color: fg }]}>{label}</Text>
+          {icon && !iconRight && <Icon name={icon} size={size === 'sm' ? 15 : 17} color={fg} />}
+          <Text style={[typeStyles.body, [s.btnText, size === 'sm' && s.btnTextSm, { color: fg }]]}>{label}</Text>
+          {icon && iconRight && <Icon name={icon} size={size === 'sm' ? 15 : 17} color={fg} />}
         </>
       )}
     </Pressable>
@@ -300,6 +353,7 @@ export const ListRow = ({
   onPress,
   danger,
   last,
+  compact = false,
 }: {
   icon?: IconName;
   title: string;
@@ -308,18 +362,20 @@ export const ListRow = ({
   onPress?: () => void;
   danger?: boolean;
   last?: boolean;
+  compact?: boolean;
 }) => (
-  <Pressable onPress={onPress} style={({ pressed }) => [s.row, !last && s.rowBorder, pressed && s.pressed]}>
+  <Pressable onPress={onPress} style={({ pressed }) => [s.row, compact && { paddingVertical: 10, gap: 10 }, !last && s.rowBorder, pressed && s.pressed]}>
     {icon && (
-      <View style={[s.rowIcon, danger && s.rowIconDanger]}>
+      <View style={[s.rowIcon, compact && { width: 30, height: 30 }, danger && s.rowIconDanger]}>
         <Icon name={icon} size={19} color={danger ? colors.danger : colors.surfie} />
       </View>
     )}
     <View style={s.flex}>
-      <Text style={[s.rowTitle, danger && { color: colors.danger }]}>{title}</Text>
-      {!!subtitle && <Text style={s.rowSubtitle}>{subtitle}</Text>}
+      <Text style={[typeStyles.body, [s.rowTitle, compact && { ...typeStyles.body }, danger && { color: colors.danger }]]}>{title}</Text>
+      {!!subtitle && <Text style={[typeStyles.body, [s.rowSubtitle, compact && { ...typeStyles.caption }]]}>{subtitle}</Text>}
+      {compact && right ? <View style={{ marginTop: 4 }}>{right}</View> : null}
     </View>
-    {right}
+    {!compact && right}
     {onPress && !danger && <Icon name="chevronRight" size={17} color={colors.inkFaint} />}
   </Pressable>
 );
@@ -337,7 +393,7 @@ export const Divider = () => <View style={s.divider} />;
 export const LoadingState = ({ label = 'Loading…' }: { label?: string }) => (
   <View style={s.stateWrap}>
     <ActivityIndicator color={colors.surfie} />
-    <Text style={s.stateBody}>{label}</Text>
+    <Text style={[typeStyles.body, s.stateBody]}>{label}</Text>
   </View>
 );
 
@@ -358,8 +414,8 @@ export const EmptyState = ({
     <View style={s.stateIcon}>
       <Icon name={icon} size={26} color={colors.surfie} />
     </View>
-    <Text style={s.stateTitle}>{title}</Text>
-    {!!body && <Text style={s.stateBody}>{body}</Text>}
+    <Text style={[typeStyles.body, s.stateTitle]}>{title}</Text>
+    {!!body && <Text style={[typeStyles.body, s.stateBody]}>{body}</Text>}
     {!!actionLabel && <Button label={actionLabel} onPress={onAction} variant="secondary" size="sm" style={s.stateBtn} />}
   </View>
 );
@@ -369,8 +425,8 @@ export const ErrorState = ({ onRetry, body }: { onRetry?: () => void; body?: str
     <View style={[s.stateIcon, { backgroundColor: colors.dangerSoft }]}>
       <Icon name="alertCircle" size={26} color={colors.danger} />
     </View>
-    <Text style={s.stateTitle}>Something went wrong</Text>
-    <Text style={s.stateBody}>{body ?? 'We could not load this right now.'}</Text>
+    <Text style={[typeStyles.body, s.stateTitle]}>Something went wrong</Text>
+    <Text style={[typeStyles.body, s.stateBody]}>{body ?? 'We could not load this right now.'}</Text>
     {onRetry && <Button label="Try again" onPress={onRetry} variant="secondary" size="sm" style={s.stateBtn} />}
   </View>
 );
@@ -378,7 +434,7 @@ export const ErrorState = ({ onRetry, body }: { onRetry?: () => void; body?: str
 export const OfflineBanner = () => (
   <View style={s.offline}>
     <Icon name="alertCircle" size={15} color={colors.warn} />
-    <Text style={s.offlineText}>You are offline. Showing last synced data.</Text>
+    <Text style={[typeStyles.body, s.offlineText]}>You are offline. Showing last synced data.</Text>
   </View>
 );
 
@@ -404,7 +460,8 @@ const s = StyleSheet.create({
   iconBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    // Squircle, not a pill — a full 19 reads as a circle badge rather than a button.
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.white,
@@ -424,18 +481,8 @@ const s = StyleSheet.create({
   },
 
   pageTitleWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.sm, marginBottom: spacing.lg },
-  pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.md,
-    color: colors.inkMuted,
-    marginTop: 2,
-  },
+  pageTitle: { ...typeStyles.pageTitle, color: colors.ink },
+  pageSubtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 2 },
 
   sectionHeader: {
     flexDirection: 'row',
@@ -444,25 +491,10 @@ const s = StyleSheet.create({
     marginTop: spacing.xxl,
     marginBottom: spacing.md,
   },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xl,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  sectionSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    marginTop: 1,
-  },
+  sectionTitle: { ...typeStyles.sectionTitle, color: colors.ink },
+  sectionSubtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 1 },
   sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  sectionActionText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
-    color: colors.surfie,
-  },
+  sectionActionText: { ...typeStyles.button, color: colors.surfie },
 
   card: {
     backgroundColor: colors.surface.card,
@@ -483,15 +515,12 @@ const s = StyleSheet.create({
     gap: 5,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 5,
-    borderRadius: radius.pill,
+    // Minimal radius, not a capsule — matches the squircle buttons and chips.
+    borderRadius: radius.sm,
     alignSelf: 'flex-start',
   },
   pillDot: { width: 6, height: 6, borderRadius: 3 },
-  pillText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-  },
+  pillText: { ...typeStyles.status },
 
   chip: {
     paddingHorizontal: spacing.lg,
@@ -502,22 +531,18 @@ const s = StyleSheet.create({
     borderColor: colors.surface.line,
   },
   chipActive: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  chipText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    fontWeight: '600',
-    color: colors.inkMuted,
-  },
+  chipText: { ...typeStyles.status, color: colors.inkMuted },
   chipTextActive: { color: colors.white },
 
   avatar: {
     backgroundColor: colors.surface.selected,
     alignItems: 'center',
     justifyContent: 'center',
+    // Android does not clip a child to the parent radius without this.
+    overflow: 'hidden',
   },
   avatarText: {
-    fontFamily: typography.heading.family,
-    fontWeight: '700',
+    ...typeStyles.avatar,
     color: colors.surfie,
   },
   avatarDot: {
@@ -546,13 +571,10 @@ const s = StyleSheet.create({
   btnSecondary: { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.surfie },
   btnGhost: { backgroundColor: 'transparent' },
   btnDanger: { backgroundColor: colors.danger },
+  btnAccent: { backgroundColor: colors.paris },
   btnDisabled: { opacity: 0.45 },
-  btnText: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '700',
-  },
-  btnTextSm: { fontSize: typography.size.md },
+  btnText: { ...typeStyles.button },
+  btnTextSm: { ...typeStyles.buttonSmall },
 
   row: {
     flexDirection: 'row',
@@ -570,18 +592,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   rowIconDanger: { backgroundColor: colors.dangerSoft },
-  rowTitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.lg,
-    fontWeight: '600',
-    color: colors.ink,
-  },
-  rowSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    marginTop: 1,
-  },
+  rowTitle: { ...typeStyles.cardTitle, color: colors.ink },
+  rowSubtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 1 },
 
   progressTrack: {
     height: 8,
@@ -602,18 +614,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.xs,
   },
-  stateTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  stateBody: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    textAlign: 'center',
-  },
+  stateTitle: { ...typeStyles.cardTitle, color: colors.ink },
+  stateBody: { ...typeStyles.body, color: colors.inkMuted, textAlign: 'center' },
   stateBtn: { marginTop: spacing.sm, alignSelf: 'center' },
 
   offline: {
@@ -624,12 +626,7 @@ const s = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
-  offlineText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.warn,
-    fontWeight: '600',
-  },
+  offlineText: { ...typeStyles.body, color: colors.warn },
 });
 
 export default {};

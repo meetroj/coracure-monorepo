@@ -1,7 +1,8 @@
+import { typeStyles } from '../../../../../../libs/typography/src';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../../theme/brand';
+import { colors, spacing, typography } from '../../../theme/brand';
 import { Icon } from '../../../components/Icon';
 import {
   Screen,
@@ -21,7 +22,9 @@ import { doctor, inr } from '../../../data/doctor';
  * approval has been acknowledged.
  *
  * Administrator-approved professional and verification fields are not freely
- * editable: they route through "Request changes" instead.
+ * editable: they route through "Request changes" instead. The full
+ * photo/registration/specialties view lives behind "Profile Details" — this
+ * screen stays a menu, not a duplicate of that page.
  */
 export const ProfileScreen = ({
   onLogout,
@@ -42,94 +45,88 @@ export const ProfileScreen = ({
     <PageTitle title="Profile" />
 
     {/* identity */}
-    <Card>
+    <Card style={{ padding: 12 }}>
       <View style={s.idRow}>
-        <Avatar initials={doctor.initials} size={68} online />
+        <Avatar initials={doctor.initials} photo={doctor.photo} size={52} online />
         <View style={s.idCopy}>
           <View style={s.nameRow}>
-            <Text style={s.name}>{doctor.name}</Text>
+            <Text style={[typeStyles.body, s.name]}>{doctor.name}</Text>
             <Icon name="checkCircle" size={17} color={colors.paris} filled />
           </View>
-          <Text style={s.spec}>{doctor.speciality}</Text>
-          <Text style={s.qual}>
+          <Text style={[typeStyles.body, s.spec]}>{doctor.speciality}</Text>
+          <Text style={[typeStyles.body, s.qual]}>
             {doctor.qualification} · {doctor.yearsExperience} years experience
           </Text>
           <View style={s.availRow}>
             <View style={s.availDot} />
-            <Text style={s.availText}>Available now</Text>
+            <Text style={[typeStyles.body, s.availText]}>Available now</Text>
           </View>
         </View>
       </View>
       <Button label="Request changes" variant="secondary" size="sm" onPress={() => onOpen('requestChanges')} style={s.editBtn} />
     </Card>
 
-    {/* professional details — admin-approved, review required to change */}
-    <Text style={s.section}>Professional details</Text>
+    {/* the full read-only profile — photo, registration, specialties, about */}
     <Card style={s.listCard}>
-      <ListRow
+      <ListRow compact
         icon="idCard"
-        title="Medical registration"
-        subtitle={doctor.registrationNo}
-        right={<StatusPill label="Verified" tone="success" icon="checkCircle" />}
-        onPress={() => onOpen('registration')}
-      />
-      <ListRow
-        icon="stethoscope"
-        title="Specialisations"
-        subtitle={doctor.specialisations.join(', ')}
-        onPress={() => onOpen('specialisations')}
-      />
-      <ListRow
-        icon="language"
-        title="Languages"
-        subtitle={doctor.languages.join(', ')}
-        onPress={() => onOpen('languages')}
+        title="Profile Details"
+        subtitle="Photo, registration, specialties and more"
+        onPress={() => onOpen('profileDetails')}
         last
       />
     </Card>
 
     {/* consultation settings — exactly one fee and one duration */}
-    <Text style={s.section}>Consultation settings</Text>
+    <Text style={[typeStyles.body, s.section]}>Consultation settings</Text>
     <Card style={s.listCard}>
-      <ListRow
+      <ListRow compact
         icon="tag"
         title="Consultation fee"
         subtitle={inr(doctor.consultationFee)}
         onPress={() => onOpen('fee')}
       />
-      <ListRow
+      <ListRow compact
         icon="clock"
         title="Consultation duration"
         subtitle={`${doctor.consultationMinutes} minutes`}
         onPress={() => onOpen('duration')}
+      />
+      {/* Availability lives here since Clarifications took its tab slot. It
+          sits beside duration because both feed the same slot engine. */}
+      <ListRow compact
+        icon="calendar"
+        title="Availability"
+        subtitle="Weekly hours, overrides and leave"
+        onPress={() => onOpen('availability')}
         last
       />
     </Card>
 
     {/* account */}
-    <Text style={s.section}>Account</Text>
+    <Text style={[typeStyles.body, s.section]}>Account</Text>
     <Card style={s.listCard}>
-      <ListRow
+      <ListRow compact
         icon="wallet"
         title="Earnings and payouts"
         subtitle="View earnings, payout history and tax details"
         onPress={() => onOpen('earnings')}
       />
-      <ListRow
+      <ListRow compact
         icon="wallet"
         title="Bank details"
         subtitle="Linked account for payouts"
         right={<StatusPill label="Verified" tone="success" />}
         onPress={() => onOpen('bank')}
       />
-      <ListRow
+      <ListRow compact
         icon="document"
         title="Verification documents"
         subtitle="Identity, medical licence, certificates"
         right={<StatusPill label="Approved" tone="success" />}
         onPress={() => onOpen('documents')}
       />
-      <ListRow
+      <ListRow compact
         icon="bell"
         title="Notifications"
         subtitle="Manage what you are notified about"
@@ -139,11 +136,11 @@ export const ProfileScreen = ({
     </Card>
 
     <Card style={[s.listCard, s.spaced]} tone="mint">
-      <ListRow icon="headset" title="Help and support" subtitle="24/7 assistance" onPress={() => onOpen('help')} last />
+      <ListRow compact icon="headset" title="Help and support" subtitle="24/7 assistance" onPress={() => onOpen('help')} last />
     </Card>
 
     <Card style={[s.listCard, s.spaced]}>
-      <ListRow
+      <ListRow compact
         icon="lock"
         title="Privacy and security"
         subtitle="Manage your data and account security"
@@ -153,10 +150,10 @@ export const ProfileScreen = ({
     </Card>
 
     <Card style={[s.listCard, s.spaced, s.logoutCard]}>
-      <ListRow icon="logout" title="Log out" danger onPress={onLogout} last />
+      <ListRow compact icon="logout" title="Log out" danger onPress={onLogout} last />
     </Card>
 
-    <Text style={s.footNote}>
+    <Text style={[typeStyles.body, s.footNote]}>
       Professional and verification details approved by an administrator cannot be edited directly.
     </Text>
   </Screen>
@@ -166,34 +163,19 @@ const s = StyleSheet.create({
   idRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   idCopy: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  name: { fontFamily: typography.heading.family, fontSize: typography.size.xl, fontWeight: '700', color: colors.ink },
-  spec: { fontFamily: typography.body.family, fontSize: typography.size.md, color: colors.inkMuted },
-  qual: { fontFamily: typography.body.family, fontSize: typography.size.sm, color: colors.inkFaint, marginTop: 1 },
+  name: { ...typeStyles.name, flexShrink: 1, color: colors.ink },
+  spec: { ...typeStyles.body, color: colors.inkMuted },
+  qual: { ...typeStyles.caption, color: colors.inkFaint, marginTop: 1 },
   availRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
   availDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.paris },
-  availText: { fontFamily: typography.body.family, fontSize: typography.size.sm, fontWeight: '600', color: colors.surfie },
+  availText: { ...typeStyles.body, color: colors.surfie },
   editBtn: { marginTop: spacing.md },
 
-  section: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '700',
-    color: colors.ink,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  listCard: { paddingVertical: 0 },
+  section: { ...typeStyles.sectionTitle, color: colors.ink, paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.sm },
+  listCard: { paddingVertical: 0, paddingHorizontal: 12 },
   spaced: { marginTop: spacing.md },
   logoutCard: { backgroundColor: colors.dangerSoft, borderColor: '#F7D5D3' },
-  footNote: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.inkFaint,
-    textAlign: 'center',
-    marginTop: spacing.xl,
-    paddingHorizontal: spacing.xl,
-  },
+  footNote: { ...typeStyles.helper, color: colors.inkFaint, textAlign: 'center', marginTop: spacing.lg, paddingHorizontal: spacing.xl },
 });
 
 export default ProfileScreen;

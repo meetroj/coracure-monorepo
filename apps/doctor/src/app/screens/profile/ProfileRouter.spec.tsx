@@ -60,3 +60,29 @@ test('approved and acknowledged opens the full profile', () => {
   expect(queryByText(/completion/i)).toBeNull();
   expect(queryByText('Under Review')).toBeNull();
 });
+
+test('the status tabs preview each account state', () => {
+  const { getByTestId, getByText, queryByText } = render(
+    <ProfileRouter
+      status="approved"
+      acknowledged={false}
+      onAcknowledge={noop}
+      onLogout={noop}
+      onOpen={noop}
+      onContactAdmin={noop}
+      onResubmit={noop}
+    />
+  );
+
+  expect(getByText('Account Approved')).toBeTruthy();
+
+  fireEvent.press(getByTestId('status-tab-pending'));
+  expect(getByText('Under Review')).toBeTruthy();
+  expect(queryByText('Account Approved')).toBeNull();
+
+  fireEvent.press(getByTestId('status-tab-rejected'));
+  expect(getByText('Changes Required')).toBeTruthy();
+
+  fireEvent.press(getByTestId('status-tab-approved'));
+  expect(getByText('Account Approved')).toBeTruthy();
+});

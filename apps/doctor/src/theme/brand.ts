@@ -33,6 +33,24 @@ export const colors = {
   success: '#0E766C',
   successSoft: '#E7F7F0',
 
+  /**
+   * Category tints for the clinical-task grid only.
+   *
+   * NOTE: blue and violet are outside the two-colour brand palette. They are
+   * used solely to distinguish task types at a glance, per an explicit design
+   * request, and never on the logo, headers, buttons or any brand surface.
+   */
+  task: {
+    blueBg: '#EAF1FC',
+    blueFg: '#3E6DB5',
+    greenBg: '#E7F7F0',
+    greenFg: '#0E766C',
+    amberBg: '#FDF4E5',
+    amberFg: '#C07C1B',
+    violetBg: '#F0EDFB',
+    violetFg: '#6B5BB5',
+  },
+
   /** Derived tints of the brand greens — chrome only, not brand colours. */
   surface: {
     /** App background. */
@@ -72,36 +90,8 @@ export const radius = {
   pill: 999,
 } as const;
 
-/**
- * Typography.
- *
- * The deck specifies "Rounded" (Igor Stepanchenko) for headings and
- * "Montserrat" (Julieta Ulanovsky) for body. Neither font file is in the repo,
- * so `family` stays undefined and React Native falls back to the platform
- * font — the temporary development fallback. Drop the .ttf files into
- * `android/app/src/main/assets/fonts` and set the two names here; nothing else
- * changes. All previous Sora/Inter references are gone.
- */
-export const typography = {
-  heading: {
-    family: undefined as string | undefined, // 'Rounded'
-    weight: '700' as const,
-  },
-  body: {
-    family: undefined as string | undefined, // 'Montserrat'
-    weight: '400' as const,
-  },
-  size: {
-    xxs: 10,
-    xs: 11,
-    sm: 13,
-    md: 14,
-    lg: 16,
-    xl: 20,
-    xxl: 24,
-    xxxl: 28,
-  },
-} as const;
+import { typography } from '../../../../libs/typography/src';
+export { typography } from '../../../../libs/typography/src';
 
 /** Restrained elevation — subtle, never heavy. */
 export const shadow = {

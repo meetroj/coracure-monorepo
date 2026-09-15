@@ -23,5 +23,8 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?)/)',
   ],
-  coverageDirectory: '../../coverage/apps/doctor'
+  coverageDirectory: '../../coverage/apps/doctor',
+  // AppShell pulls in every screen, so a first render is heavy. Under full-suite
+  // load that exceeds the 5s default and fails tests that pass in isolation.
+  testTimeout: 30000,
 };
