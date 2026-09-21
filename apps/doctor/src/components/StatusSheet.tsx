@@ -1,6 +1,6 @@
 import { typeStyles } from '../../../../libs/typography/src';
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, ScrollView, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typography } from '../theme/brand';
@@ -8,8 +8,6 @@ import { Icon } from './Icon';
 import { Button } from './ui';
 import {
   MANUAL_STATUSES,
-  AUTO_STATUSES,
-  STATUS_LABEL,
   STATUS_META,
   type LiveStatus,
   type ManualStatus,
@@ -38,6 +36,9 @@ export const StatusSheet = ({
   const [draft, setDraft] = useState<ManualStatus>(
     (MANUAL_STATUSES.find((m) => m.key === current)?.key ?? 'offline') as ManualStatus
   );
+  // The hours "Schedule Appointments" applies to — only meaningful while that status is picked.
+  const [fromTime, setFromTime] = useState('09:00 AM');
+  const [toTime, setToTime] = useState('06:00 PM');
 
   // re-sync whenever the sheet is reopened, so a dismissed edit is discarded
   useEffect(() => {
@@ -58,67 +59,71 @@ export const StatusSheet = ({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose} accessibilityLabel="Close status picker" />
 
-      <View style={[s.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+      <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
         <View style={s.handle} />
 
         <Text style={[typeStyles.body, s.title]}>Doctor Status</Text>
         <Text style={[typeStyles.body, s.subtitle]}>Manage how you receive consultations</Text>
 
         <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-          <Text style={[typeStyles.body, s.sectionLabel]}>You can select</Text>
-
           {MANUAL_STATUSES.map((m) => {
             const selected = draft === m.key;
             const meta = STATUS_META[m.key];
             return (
-              <Pressable
-                key={m.key}
-                testID={`sheet-status-${m.key}`}
-                onPress={() => setDraft(m.key)}
-                style={[s.row, selected && s.rowSelected]}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-              >
-                <View style={[s.rowIcon, { backgroundColor: meta.bg }]}>{renderIcon(m.key)}</View>
-                <View style={s.flex}>
-                  <Text style={[typeStyles.body, s.rowTitle]}>{m.label}</Text>
-                  <Text style={[typeStyles.body, s.rowBody]}>{meta.description}</Text>
-                </View>
-                {selected ? (
-                  <Icon name="checkCircle" size={24} color={colors.surfie} filled />
-                ) : (
-                  <View style={s.radio} />
+              <View key={m.key}>
+                <Pressable
+                  testID={`sheet-status-${m.key}`}
+                  onPress={() => setDraft(m.key)}
+                  style={[s.row, selected && s.rowSelected, m.key === 'scheduledOnly' && selected && s.rowNoBottom]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                >
+                  <View style={[s.rowIcon, { backgroundColor: meta.bg }]}>{renderIcon(m.key)}</View>
+                  <View style={s.flex}>
+                    <Text style={[typeStyles.body, s.rowTitle]}>{m.label}</Text>
+                    <Text style={[typeStyles.body, s.rowBody]}>{meta.description}</Text>
+                  </View>
+                  {selected ? (
+                    <Icon name="checkCircle" size={24} color={colors.surfie} filled />
+                  ) : (
+                    <View style={s.radio} />
+                  )}
+                </Pressable>
+
+                {/* Only "Schedule Appointments" needs hours — the doctor picks the window it applies to. */}
+                {m.key === 'scheduledOnly' && selected && (
+                  <View style={s.hoursBox}>
+                    <Text style={[typeStyles.body, s.hoursLabel]}>Available hours</Text>
+                    <View style={s.hoursRow}>
+                      <View style={s.timeField}>
+                        <Text style={[typeStyles.body, s.timeFieldLabel]}>From</Text>
+                        <TextInput
+                          testID="scheduled-from"
+                          value={fromTime}
+                          onChangeText={setFromTime}
+                          style={s.timeInput}
+                          placeholder="09:00 AM"
+                          placeholderTextColor={colors.inkFaint}
+                        />
+                      </View>
+                      <Icon name="arrowRight" size={16} color={colors.inkFaint} />
+                      <View style={s.timeField}>
+                        <Text style={[typeStyles.body, s.timeFieldLabel]}>To</Text>
+                        <TextInput
+                          testID="scheduled-to"
+                          value={toTime}
+                          onChangeText={setToTime}
+                          style={s.timeInput}
+                          placeholder="06:00 PM"
+                          placeholderTextColor={colors.inkFaint}
+                        />
+                      </View>
+                    </View>
+                  </View>
                 )}
-              </Pressable>
-            );
-          })}
-
-          <View style={s.divider} />
-          <Text style={[typeStyles.body, s.sectionLabel]}>Updates automatically</Text>
-
-          {AUTO_STATUSES.map((a) => {
-            const meta = STATUS_META[a];
-            return (
-              <View key={a} style={s.row} testID={`sheet-auto-${a}`}>
-                <View style={[s.rowIcon, { backgroundColor: meta.bg }]}>{renderIcon(a)}</View>
-                <View style={s.flex}>
-                  <Text style={[typeStyles.body, s.rowTitle]}>{STATUS_LABEL[a]}</Text>
-                  <Text style={[typeStyles.body, s.rowBody]}>{meta.description}</Text>
-                </View>
-                <View style={s.autoBadge}>
-                  <Text style={[typeStyles.body, s.autoBadgeText]}>Automatic</Text>
-                </View>
               </View>
             );
           })}
-
-          <View style={s.note}>
-            <Icon name="info" size={18} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.noteText]}>
-              Automatic statuses change based on your consultation activity and cannot be selected
-              manually.
-            </Text>
-          </View>
         </ScrollView>
 
         <Button testID="save-status" label="Save Status" onPress={() => onSave(draft)} style={s.saveBtn} />
@@ -148,7 +153,6 @@ const s = StyleSheet.create({
   },
   title: { ...typeStyles.pageTitle, color: colors.ink },
   subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 2, marginBottom: spacing.lg },
-  sectionLabel: { ...typeStyles.label, color: colors.ink, marginBottom: spacing.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -161,6 +165,32 @@ const s = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   rowSelected: { borderColor: colors.paris, backgroundColor: colors.surface.mintSoft },
+  // The hours box sits flush under the row it belongs to, so the pair reads as one control.
+  rowNoBottom: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 },
+  hoursBox: {
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: colors.paris,
+    backgroundColor: colors.surface.mintSoft,
+    borderBottomLeftRadius: radius.md,
+    borderBottomRightRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  hoursLabel: { ...typeStyles.label, color: colors.inkMuted, marginBottom: spacing.sm },
+  hoursRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+  timeField: { flex: 1 },
+  timeFieldLabel: { ...typeStyles.caption, color: colors.inkFaint, marginBottom: 3 },
+  timeInput: {
+    ...typeStyles.body,
+    color: colors.ink,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.surface.inputBorder,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+  },
   rowIcon: {
     width: 40,
     height: 40,
@@ -178,24 +208,6 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.surface.inputBorder,
   },
-  autoBadge: {
-    backgroundColor: colors.surface.selected,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 5,
-  },
-  autoBadgeText: { ...typeStyles.status, color: colors.surfie },
-  divider: { height: 1, backgroundColor: colors.surface.line, marginVertical: spacing.md },
-  note: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.surface.mintSoft,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-  },
-  noteText: { ...typeStyles.caption, flex: 1, color: colors.inkMuted },
   saveBtn: { marginTop: spacing.lg },
 });
 

@@ -145,6 +145,7 @@ export const ConsultationRoomScreen = ({
   const [videoOff, setVideoOff] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setElapsed(Math.floor((now() - joinedAt) / 1000)), 1000);
@@ -168,9 +169,63 @@ export const ConsultationRoomScreen = ({
     onAction(key);
   };
 
+  const stage = (
+    <View style={[s.stage, fullscreen && s.stageFull]}>
+      <Feed initials={appointment.initials} />
+
+      {/* patient identity chip, over the feed */}
+      <View style={s.tag}>
+        <View style={s.tagTop}>
+          <Text style={s.tagName} numberOfLines={1}>
+            {appointment.name}
+          </Text>
+          <Icon name="signal" size={12} color={colors.paris} />
+        </View>
+        <Text style={s.tagMeta} numberOfLines={1}>
+          {appointment.age} years · {appointment.gender}
+        </Text>
+      </View>
+
+      {/* self view, with its camera switch tucked into the corner */}
+      <View style={s.pip}>
+        <Feed initials={doctor.initials} self muted={muted} />
+        <Pressable
+          onPress={() => undefined}
+          hitSlop={6}
+          style={s.pipSwitch}
+          accessibilityRole="button"
+          accessibilityLabel="Switch camera"
+        >
+          <Icon name="switchCamera" size={13} color={colors.white} />
+        </Pressable>
+      </View>
+
+      <Pressable
+        onPress={() => setVideoOff((v) => !v)}
+        style={s.stageCam}
+        accessibilityRole="button"
+        accessibilityLabel={videoOff ? 'Start video' : 'Stop video'}
+      >
+        <Icon name={videoOff ? 'videoOff' : 'video'} size={15} color={colors.ink} />
+      </Pressable>
+
+      <Pressable
+        testID="toggle-fullscreen"
+        onPress={() => setFullscreen((v) => !v)}
+        style={s.stageExpand}
+        accessibilityRole="button"
+        accessibilityLabel={fullscreen ? 'Exit full screen' : 'Full screen'}
+      >
+        <Icon name={fullscreen ? 'collapse' : 'expand'} size={15} color={colors.ink} />
+      </Pressable>
+    </View>
+  );
+
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       {/* --------------------------------- header -------------------------------- */}
+      {!fullscreen && (
+      <>
       <View style={s.header}>
         <Pressable
           testID="back"
@@ -237,52 +292,19 @@ export const ConsultationRoomScreen = ({
           </Text>
         </View>
       </View>
+      </>
+      )}
 
+      {fullscreen ? (
+        stage
+      ) : (
       <ScrollView
         style={s.flex}
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
         {/* --------------------------------- video ------------------------------- */}
-        <View style={s.stage}>
-          <Feed initials={appointment.initials} />
-
-          {/* patient identity chip, over the feed */}
-          <View style={s.tag}>
-            <View style={s.tagTop}>
-              <Text style={s.tagName} numberOfLines={1}>
-                {appointment.name}
-              </Text>
-              <Icon name="signal" size={12} color={colors.paris} />
-            </View>
-            <Text style={s.tagMeta} numberOfLines={1}>
-              {appointment.age} years · {appointment.gender}
-            </Text>
-          </View>
-
-          {/* self view, with its camera switch tucked into the corner */}
-          <View style={s.pip}>
-            <Feed initials={doctor.initials} self muted={muted} />
-            <Pressable
-              onPress={() => undefined}
-              hitSlop={6}
-              style={s.pipSwitch}
-              accessibilityRole="button"
-              accessibilityLabel="Switch camera"
-            >
-              <Icon name="switchCamera" size={13} color={colors.white} />
-            </Pressable>
-          </View>
-
-          <Pressable
-            onPress={() => setVideoOff((v) => !v)}
-            style={s.stageCam}
-            accessibilityRole="button"
-            accessibilityLabel={videoOff ? 'Start video' : 'Stop video'}
-          >
-            <Icon name={videoOff ? 'videoOff' : 'video'} size={15} color={colors.ink} />
-          </Pressable>
-        </View>
+        {stage}
 
         {/* ---------------------------- patient summary -------------------------- */}
         <View style={s.card}>
@@ -416,6 +438,7 @@ export const ConsultationRoomScreen = ({
           </View>
         )}
       </ScrollView>
+      )}
 
       {/* ------------------------------- controls -------------------------------- */}
       <View style={[s.bar, { paddingBottom: Math.max(insets.bottom, spacing.sm) + spacing.sm }]}>
@@ -525,6 +548,15 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
+  // Edge to edge and flexible, not a fixed 288 tile — this is the "true"
+  // full-screen state, filling everything above the control bar.
+  stageFull: {
+    flex: 1,
+    height: undefined,
+    margin: 0,
+    borderRadius: 0,
+    borderWidth: 0,
+  },
   feed: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   feedMain: { backgroundColor: colors.surface.mintSoft },
   feedSelf: { backgroundColor: colors.surfie },
@@ -601,6 +633,17 @@ const s = StyleSheet.create({
   stageCam: {
     position: 'absolute',
     left: spacing.md,
+    bottom: spacing.md,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stageExpand: {
+    position: 'absolute',
+    right: spacing.md,
     bottom: spacing.md,
     width: 32,
     height: 32,

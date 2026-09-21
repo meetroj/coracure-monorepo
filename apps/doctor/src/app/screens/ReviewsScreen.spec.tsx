@@ -5,9 +5,11 @@ import ReviewsScreen from './ReviewsScreen';
 
 const noop = () => undefined;
 
-test('reviews states what it shows', () => {
-  const { getByText } = render(<ReviewsScreen onBack={noop} />);
-  expect(getByText('See what patients shared after consultations')).toBeTruthy();
+test('reviews uses the simplified header and removes appreciation', () => {
+  const { getByText, queryByText } = render(<ReviewsScreen onBack={noop} />);
+  expect(getByText('Reviews & Feedback')).toBeTruthy();
+  expect(queryByText('See what patients shared after consultations')).toBeNull();
+  expect(queryByText('Patients appreciate')).toBeNull();
 });
 
 test('back reports through to the caller', () => {
@@ -19,34 +21,22 @@ test('back reports through to the caller', () => {
   expect(onBack).toHaveBeenCalledTimes(1);
 });
 
-test('star filters narrow the list', () => {
-  const { getByTestId, queryByText } = render(<ReviewsScreen onBack={noop} />);
-
-  // all five are listed by default
+test('all reviews are shown without rating filters', () => {
+  const { queryByTestId, queryByText } = render(<ReviewsScreen onBack={noop} />);
   expect(queryByText(/listened patiently/)).toBeTruthy();
   expect(queryByText(/more time for questions/)).toBeTruthy();
-
-  fireEvent.press(getByTestId('filter-4'));
-  expect(queryByText(/started a few minutes late/)).toBeTruthy();
-  expect(queryByText(/listened patiently/)).toBeNull();
-
-  fireEvent.press(getByTestId('filter-all'));
-  expect(queryByText(/listened patiently/)).toBeTruthy();
+  expect(queryByTestId('filter-all')).toBeNull();
+  expect(queryByTestId('filter-5')).toBeNull();
+  expect(queryByTestId('filter-4')).toBeNull();
 });
 
-test('sort toggles between newest and oldest', () => {
-  const { getByTestId, getByText } = render(<ReviewsScreen onBack={noop} />);
+// The screen shows reviews in authored order. There is no sort control and no
+// rating-trend banner: this is a record of what patients said, not a dashboard.
+test('there is no sort control and no rating-trend banner', () => {
+  const { queryByTestId, queryByText } = render(<ReviewsScreen onBack={noop} />);
 
-  expect(getByText('Newest')).toBeTruthy();
-  fireEvent.press(getByTestId('sort-toggle'));
-  expect(getByText('Oldest')).toBeTruthy();
-});
-
-test('the insight row can be dismissed', () => {
-  const { getByLabelText, queryByText } = render(<ReviewsScreen onBack={noop} />);
-
-  expect(queryByText(/this month/)).toBeTruthy();
-  fireEvent.press(getByLabelText('Dismiss'));
+  expect(queryByTestId('sort-toggle')).toBeNull();
+  expect(queryByText('Newest')).toBeNull();
   expect(queryByText(/this month/)).toBeNull();
 });
 

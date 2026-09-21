@@ -7,7 +7,7 @@ import LogoWide from '../../assets/brand/logo-wide.svg';
 import { colors, radius, spacing, typography } from '../../theme/brand';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen } from '../../components/ui';
-import { PatientStrip, Section, FieldValue, Notice } from '../../components/clinical';
+import { PatientStrip, Section, FieldValue } from '../../components/clinical';
 import { detailFor, type Appointment } from '../../data/doctor';
 import {
   noteFields,
@@ -41,12 +41,14 @@ export const ClinicalNotesScreen = ({
   onSave = () => undefined,
   onViewProfile = () => undefined,
   onMarkDoubt = () => undefined,
+  onOpenCaseSummary = () => undefined,
 }: {
   appointment: Appointment;
   onBack: () => void;
   onSave?: (risk: RiskCategory) => void;
   onViewProfile?: () => void;
   onMarkDoubt?: () => void;
+  onOpenCaseSummary?: () => void;
 }) => {
   const d = detailFor(appointment);
   const insets = useSafeAreaInsets();
@@ -107,11 +109,10 @@ export const ClinicalNotesScreen = ({
             style={[s.doubtBtn, doubt && s.doubtBtnOn]}
             accessibilityRole="button"
             accessibilityState={{ selected: doubt }}
-            accessibilityLabel="Mark clinical doubt"
+            accessibilityLabel="Refer for clarification"
           >
-            <Icon name="flag" size={13} color={doubt ? colors.white : colors.surfie} />
             <Text style={[typeStyles.body, [s.doubtText, doubt && s.doubtTextOn]]} numberOfLines={1}>
-              Mark Clinical Doubt
+              Refer for Clarification
             </Text>
           </Pressable>
         </View>
@@ -167,15 +168,6 @@ export const ClinicalNotesScreen = ({
               );
             })}
           </View>
-
-          <View style={s.riskLine}>
-            <Text style={[typeStyles.body, s.riskLabel]}>Self-harm thoughts</Text>
-            <Text style={[typeStyles.body, s.riskValue]}>{defaultRisk.selfHarmThoughts}</Text>
-          </View>
-          <View style={[s.riskLine, s.riskLineLast]}>
-            <Text style={[typeStyles.body, s.riskLabel]}>Emergency or in-person referral advised</Text>
-            <Text style={[typeStyles.body, s.riskValue]}>{defaultRisk.referralAdvised ? 'Yes' : 'No'}</Text>
-          </View>
         </Section>
 
         {noteFields.slice(4).map((f) => (
@@ -192,10 +184,18 @@ export const ClinicalNotesScreen = ({
           </Section>
         ))}
 
-        <Notice>
-          Notes are linked to consultation {d.consultationId} and every change is audit logged.
-          Records are stored in India and access is restricted to your care team.
-        </Notice>
+        <Pressable
+          testID="open-case-summary"
+          onPress={onOpenCaseSummary}
+          style={s.summaryLink}
+          accessibilityRole="button"
+        >
+          <View style={s.summaryLinkIcon}>
+            <Icon name="clip" size={16} color={colors.surfie} />
+          </View>
+          <Text style={[typeStyles.body, s.summaryLinkText]}>Case Summary</Text>
+          <Icon name="chevronRight" size={17} color={colors.inkFaint} />
+        </Pressable>
       </Screen>
 
       {/* -------------------------------- footer --------------------------------- */}
@@ -207,7 +207,7 @@ export const ClinicalNotesScreen = ({
           accessibilityRole="button"
         >
           <Text style={[typeStyles.body, s.ctaText]} numberOfLines={1}>
-            Finalize &amp; Save Note
+            Save Notes
           </Text>
           <View style={s.ctaCheck}>
             <Icon name="arrowRight" size={18} color={colors.white} />
@@ -289,19 +289,27 @@ const s = StyleSheet.create({
   riskText: { ...typeStyles.status, color: colors.inkMuted },
   riskTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
 
-  riskLine: {
+  summaryLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface.line,
-    marginTop: spacing.sm,
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
   },
-  riskLineLast: { borderBottomWidth: 0 },
-  riskLabel: { ...typeStyles.label, flex: 1, color: colors.inkMuted },
-  riskValue: { ...typeStyles.body, color: colors.ink },
+  summaryLinkIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: colors.successSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryLinkText: { ...typeStyles.cardTitle, flex: 1, color: colors.ink },
 
   footer: {
     paddingHorizontal: spacing.lg,

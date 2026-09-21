@@ -40,9 +40,8 @@ export const CasesScreen = ({
 
   const filterChips: { key: Filter; label: string }[] = [
     { key: 'all',      label: 'All Cases' },
-    { key: 'followUp', label: 'Status ▾' },
-    { key: 'pending',  label: 'Risk Level ▾' },
-    { key: 'noShow',   label: 'Specialty ▾' },
+    { key: 'followUp', label: 'Status' },
+    { key: 'pending',  label: 'Risk Level' },
   ];
 
   return (
@@ -68,19 +67,15 @@ export const CasesScreen = ({
             placeholderTextColor={colors.inkFaint}
             returnKeyType="search"
           />
-          {query.length > 0 ? (
+          {query.length > 0 && (
             <Pressable onPress={() => setQuery('')} hitSlop={8}>
               <Icon name="close" size={16} color={colors.inkFaint} />
-            </Pressable>
-          ) : (
-            <Pressable style={s.filterIconBtn} hitSlop={8}>
-              <Icon name="filter" size={16} color={colors.surfie} />
             </Pressable>
           )}
         </View>
 
-        {/* filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
+        {/* filter chips — three, sharing the row evenly */}
+        <View style={s.chipRow}>
           {filterChips.map(({ key, label }) => {
             const active = filter === key;
             return (
@@ -98,7 +93,7 @@ export const CasesScreen = ({
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       </View>
 
       {/* count + sort */}
@@ -205,16 +200,11 @@ const s = StyleSheet.create({
     flex: 1, fontFamily: typography.body.family,
     fontSize: typography.size.sm, color: colors.ink, padding: 0,
   },
-  filterIconBtn: {
-    width: 32, height: 32, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.surface.line,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
   /* filter chips */
-  chipRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  chipRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingHorizontal: spacing.md, paddingVertical: 7,
     borderRadius: radius.pill, borderWidth: 1.5,
     borderColor: colors.surface.line, backgroundColor: colors.white,

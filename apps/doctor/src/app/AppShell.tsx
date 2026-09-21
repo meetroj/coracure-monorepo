@@ -45,11 +45,18 @@ import ExpertClarificationScreen from './screens/ExpertClarificationScreen';
 import ExpertCaseReviewScreen from './screens/ExpertCaseReviewScreen';
 import ExpertResponseScreen from './screens/ExpertResponseScreen';
 import ProfileRouter from './screens/profile/ProfileRouter';
+import {
+  ConsultationFeeScreen,
+  ConsultationDurationScreen,
+  BankDetailsScreen,
+  PrivacySecurityScreen,
+  RequestChangesScreen,
+} from './screens/profile/ProfileSettingsScreens';
 import DoctorProfileDetailsScreen from './screens/profile/DoctorProfileDetailsScreen';
 import HelpSupportScreen from './screens/HelpSupportScreen';
 import { useNavStack } from './navigation';
 import { appointments, nextAppointment } from '../data/doctor';
-import type { VerificationStatus } from '../data/doctor';
+import type { VerificationStatus, LiveStatus, ManualStatus } from '../data/doctor';
 import type { NotifTarget } from '../data/messaging';
 
 export type TabKey = 'dashboard' | 'appointments' | 'cases' | 'clarifications' | 'profile';
@@ -195,6 +202,22 @@ export const AppShell = ({
     Record<string, { ids: string[]; note: string }>
   >({});
 
+  /**
+   * Live status: the doctor's manual pick, unless the current screen implies
+   * one of the system-owned states — those always win, since being mid-call
+   * or mid-documentation is a fact, not a preference.
+   */
+  const [manualStatus, setManualStatus] = useState<ManualStatus>('offline');
+  const autoStatus: LiveStatus | null =
+    top?.name === 'room'
+      ? 'inConsultation'
+      : top?.name === 'clinicalNotes' || top?.name === 'prescription' || top?.name === 'caseSummary'
+        ? 'completingNotes'
+        : top?.name === 'instantRequest'
+          ? 'requestPending'
+          : null;
+  const status: LiveStatus = autoStatus ?? manualStatus;
+
   /** The appointment the dashboard's next-appointment card stands for. */
   const nextAppt = appointments.find((a) => a.id === nextAppointment.appointmentId);
 
@@ -219,11 +242,22 @@ export const AppShell = ({
         {top.name === 'reviews' && <ReviewsScreen onBack={pop} />}
         {top.name === 'earnings' && <EarningsScreen onBack={pop} />}
 
+        {/* Profile settings. Each saves and returns; there is no settings API
+            yet, so nothing is persisted past the pop. */}
+        {top.name === 'consultationFee' && <ConsultationFeeScreen onBack={pop} />}
+        {top.name === 'consultationDuration' && <ConsultationDurationScreen onBack={pop} />}
+        {top.name === 'bankDetails' && (
+          <BankDetailsScreen onBack={pop} onRequestChange={() => replace({ name: 'requestChanges' })} />
+        )}
+        {top.name === 'privacy' && <PrivacySecurityScreen onBack={pop} />}
+        {top.name === 'requestChanges' && <RequestChangesScreen onBack={pop} />}
+
         {top.name === 'apptDetails' && appt && (
           <AppointmentDetailsScreen
             appointment={appt}
             onBack={pop}
             onJoin={(a) => push({ name: 'room', appt: a })}
+            onRequestDoc={() => push({ name: 'requestReport' })}
           />
         )}
         {top.name === 'caseDetail' && top.patientCase && (
@@ -236,7 +270,6 @@ export const AppShell = ({
             onOpenNotes={appt ? () => push({ name: 'clinicalNotes', appt }) : undefined}
             onOpenPrescription={appt ? () => push({ name: 'prescription', appt }) : undefined}
             onOpenSummary={appt ? () => push({ name: 'caseSummary', appt }) : undefined}
-            onOpenFollowUp={() => push({ name: 'assignPlan' })}
             onOpenCheckins={() => push({ name: 'alertDetail' })}
             onOpenClarification={() => push({ name: 'expertClarification' })}
             recommended={appt ? recommendations[appt.id]?.ids ?? [] : []}
@@ -262,6 +295,7 @@ export const AppShell = ({
             // push, not replace: back from the prescription must return to the
             // notes, not skip the whole post-call trail back to the details.
             onSave={() => push({ name: 'prescription', appt })}
+            onOpenCaseSummary={() => push({ name: 'caseSummary', appt })}
           />
         )}
         {top.name === 'prescription' && appt && (
@@ -300,7 +334,11 @@ export const AppShell = ({
           />
         )}
         {top.name === 'alertDetail' && (
-          <PatientFollowUpDetailScreen onBack={pop} onSave={pop} onEscalate={noop} />
+          <PatientFollowUpDetailScreen
+            onBack={pop}
+            onSave={pop}
+            onOpenChat={(thread) => push({ name: 'chatThread', thread })}
+          />
         )}
 
         {top.name === 'requestReport' && (
@@ -346,7 +384,12 @@ export const AppShell = ({
           <CreateClarificationScreen onCancel={pop} onSubmit={pop} onSaveDraft={pop} />
         )}
         {top.name === 'expertClarification' && (
-          <ExpertClarificationScreen onBack={pop} onSend={pop} onSaveDraft={pop} onHistory={noop} />
+          <ExpertClarificationScreen
+            onBack={pop}
+            onSend={() => pop()}
+            onMarkReviewed={pop}
+            onClose={pop}
+          />
         )}
         {top.name === 'expertCaseReview' && (
           <ExpertCaseReviewScreen onBack={pop} onSubmit={pop} onSaveDraft={pop} />
@@ -376,12 +419,15 @@ export const AppShell = ({
             onOpenTasks={() => push({ name: 'tasks' })}
             onOpenAlerts={() => push({ name: 'alerts' })}
             onOpenEarnings={() => push({ name: 'earnings' })}
+            onOpenReviews={() => push({ name: 'reviews' })}
             onViewAppointment={() => setTab('appointments')}
             // the card's own CTAs open that appointment, not the whole list
             onOpenNextAppointment={() => nextAppt && push({ name: 'apptDetails', appt: nextAppt })}
             onJoinConsultation={() => nextAppt && push({ name: 'room', appt: nextAppt })}
             onOpenRequest={() => push({ name: 'notifications' })}
             onOpenMessages={() => push({ name: 'chatList' })}
+            status={status}
+            onChangeStatus={setManualStatus}
           />
         )}
         {tab === 'appointments' && (
@@ -420,14 +466,19 @@ export const AppShell = ({
             }}
             onLogout={onLogout}
             onOpen={(key) => {
-              // Only the rows with a screen behind them navigate; the rest are
-              // still placeholders rather than dead-ends that look broken.
+              // Every row on the Profile screen maps to a destination here —
+              // there are no inert rows left.
               if (key === 'availability') push({ name: 'availability' });
               if (key === 'earnings') push({ name: 'earnings' });
               if (key === 'documents') push({ name: 'patientDocs' });
               if (key === 'notifications') push({ name: 'notifications' });
               if (key === 'profileDetails') push({ name: 'profileDetails' });
               if (key === 'help') push({ name: 'helpSupport' });
+              if (key === 'fee') push({ name: 'consultationFee' });
+              if (key === 'duration') push({ name: 'consultationDuration' });
+              if (key === 'bank') push({ name: 'bankDetails' });
+              if (key === 'privacy') push({ name: 'privacy' });
+              if (key === 'requestChanges') push({ name: 'requestChanges' });
             }}
             onContactAdmin={noop}
             onResubmit={noop}

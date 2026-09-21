@@ -142,15 +142,13 @@ test('the red-flag card counts the answers it lists', () => {
   expect(getByText("Today's check-in • 3 issues")).toBeTruthy();
 });
 
-test('choosing the referral tile escalates as well as selecting', () => {
-  const onEscalate = jest.fn();
-  const { getByTestId } = detail({ onEscalate });
+test('only the follow-up booking action remains, pre-selected', () => {
+  // the doctor-review and emergency/in-person cards were removed by request
+  const { getByTestId, queryByTestId } = detail();
 
-  fireEvent.press(getByTestId('action-doctorReview'));
-  expect(onEscalate).not.toHaveBeenCalled();
-
-  fireEvent.press(getByTestId('action-emergency'));
-  expect(onEscalate).toHaveBeenCalledTimes(1);
+  expect(getByTestId('action-followUp').props.accessibilityState.selected).toBe(true);
+  expect(queryByTestId('action-doctorReview')).toBeNull();
+  expect(queryByTestId('action-emergency')).toBeNull();
 });
 
 test('detail carries no cardiology content', () => {
@@ -164,9 +162,9 @@ test('choosing an action and saving reports both action and note', () => {
   const onSave = jest.fn();
   const { getByTestId } = detail({ onSave });
 
-  fireEvent.press(getByTestId('action-doctorReview'));
+  fireEvent.press(getByTestId('action-followUp'));
   fireEvent.changeText(getByTestId('note'), 'Contacted patient, safety plan reviewed.');
   fireEvent.press(getByTestId('save'));
 
-  expect(onSave).toHaveBeenCalledWith('doctorReview', 'Contacted patient, safety plan reviewed.');
+  expect(onSave).toHaveBeenCalledWith('followUp', 'Contacted patient, safety plan reviewed.');
 });

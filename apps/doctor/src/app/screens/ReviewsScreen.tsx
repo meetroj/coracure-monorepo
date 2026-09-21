@@ -1,9 +1,9 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { typeStyles } from '../../../../../libs/typography/src';
+import React from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, radius, spacing, typography } from '../../theme/brand';
-import { Icon, type IconName } from '../../components/Icon';
+import { Icon } from '../../components/Icon';
 import { Screen } from '../../components/ui';
 import { feedback, reviews, type Review } from '../../data/doctor';
 
@@ -21,15 +21,6 @@ import { feedback, reviews, type Review } from '../../data/doctor';
 
 const STAR_COLOUR = colors.warn;
 
-type FilterKey = 'all' | '5' | '4' | 'comments';
-
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'All reviews' },
-  { key: '5', label: '5 star' },
-  { key: '4', label: '4 star' },
-  { key: 'comments', label: 'With comments' },
-];
-
 /* --------------------------------- stars ---------------------------------- */
 
 /**
@@ -37,7 +28,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
  * than being rounded. The gold row is clipped to `value / max` of the width and
  * sits over a full grey row.
  */
-const Stars = ({ value, size = 15, max = 5 }: { value: number; size?: number; max?: number }) => {
+export const Stars = ({ value, size = 15, max = 5 }: { value: number; size?: number; max?: number }) => {
   const row = (color: string, filled: boolean) => (
     <View style={s.starRow}>
       {Array.from({ length: max }, (_, i) => (
@@ -86,94 +77,68 @@ const RatingOverview = () => (
   </View>
 );
 
-const Appreciation = () => (
-  <>
-    <Text style={[typeStyles.body, s.sectionTitle]}>Patients appreciate</Text>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={s.hScroll}
-    >
-      {feedback.appreciation.map((a) => (
-        <View key={a.tag} style={s.appreciationCard}>
-          <View style={s.appreciationIcon}>
-            <Icon name={a.icon as IconName} size={16} color={colors.surfie} />
-          </View>
-          <Text style={[typeStyles.body, s.appreciationTag]}>
-            {a.tag}
-          </Text>
-          <Text style={[typeStyles.body, s.appreciationCount]}>{a.count}</Text>
-        </View>
-      ))}
-    </ScrollView>
-  </>
-);
-
-const ReviewCard = ({ review, onReport }: { review: Review; onReport: (id: string) => void }) => (
-  <View style={s.review}>
+const ReviewCard = ({
+  review,
+  onReport,
+  first,
+}: {
+  review: Review;
+  onReport: (id: string) => void;
+  /** The first card carries the gap the removed sort row used to provide. */
+  first?: boolean;
+}) => (
+  <View style={[s.review, first && s.reviewFirst]}>
     <View style={s.reviewHead}>
       <View style={s.reviewAvatar}>
         {review.initials ? (
           <Text style={[typeStyles.body, s.reviewInitials]}>{review.initials}</Text>
         ) : (
-          <Icon name="user" size={17} color={colors.surfie} />
+          <Icon name="user" size={22} color={colors.surfie} />
         )}
       </View>
 
       <View style={s.flex}>
-        <View style={s.reviewNameRow}>
-          <Text style={[typeStyles.body, s.reviewName]}>
-            {review.label}
-          </Text>
-        </View>
-        <View style={s.reviewNameRow}>
-          <Icon name="checkCircle" size={14} color={colors.paris} filled />
-          <Text style={[typeStyles.body, s.reviewVerified]}>
-            Consultation verified
-          </Text>
-        </View>
-        <Stars value={review.stars} size={14} />
-      </View>
-
-
-    </View>
-
-      <View style={s.reviewMeta}>
-        <Text style={[typeStyles.body, s.reviewDate]}>{review.dateLabel}</Text>
-        <Text style={[typeStyles.body, s.reviewMode]}>
-          {review.mode}
-        </Text>
-      </View>
-
-    {!!review.body && (
-      <Text style={[typeStyles.body, s.reviewBody]}>
-        {review.body}
-      </Text>
-    )}
-
-    {review.tags.length > 0 && (
-      <View style={s.reviewTags}>
-        {review.tags.map((t) => (
-          <View key={t} style={s.reviewTag}>
-            <Text style={[typeStyles.body, s.reviewTagText]}>{t}</Text>
+        <View style={s.reviewTopRow}>
+          <View style={s.reviewIdentity}>
+            <View style={s.reviewNameRow}>
+              <Text style={[typeStyles.body, s.reviewName]}>{review.label}</Text>
+              <Icon name="checkCircle" size={16} color={colors.paris} filled />
+              <Text style={[typeStyles.body, s.reviewVerified]}>Verified</Text>
+            </View>
+            <Stars value={review.stars} size={18} />
           </View>
-        ))}
-      </View>
-    )}
+          <View style={s.reviewMeta}>
+            <Text style={[typeStyles.body, s.reviewDate]}>{review.dateLabel}</Text>
+            <Text style={[typeStyles.body, s.reviewMode]}>{review.mode}</Text>
+          </View>
+        </View>
 
-    {/* the only action a doctor has on a review */}
-    {review.reportable && (
-      <Pressable
-        onPress={() => onReport(review.id)}
-        hitSlop={8}
-        style={s.report}
-        accessibilityRole="button"
-        accessibilityLabel={`Report concern about the review from ${review.dateLabel}`}
-      >
-        <Icon name="flag" size={14} color={colors.inkMuted} />
-        <Text style={[typeStyles.body, s.reportText]}>Report concern</Text>
-      </Pressable>
-    )}
+        {!!review.body && <Text style={[typeStyles.body, s.reviewBody]}>{review.body}</Text>}
+
+        {review.tags.length > 0 && (
+          <View style={s.reviewTags}>
+            {review.tags.map((t) => (
+              <View key={t} style={s.reviewTag}>
+                <Text style={[typeStyles.body, s.reviewTagText]}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {review.reportable && (
+          <Pressable
+            onPress={() => onReport(review.id)}
+            hitSlop={8}
+            style={s.report}
+            accessibilityRole="button"
+            accessibilityLabel={`Report concern about the review from ${review.dateLabel}`}
+          >
+            <Icon name="flag" size={14} color={colors.inkMuted} />
+            <Text style={[typeStyles.body, s.reportText]}>Report concern</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
   </View>
 );
 
@@ -188,19 +153,9 @@ export const ReviewsScreen = ({
   onReport?: (id: string) => void;
   onInfo?: () => void;
 }) => {
-  const [filter, setFilter] = useState<FilterKey>('all');
-  const [newestFirst, setNewestFirst] = useState(true);
-  const [insightOpen, setInsightOpen] = useState(true);
-
-  const visible = useMemo(() => {
-    const match = (r: Review) =>
-      filter === 'all' ? true
-      : filter === 'comments' ? r.body.trim().length > 0
-      : r.stars === Number(filter);
-    // `reviews` is authored newest-first, so reversing is enough to flip order.
-    const list = reviews.filter(match);
-    return newestFirst ? list : [...list].reverse();
-  }, [filter, newestFirst]);
+  // Reviews are authored newest-first and stay that way — there is no sort
+  // control, so nothing here reorders them.
+  const visible = reviews;
 
   return (
     <Screen bottomInset>
@@ -219,7 +174,6 @@ export const ReviewsScreen = ({
 
         <View style={s.flex}>
           <Text style={[typeStyles.body, s.title]}>Reviews &amp; Feedback</Text>
-          <Text style={[typeStyles.body, s.subtitle]}>See what patients shared after consultations</Text>
         </View>
 
         <Pressable
@@ -228,71 +182,11 @@ export const ReviewsScreen = ({
           accessibilityRole="button"
           accessibilityLabel="About reviews"
         >
-          <Icon name="info" size={21} color={colors.surfie} />
+          <Icon name="info" size={28} color={colors.surfie} />
         </Pressable>
       </View>
 
       <RatingOverview />
-      <Appreciation />
-
-      {/* -------------------------------- filters -------------------------------- */}
-      <View style={s.filterBar}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.filterScroll}
-        >
-          {FILTERS.map((f) => {
-            const on = filter === f.key;
-            return (
-              <Pressable
-                key={f.key}
-                testID={`filter-${f.key}`}
-                onPress={() => setFilter(f.key)}
-                style={[s.filter, on && s.filterOn]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-              >
-                <Text style={[typeStyles.body, [s.filterText, on && s.filterTextOn]]}>{f.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        <View style={s.sortDivider} />
-        <Pressable
-          testID="sort-toggle"
-          onPress={() => setNewestFirst((v) => !v)}
-          hitSlop={8}
-          style={s.sort}
-          accessibilityRole="button"
-          accessibilityLabel={`Sorted by ${newestFirst ? 'newest' : 'oldest'} first`}
-        >
-          <Text style={[typeStyles.body, s.sortText]}>{newestFirst ? 'Newest' : 'Oldest'}</Text>
-          <Icon name="chevronDown" size={15} color={colors.surfie} />
-        </Pressable>
-      </View>
-
-      {/* -------------------------------- insight -------------------------------- */}
-      {insightOpen && (
-        <View style={s.insight}>
-          <View style={s.insightIcon}>
-            <Icon name="trendUp" size={15} color={colors.surfie} />
-          </View>
-          <Text style={[typeStyles.body, s.insightText]}>
-            Your rating increased by{' '}
-            <Text style={s.insightStrong}>{feedback.ratingDelta}</Text> this month
-          </Text>
-          <Pressable
-            onPress={() => setInsightOpen(false)}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss"
-          >
-            <Icon name="close" size={16} color={colors.inkMuted} />
-          </Pressable>
-        </View>
-      )}
 
       {/* ------------------------------- review list ----------------------------- */}
       {visible.length === 0 ? (
@@ -300,7 +194,9 @@ export const ReviewsScreen = ({
           <Text style={[typeStyles.body, s.emptyText]}>No reviews match this filter yet.</Text>
         </View>
       ) : (
-        visible.map((r) => <ReviewCard key={r.id} review={r} onReport={onReport} />)
+        visible.map((r, i) => (
+          <ReviewCard key={r.id} review={r} onReport={onReport} first={i === 0} />
+        ))
       )}
     </Screen>
   );
@@ -320,7 +216,6 @@ const s = StyleSheet.create({
   },
   backBtn: { paddingTop: 2 },
   title: { ...typeStyles.pageTitle, color: colors.ink },
-  subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 3 },
 
   /* stars */
   stars: { position: 'relative', alignSelf: 'flex-start' },
@@ -380,57 +275,6 @@ const s = StyleSheet.create({
   appreciationTag: { ...typeStyles.body, color: colors.ink },
   appreciationCount: { ...typeStyles.number, color: colors.surfie },
 
-  /* filters */
-  filterBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.xxl,
-    paddingRight: spacing.lg,
-  },
-  filterScroll: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: 'center' },
-  filter: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-  },
-  filterOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  filterText: { ...typeStyles.body, color: colors.inkMuted },
-  filterTextOn: { color: colors.white },
-  sortDivider: {
-    width: 1,
-    height: 22,
-    backgroundColor: colors.surface.line,
-    marginRight: spacing.md,
-  },
-  sort: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  sortText: { ...typeStyles.body, color: colors.surfie },
-
-  /* insight */
-  insight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface.mint,
-    borderRadius: radius.lg,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  insightIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insightText: { ...typeStyles.body, flex: 1, color: colors.surfie },
-  insightStrong: { fontWeight: fontWeight.semibold },
-
   /* review card */
   review: {
     backgroundColor: colors.surface.card,
@@ -441,22 +285,25 @@ const s = StyleSheet.create({
     marginTop: spacing.md,
     padding: spacing.lg,
   },
+  reviewFirst: { marginTop: spacing.xxl },
   reviewHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   reviewAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.surface.selected,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reviewInitials: { ...typeStyles.avatar, color: colors.surfie },
+  reviewInitials: { ...typeStyles.avatar, fontSize: 15, color: colors.surfie },
+  reviewTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  reviewIdentity: { flex: 1, minWidth: 0, gap: 5 },
   reviewNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   reviewName: { ...typeStyles.name, color: colors.ink, flexShrink: 1 },
   reviewVerified: { ...typeStyles.caption, color: colors.inkMuted, flexShrink: 1 },
-  reviewMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  reviewDate: { ...typeStyles.caption, color: colors.inkMuted },
-  reviewMode: { ...typeStyles.caption, color: colors.inkFaint, marginTop: 2 },
+  reviewMeta: { alignItems: 'flex-end', flexShrink: 0 },
+  reviewDate: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'right' },
+  reviewMode: { ...typeStyles.caption, color: colors.inkFaint, marginTop: 3, textAlign: 'right' },
   reviewBody: { ...typeStyles.body, color: colors.ink, marginTop: spacing.md },
   reviewTags: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   reviewTag: {

@@ -28,6 +28,20 @@ test('back returns to the dashboard with the tabs restored', () => {
   expect(getByTestId('tab-dashboard')).toBeTruthy();
 });
 
+test('the Daily/Weekly/Monthly selector swaps the period shown', () => {
+  const { getByTestId, getByText } = render(<EarningsScreen onBack={noop} />);
+
+  // monthly is the landing period
+  expect(getByText(earningsPeriods.monthly.rangeLabel)).toBeTruthy();
+
+  fireEvent.press(getByTestId('period-daily'));
+  expect(getByText(earningsPeriods.daily.rangeLabel)).toBeTruthy();
+  expect(getByText(String(earningsPeriods.daily.consultations))).toBeTruthy();
+
+  fireEvent.press(getByTestId('period-weekly'));
+  expect(getByText(earningsPeriods.weekly.rangeLabel)).toBeTruthy();
+});
+
 test('shows the current month, its consultations and its earnings-per-consultation rate', () => {
   const { getByText } = render(<EarningsScreen onBack={noop} />);
 
@@ -40,13 +54,15 @@ test('shows the current month, its consultations and its earnings-per-consultati
   expect(getByText(`₹${rate.toLocaleString('en-IN')}`)).toBeTruthy();
 });
 
-test('the platform deduction is called out as zero — the doctor keeps everything', () => {
-  const { getByText } = render(<EarningsScreen onBack={noop} />);
+// The deduction card was removed from the screen by design. The guarantee it
+// described still has to hold in the data: if a deduction is ever introduced,
+// this fails and the screen has to start disclosing it again.
+test('there is no platform deduction, and the screen no longer claims one', () => {
+  const { queryByText } = render(<EarningsScreen onBack={noop} />);
 
   expect(platformDeduction).toBe(0);
-  expect(getByText('Platform Deduction')).toBeTruthy();
-  expect(getByText('0% of consultation earnings')).toBeTruthy();
-  expect(getByText('You keep 100%')).toBeTruthy();
+  expect(queryByText('Platform Deduction')).toBeNull();
+  expect(queryByText('You keep 100%')).toBeNull();
 });
 
 test('the chart shows the month total and the peak week as a tooltip', () => {
@@ -64,9 +80,10 @@ test('payout status totals the history by state', () => {
 
   // the stat-grid card and the section heading below both say it, same as the reference
   expect(getAllByText('Payout Status').length).toBeGreaterThanOrEqual(2);
-  expect(getByText('Pending')).toBeTruthy();
-  expect(getByText('Processed')).toBeTruthy();
-  expect(getByText('Paid')).toBeTruthy();
+  // each status label also repeats in the history list's own state pills
+  expect(getAllByText('Pending').length).toBeGreaterThanOrEqual(1);
+  expect(getAllByText('Processed').length).toBeGreaterThanOrEqual(1);
+  expect(getAllByText('Paid').length).toBeGreaterThanOrEqual(1);
 
   const paidTotal = payoutHistory.filter((p) => p.state === 'Paid').reduce((sum, p) => sum + p.amount, 0);
   expect(getByText(`₹${paidTotal.toLocaleString('en-IN')}`)).toBeTruthy();

@@ -20,15 +20,15 @@ export type LiveStatus = ManualStatus | AutoStatus;
 export const MANUAL_STATUSES: { key: ManualStatus; label: string }[] = [
   { key: 'available', label: 'Available Now' },
   { key: 'offline', label: 'Offline' },
-  { key: 'paused', label: 'Paused' },
-  { key: 'scheduledOnly', label: 'Scheduled Only' },
+  { key: 'paused', label: 'Busy' },
+  { key: 'scheduledOnly', label: 'Schedule Appointments' },
 ];
 
 export const STATUS_LABEL: Record<LiveStatus, string> = {
   available: 'Available Now',
   offline: 'Offline',
-  paused: 'Paused',
-  scheduledOnly: 'Scheduled Only',
+  paused: 'Busy',
+  scheduledOnly: 'Schedule Appointments',
   requestPending: 'Request Pending',
   inConsultation: 'In Consultation',
   completingNotes: 'Completing Notes',
@@ -49,13 +49,13 @@ export const STATUS_META: Record<
   LiveStatus,
   { description: string; icon: 'dot' | 'pause' | 'calendar' | 'clock' | 'video' | 'document'; bg: string; fg: string }
 > = {
-  offline: { description: 'Not receiving instant requests', icon: 'dot', bg: '#EFF3F1', fg: '#8A9995' },
-  available: { description: 'Ready for instant consultations', icon: 'dot', bg: '#E7F7F0', fg: '#34D499' },
-  paused: { description: 'Temporarily unavailable', icon: 'pause', bg: '#FDF4E5', fg: '#E0972B' },
-  scheduledOnly: { description: 'Scheduled appointments only', icon: 'calendar', bg: '#E7F7F0', fg: '#0E766C' },
-  requestPending: { description: 'Waiting for you to accept or decline', icon: 'clock', bg: '#EAF1FC', fg: '#3E6DB5' },
-  inConsultation: { description: 'Consultation currently in progress', icon: 'video', bg: '#F0EDFB', fg: '#6B5BB5' },
-  completingNotes: { description: 'Prescription or case summary pending', icon: 'document', bg: '#FDF0E5', fg: '#D97B2E' },
+  offline: { description: "You are hidden from patients. No instant or scheduled requests will reach you.", icon: 'dot', bg: '#EFF3F1', fg: '#8A9995' },
+  available: { description: 'You are ready to consult now. Instant requests can reach you immediately.', icon: 'dot', bg: '#E7F7F0', fg: '#34D499' },
+  paused: { description: 'You will stop receiving new requests until you switch back to Available.', icon: 'pause', bg: '#FDF4E5', fg: '#E0972B' },
+  scheduledOnly: { description: 'Only pre-booked appointments within your chosen hours will reach you. Instant requests stay off.', icon: 'calendar', bg: '#E7F7F0', fg: '#0E766C' },
+  requestPending: { description: 'A consultation request is waiting for your response.', icon: 'clock', bg: '#EAF1FC', fg: '#3E6DB5' },
+  inConsultation: { description: 'A consultation is currently in progress.', icon: 'video', bg: '#F0EDFB', fg: '#6B5BB5' },
+  completingNotes: { description: 'Your prescription or case summary is still pending.', icon: 'document', bg: '#FDF0E5', fg: '#D97B2E' },
 };
 
 /**

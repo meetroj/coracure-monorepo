@@ -98,11 +98,9 @@ test('availability shows one status at a time and opens a sheet to change it', (
   expect(getByText('Offline')).toBeTruthy();
   expect(queryByTestId('sheet-status-available')).toBeNull();
 
-  // opening reveals the sheet with both sections
+  // opening reveals the sheet
   fireEvent.press(getByTestId('status-trigger'));
   expect(getByText('Doctor Status')).toBeTruthy();
-  expect(getByText('You can select')).toBeTruthy();
-  expect(getByText('Updates automatically')).toBeTruthy();
   expect(getByTestId('sheet-status-available')).toBeTruthy();
   expect(getByTestId('sheet-status-scheduledOnly')).toBeTruthy();
 });
@@ -119,15 +117,14 @@ test('the sheet only commits the new status on Save', () => {
   expect(queryByTestId('sheet-status-paused')).toBeNull();
 });
 
-test('automatic statuses are listed but not selectable', () => {
-  const { getByTestId, getAllByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
+test('the sheet no longer lists the automatic statuses — only the manual picks', () => {
+  const { getByTestId, queryByTestId, queryByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
   fireEvent.press(getByTestId('status-trigger'));
 
   ['requestPending', 'inConsultation', 'completingNotes'].forEach((k) =>
-    expect(getByTestId(`sheet-auto-${k}`)).toBeTruthy()
+    expect(queryByTestId(`sheet-auto-${k}`)).toBeNull()
   );
-  // each carries the Automatic badge, and none is a radio option
-  expect(getAllByText('Automatic')).toHaveLength(3);
+  expect(queryByText('Automatic')).toBeNull();
   expect(() => getByTestId('sheet-status-completingNotes')).toThrow();
 });
 
@@ -147,10 +144,11 @@ test('Follow-up Alerts renders beside Pending Clinical Tasks', () => {
   expect(getByText('Due Today')).toBeTruthy();
 });
 
-test('earnings exposes its own action, and feedback is no longer on the dashboard', () => {
-  const { getByTestId, queryByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
+test('earnings and patient feedback each expose their own action', () => {
+  const { getByTestId, getByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
   expect(getByTestId('view-earnings')).toBeTruthy();
-  expect(queryByText('Patient Feedback')).toBeNull();
+  expect(getByTestId('view-reviews')).toBeTruthy();
+  expect(getByText('Patient Feedback')).toBeTruthy();
 });
 
 test("summary tiles drop the redundant per-tile 'Today' label", () => {
@@ -159,7 +157,7 @@ test("summary tiles drop the redundant per-tile 'Today' label", () => {
   expect(getByText("Today's Summary")).toBeTruthy();
   // no tile repeats it (Next Appointment and Earnings keep their own, which
   // are meaningful there rather than redundant)
-  ['appts', 'done', 'up', 'noshow', 'sum'].forEach((k) => {
+  ['appts', 'done', 'up'].forEach((k) => {
     expect(within(getByTestId(`tile-${k}`)).queryByText('Today')).toBeNull();
   });
   // count still sits beside the icon

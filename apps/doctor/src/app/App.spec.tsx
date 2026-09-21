@@ -89,3 +89,43 @@ test('Verify button unlocks only once all six digits are filled', () => {
   expect(getByTestId('verify')).toBeEnabled();
   jest.useRealTimers();
 });
+
+/* ------------------------- onboarding after sign-in ----------------------- */
+
+/** Sign in far enough to land on the screen that follows OTP. */
+const signIn = (r: ReturnType<typeof render>) => {
+  fireEvent.changeText(r.getByTestId('phone-input'), '9876543210');
+  fireEvent.press(r.getByTestId('cta'));
+  act(() => {
+    jest.advanceTimersByTime(1000);
+  });
+  for (let i = 0; i < 6; i++) {
+    fireEvent.changeText(r.getByTestId(`otp-${i}`), String(i + 1));
+  }
+  fireEvent.press(r.getByTestId('verify'));
+};
+
+test('OTP leads into onboarding, not straight into the shell', () => {
+  jest.useFakeTimers();
+  const r = render(<App />);
+  signIn(r);
+
+  // the document-verification flow, starting at its first step
+  expect(r.getByText('Basic Details')).toBeTruthy();
+  expect(r.getByText('Proof of Identity')).toBeTruthy();
+  // the five-tab shell is not reachable until the submission is made
+  expect(r.queryByTestId('tab-dashboard')).toBeNull();
+  r.unmount();
+  jest.useRealTimers();
+});
+
+test('backing out of the first onboarding step returns to sign-in', () => {
+  jest.useFakeTimers();
+  const r = render(<App />);
+  signIn(r);
+
+  fireEvent.press(r.getByTestId('back'));
+  expect(r.getByTestId('heading')).toHaveTextContent(/Doctor login/i);
+  r.unmount();
+  jest.useRealTimers();
+});

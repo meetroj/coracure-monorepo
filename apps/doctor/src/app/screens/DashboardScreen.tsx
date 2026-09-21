@@ -5,29 +5,36 @@ import { colors, radius, spacing, typography } from '../../theme/brand';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen, AppHeader, IconButton, Card, Avatar, Button, SectionHeader, StatusPill } from '../../components/ui';
 import StatusSheet from '../../components/StatusSheet';
+import { Stars } from './ReviewsScreen';
 import {
   doctor,
   todaySummary,
   clinicalTasks,
   followUpAlerts,
   earnings,
+  feedback,
   nextAppointment,
   inr,
   STATUS_LABEL,
   isAutoStatus,
   acceptsInstantRequests,
   type LiveStatus,
+  type ManualStatus,
 } from '../../data/doctor';
 
 type Props = {
   onOpenTasks: () => void;
   onOpenAlerts: () => void;
   onOpenEarnings: () => void;
+  onOpenReviews?: () => void;
   onViewAppointment: () => void;
   onOpenNextAppointment?: () => void;
   onJoinConsultation: () => void;
   onOpenRequest?: () => void;
   onOpenMessages?: () => void;
+  /** Lifted to AppShell so a real consultation/notes-pending state can override the manual pick. */
+  status?: LiveStatus;
+  onChangeStatus?: (s: ManualStatus) => void;
 };
 
 type SummaryTile = { key: string; icon: IconName; value: number; label: string; tone: 'brand' | 'warn' | 'danger' };
@@ -47,22 +54,26 @@ const stackTiles: SummaryTile[] = [
   { key: 'done', icon: 'checkCircle', value: todaySummary.completed, label: 'Completed', tone: 'brand' },
   { key: 'up', icon: 'clock', value: todaySummary.upcoming, label: 'Upcoming', tone: 'brand' },
 ];
-const wideTiles: SummaryTile[] = [
-  { key: 'noshow', icon: 'close', value: todaySummary.noShow, label: 'No-show / Cancelled', tone: 'danger' },
-  { key: 'sum', icon: 'document', value: todaySummary.pendingSummaries, label: 'Pending Summaries', tone: 'warn' },
-];
 
 export const DashboardScreen = ({
   onOpenTasks,
   onOpenAlerts,
   onOpenEarnings,
+  onOpenReviews,
   onViewAppointment,
   onOpenNextAppointment,
   onJoinConsultation,
   onOpenRequest,
   onOpenMessages,
+  status: statusProp,
+  onChangeStatus,
 }: Props) => {
-  const [status, setStatus] = useState<LiveStatus>('offline');
+  // Uncontrolled fallback so a screen rendered standalone (tests, previews)
+  // still works; AppShell drives the real thing so it can force an auto
+  // status (in a consultation, notes pending) regardless of what's picked.
+  const [localStatus, setLocalStatus] = useState<LiveStatus>('offline');
+  const status = statusProp ?? localStatus;
+  const setStatus = onChangeStatus ?? setLocalStatus;
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const locked = isAutoStatus(status);
@@ -151,24 +162,6 @@ export const DashboardScreen = ({
             ))}
           </View>
         </View>
-
-        {/* bottom — one common bar spanning the full width */}
-        <View style={[s.tileBase, s.wideTile]}>
-          {wideTiles.map((t, i) => (
-            <React.Fragment key={t.key}>
-              {i > 0 && <View style={s.wideDivider} />}
-              <View testID={`tile-${t.key}`} style={s.wideCell}>
-                <View style={[s.tileIcon, t.tone === 'danger' ? s.tileIconDanger : s.tileIconWarn]}>
-                  <Icon name={t.icon} size={15} color={t.tone === 'danger' ? colors.danger : colors.warn} />
-                </View>
-                <View style={s.flex}>
-                  <Text style={s.stackValue}>{t.value}</Text>
-                  <Text style={s.stackLabel} numberOfLines={2}>{t.label}</Text>
-                </View>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
       </View>
 
       {/* next appointment */}
@@ -233,7 +226,7 @@ export const DashboardScreen = ({
           </View>
 
           <View style={s.nextActions}>
-            <Button testID="next-view-details" label="View Details" variant="secondary" size="sm" onPress={onOpenNextAppointment ?? onViewAppointment} style={s.actionBtnSmall} />
+            <Button testID="next-view-details" label="View Details" variant="outlineLight" size="sm" onPress={onOpenNextAppointment ?? onViewAppointment} style={s.actionBtnSmall} />
             <Button label="Join Consultation" icon="video" variant="accent" size="sm" onPress={onJoinConsultation} style={s.joinBtnSmall} />
           </View>
         </View>
@@ -278,7 +271,7 @@ export const DashboardScreen = ({
         </Card>
       </View>
 
-      {/* earnings */}
+      {/* earnings + patient feedback */}
       <View style={s.twoUpBottom}>
         <Card testID="view-earnings" style={s.bottomCard} onPress={onOpenEarnings}>
           <View style={s.halfHead}>
@@ -289,13 +282,26 @@ export const DashboardScreen = ({
           <View style={s.earnCompact}>
             <View style={s.earnCol}>
               <Text style={s.earnLabel}>Today's Earnings</Text>
-              <Text style={s.earnGreen}>{inr(earnings.today)}</Text>
+              <Text style={s.earnGreen} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{inr(earnings.today)}</Text>
             </View>
             <View style={s.earnRule} />
             <View style={s.earnCol}>
               <Text style={s.earnLabel}>This week</Text>
-              <Text style={s.earnGreenMid}>{inr(earnings.week)}</Text>
+              <Text style={s.earnGreenMid} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{inr(earnings.week)}</Text>
             </View>
+          </View>
+        </Card>
+
+        <Card testID="view-reviews" style={s.bottomCard} onPress={onOpenReviews}>
+          <View style={s.halfHead}>
+            <View style={s.halfIconChip}><Icon name="star" size={19} color={colors.surfie} /></View>
+            <Text style={s.halfTitle} numberOfLines={2}>Patient Feedback</Text>
+            <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+          </View>
+          <View style={s.feedbackBlock}>
+            <Text style={s.feedbackRating}>{feedback.rating.toFixed(1)}</Text>
+            <Stars value={feedback.rating} size={14} />
+            <Text style={s.feedbackMeta}>Based on {feedback.reviews} reviews</Text>
           </View>
         </Card>
       </View>
@@ -347,8 +353,6 @@ const s = StyleSheet.create({
     borderColor: colors.surface.line,
   },
   tileIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface.selected, alignItems: 'center', justifyContent: 'center' },
-  tileIconDanger: { backgroundColor: colors.dangerSoft },
-  tileIconWarn: { backgroundColor: colors.warnSoft },
 
   // 132 = the two stacked tiles (62 each) plus the 8pt gap between them, so
   // the lead cell and the right-hand column always end flush.
@@ -365,9 +369,6 @@ const s = StyleSheet.create({
   stackValue: { fontFamily: typography.heading.family, fontSize: typography.size.lg, lineHeight: 22, fontWeight: '700', color: colors.ink },
   stackLabel: { fontFamily: typography.body.family, fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.inkMuted },
 
-  wideTile: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  wideCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  wideDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.surface.line, marginHorizontal: spacing.md },
 
   /**
    * Next Appointment sits on Surfie Green — the dark end of the brand palette —
@@ -423,11 +424,15 @@ const s = StyleSheet.create({
   halfTitle: { flex: 1, fontFamily: typography.heading.family, fontSize: 12.5, lineHeight: 16, fontWeight: '700', color: colors.ink, flexShrink: 1 },
 
   earnCompact: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.md },
-  earnCol: { flex: 1, gap: 2 },
+  earnCol: { flex: 1, minWidth: 0, gap: 2 },
   earnRule: { width: 1, height: 32, backgroundColor: colors.surface.line, marginHorizontal: spacing.md },
   earnLabel: { fontFamily: typography.body.family, fontSize: typography.size.xs, color: colors.inkMuted },
-  earnGreen: { fontFamily: typography.heading.family, fontSize: typography.size.xl, fontWeight: '700', color: colors.surfie },
-  earnGreenMid: { fontFamily: typography.heading.family, fontSize: typography.size.lg, fontWeight: '600', color: colors.surfie },
+  earnGreen: { fontFamily: typography.heading.family, fontSize: typography.size.lg, lineHeight: 22, fontWeight: '700', color: colors.surfie },
+  earnGreenMid: { fontFamily: typography.heading.family, fontSize: typography.size.lg, lineHeight: 22, fontWeight: '600', color: colors.surfie },
+
+  feedbackBlock: { marginTop: spacing.md, gap: 3 },
+  feedbackRating: { fontFamily: typography.heading.family, fontSize: typography.size.xl, fontWeight: '700', color: colors.ink },
+  feedbackMeta: { fontFamily: typography.body.family, fontSize: typography.size.xs, color: colors.inkMuted, marginTop: 1 },
 
   listBadge: { width: 24, height: 24, borderRadius: 10, backgroundColor: colors.surface.selected, alignItems: 'center', justifyContent: 'center' },
   listBadgeDanger: { width: 24, height: 24, borderRadius: 10, backgroundColor: colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },

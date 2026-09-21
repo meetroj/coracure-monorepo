@@ -131,23 +131,12 @@ export const ClarificationsScreen = ({
           }
         />
 
-        <View style={s.titleRow}>
-          <View style={s.flex}>
-            <PageTitle
-              title="Case Clarifications"
-              subtitle="Track and manage clarification queries"
-            />
-          </View>
-          <Pressable
-            testID="clarification-sort"
-            hitSlop={8}
-            style={s.sortBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Sort and filter"
-          >
-            <Icon name="filter" size={17} color={colors.surfie} />
-          </Pressable>
-        </View>
+        {/* The status chips below are the only filter — a second control in the
+            header would have offered the same thing twice. */}
+        <PageTitle
+          title="Case Clarifications"
+          subtitle="Track and manage clarification queries"
+        />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
           {CLARIFICATION_FILTERS.map((f) => {
@@ -206,18 +195,6 @@ const s = StyleSheet.create({
   content: { paddingBottom: 96 },
   pressed: { opacity: 0.8 },
 
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', paddingRight: spacing.lg },
-  sortBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-  },
 
   filterRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 2, marginTop: spacing.sm },
   chip: {

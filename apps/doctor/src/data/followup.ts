@@ -234,7 +234,7 @@ export const CARE_TABS: { key: ResourceKind; label: string }[] = [
 ];
 
 export const DEFAULT_SELECTED = ['r1', 'r2', 'r5'];
-export const NOTE_MAX = 200;
+export const NOTE_MAX = 1000;
 export const DEFAULT_NOTE =
   'Use these resources alongside your prescribed treatment and follow-up plan.';
 
@@ -291,8 +291,6 @@ export type RecommendedAction = {
 
 export const recommendedActions: RecommendedAction[] = [
   { key: 'followUp', line1: 'Advise', line2: 'Follow-up Booking', icon: 'calendar', tone: 'brand' },
-  { key: 'doctorReview', line1: 'Advise', line2: 'Doctor Review', icon: 'user', tone: 'warn' },
-  { key: 'emergency', line1: 'Emergency /', line2: 'In-Person Referral', icon: 'siren', tone: 'danger' },
 ];
 
 export const followUpDetail = {
@@ -313,4 +311,4 @@ export const followUpDetail = {
   trendLabel: 'Worsening',
 };
 
-export const NOTE_LIMIT = 500;
+export const NOTE_LIMIT = 1000;

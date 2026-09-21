@@ -54,13 +54,11 @@ test('clinical notes carries the specified patient line and identifiers', () => 
   expect(getByText('Rahul Sharma')).toBeTruthy();
   // identity now reads on one line: age, gender, patient id
   expect(getByText('32 • Male • ID: PT-10482')).toBeTruthy();
-  // the consultation link is stated in the footer notice instead
-  expect(getByText(/linked to consultation CON-10482/)).toBeTruthy();
   expect(getByText('View Profile')).toBeTruthy();
   expect(getByText('Autosaved')).toBeTruthy();
-  expect(getByText('Mark Clinical Doubt')).toBeTruthy();
+  expect(getByText('Refer for Clarification')).toBeTruthy();
   expect(getByText('Clinical Notes & Diagnosis')).toBeTruthy();
-  expect(getByText('Finalize & Save Note')).toBeTruthy();
+  expect(getByText('Save Notes')).toBeTruthy();
 });
 
 test('clinical notes carries the exact specified field content', () => {
@@ -86,8 +84,9 @@ test('clinical notes carries the exact specified field content', () => {
   expect(getByText('Provisional diagnosis: Generalised Anxiety Disorder')).toBeTruthy();
 
   fireEvent.press(getByTestId('section-risk'));
-  expect(getByText('Not reported')).toBeTruthy();
-  expect(getByText('No')).toBeTruthy();
+  // self-harm-thoughts and referral lines were removed by request; only the
+  // risk-category selector remains
+  expect(getByText('Moderate')).toBeTruthy();
 
   fireEvent.press(getByTestId('section-advice'));
   expect(getByText('Sleep routine guidance, breathing practice and scheduled clinical review.')).toBeTruthy();
@@ -178,7 +177,7 @@ test('case summary shows the specified header, patient block and helper text', (
   expect(getByText('Moderate')).toBeTruthy();
   expect(getByText('Generalised Anxiety Disorder')).toBeTruthy();
   expect(getByText('Write your case summary here...')).toBeTruthy();
-  expect(getByText('0/500')).toBeTruthy();
+  expect(getByText('0/1000')).toBeTruthy();
   expect(getByText('Submit Summary & Complete')).toBeTruthy();
 });
 

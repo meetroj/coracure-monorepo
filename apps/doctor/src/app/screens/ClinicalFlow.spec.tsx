@@ -22,7 +22,7 @@ test('every required clinical field is present and flagged', () => {
     'Chief Complaint',
     'Brief Clinical History',
     'Observations',
-    'Diagnosis or Provisional Diagnosis',
+    'Diagnosis',
     'Risk Assessment',
     'Advice or Treatment Plan',
     'Follow-up Plan',
@@ -48,12 +48,12 @@ test('risk accepts low, moderate or high, and moderate is the starting value', (
   expect(onSave).toHaveBeenCalledWith('high');
 });
 
-test('notes are linked to the consultation and audit logged', () => {
-  const { getByText } = render(<ClinicalNotesScreen appointment={appt} onBack={noop} />);
-  // the standing caption under the button was removed by request; the link to
-  // the consultation is what must survive
-  expect(getByText(/linked to consultation CON-10482/)).toBeTruthy();
-  expect(getByText(/audit logged/)).toBeTruthy();
+test('notes offer a way through to the case summary', () => {
+  const { getByTestId, getByText } = render(<ClinicalNotesScreen appointment={appt} onBack={noop} />);
+  // the consultation-link notice was removed by request; a direct case
+  // summary entry point replaced it
+  expect(getByTestId('open-case-summary')).toBeTruthy();
+  expect(getByText('Case Summary')).toBeTruthy();
 });
 
 /* ------------------------ prescription · DOC-CLN-02 ----------------------- */
@@ -86,15 +86,18 @@ test('a non-prescriber cannot save medicines and gets an advice plan', () => {
   });
 });
 
-test('warning signs cover self-harm and serious reactions', () => {
-  const { getByTestId, getByText } = render(
+test("the Don'ts section covers self-harm and serious reactions", () => {
+  const { getByText } = render(
     <EPrescriptionScreen appointment={appt} onBack={noop} />
   );
 
-  // Warning Signs is expanded on load — pressing here would collapse it.
-  expect(getByText('Any thought of self-harm, or of not wanting to be here.')).toBeTruthy();
+  // renamed from Warning Signs to a Don't framing, by request
+  expect(getByText("Don'ts")).toBeTruthy();
   expect(
-    getByText('Rash, swelling, severe drowsiness or any serious reaction to a medicine.')
+    getByText("Don't ignore thoughts of self-harm — contact your doctor or a helpline immediately.")
+  ).toBeTruthy();
+  expect(
+    getByText("Don't continue the medicine if you notice rash, swelling, severe drowsiness or any serious reaction.")
   ).toBeTruthy();
 });
 
@@ -160,7 +163,7 @@ test('the summary is mandatory: submit stays disabled until it is written', () =
     <CaseSummaryScreen appointment={appt} onBack={noop} onSubmit={onSubmit} />
   );
 
-  expect(getByText('0/500')).toBeTruthy();
+  expect(getByText('0/1000')).toBeTruthy();
   fireEvent.press(getByTestId('submit-summary'));
   expect(onSubmit).not.toHaveBeenCalled();
 

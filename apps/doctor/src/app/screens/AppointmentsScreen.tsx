@@ -38,7 +38,6 @@ const filterConfig: { key: Filter; label: string; icon?: IconName; activeColor: 
   { key: 'all',       label: 'All',                            activeColor: colors.surfie,   iconColor: colors.surfie },
   { key: 'completed', label: 'Completed', icon: 'check',       activeColor: colors.surfie,   iconColor: colors.surfie },
   { key: 'cancelled', label: 'Cancelled', icon: 'close',       activeColor: colors.danger,   iconColor: colors.danger },
-  { key: 'noShow',    label: 'No-show',   icon: 'user',        activeColor: colors.inkMuted, iconColor: colors.inkMuted },
 ];
 
 export const AppointmentsScreen = ({
@@ -101,8 +100,9 @@ export const AppointmentsScreen = ({
           ))}
         </View>
 
-        {/* icon filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
+        {/* icon filter chips — three, so they share the row evenly rather than
+            hugging the left with dead space to the right. */}
+        <View style={s.filterRow}>
           {filterConfig.map(({ key, label, icon, activeColor, iconColor }) => {
             const active = filter === key;
             return (
@@ -122,7 +122,7 @@ export const AppointmentsScreen = ({
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       </View>
 
       {/* ── scrollable list ── */}
@@ -246,9 +246,10 @@ const s = StyleSheet.create({
   bucketTextActive: { color: colors.white },
 
   /* icon filter chips */
-  filterRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
     paddingHorizontal: spacing.sm + 2, paddingVertical: 6,
     borderRadius: radius.md,
     borderWidth: 1.5, borderColor: colors.surface.line,

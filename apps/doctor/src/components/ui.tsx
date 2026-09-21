@@ -297,8 +297,12 @@ export const Button = ({
    * `accent` is the Paris Green CTA used on dark Surfie surfaces, where a
    * `primary` button would disappear into the background. Ink label, not
    * white — white on Paris Green fails contrast.
+   *
+   * `outlineLight` is the secondary action beside it on that same dark
+   * surface — a solid white `secondary` button reads as a stray white box
+   * there, so this keeps the outline but drops the fill.
    */
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent' | 'outlineLight';
   icon?: IconName;
   /** Place the icon after the label instead of before it. */
   iconRight?: boolean;
@@ -310,7 +314,11 @@ export const Button = ({
 }) => {
   const isPrimary = variant === 'primary';
   const isDanger = variant === 'danger';
-  const fg = variant === 'accent' ? colors.ink : isPrimary || isDanger ? colors.white : colors.surfie;
+  const fg =
+    variant === 'accent' ? colors.ink
+    : variant === 'outlineLight' ? colors.white
+    : isPrimary || isDanger ? colors.white
+    : colors.surfie;
   return (
     <Pressable
       testID={testID}
@@ -325,6 +333,7 @@ export const Button = ({
         variant === 'ghost' && s.btnGhost,
         variant === 'danger' && s.btnDanger,
         variant === 'accent' && s.btnAccent,
+        variant === 'outlineLight' && s.btnOutlineLight,
         (disabled || loading) && s.btnDisabled,
         pressed && !disabled && s.pressed,
         style,
@@ -572,6 +581,7 @@ const s = StyleSheet.create({
   btnGhost: { backgroundColor: 'transparent' },
   btnDanger: { backgroundColor: colors.danger },
   btnAccent: { backgroundColor: colors.paris },
+  btnOutlineLight: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)' },
   btnDisabled: { opacity: 0.45 },
   btnText: { ...typeStyles.button },
   btnTextSm: { ...typeStyles.buttonSmall },

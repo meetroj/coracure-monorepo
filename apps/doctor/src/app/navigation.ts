@@ -34,7 +34,12 @@ export type RouteName =
   | 'expertCaseReview'
   | 'expertResponse'
   | 'profileDetails'
-  | 'helpSupport';
+  | 'helpSupport'
+  | 'consultationFee'
+  | 'consultationDuration'
+  | 'bankDetails'
+  | 'privacy'
+  | 'requestChanges';
 
 export type Route = {
   name: RouteName;
@@ -77,6 +82,11 @@ export const FULL_SCREEN: RouteName[] = [
   'expertResponse',
   'profileDetails',
   'helpSupport',
+  'consultationFee',
+  'consultationDuration',
+  'bankDetails',
+  'privacy',
+  'requestChanges',
 ];
 
 /**

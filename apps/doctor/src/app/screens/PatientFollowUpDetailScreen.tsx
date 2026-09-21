@@ -14,6 +14,7 @@ import {
   NOTE_LIMIT,
   type DayState,
 } from '../../data/followup';
+import { threads, type ChatThread } from '../../data/messaging';
 
 const MINT = '#E8F8F2';
 const LINE = '#E1EDE8';
@@ -55,17 +56,18 @@ const FACTS = [
 export const PatientFollowUpDetailScreen = ({
   onBack,
   onSave,
-  onEscalate,
+  onOpenChat,
 }: {
   onBack: () => void;
   onSave: (action: string, note: string) => void;
-  onEscalate?: () => void;
+  onOpenChat?: (thread: ChatThread) => void;
 }) => {
   const insets = useSafeAreaInsets();
   const d = followUpDetail;
   const [selectedDay, setSelectedDay] = useState(d.dayOf);
   const [action, setAction] = useState<string | null>('followUp');
   const [note, setNote] = useState('');
+  const thread = threads.find((t) => t.name === d.name);
 
   return (
     <View style={s.root}>
@@ -76,9 +78,22 @@ export const PatientFollowUpDetailScreen = ({
             <Icon name="arrowLeft" size={18} color={INK} />
           </Pressable>
           <Text style={[typeStyles.body, s.appTitle]}>Patient Follow-up Detail</Text>
-          <Pressable hitSlop={10} style={s.iconBtn} accessibilityLabel="More options">
-            <Icon name="more" size={17} color={INK} />
-          </Pressable>
+          <View style={s.appBarActions}>
+            {thread && (
+              <Pressable
+                testID="open-chat"
+                onPress={() => onOpenChat?.(thread)}
+                hitSlop={10}
+                style={s.iconBtn}
+                accessibilityLabel={`Message ${d.name}`}
+              >
+                <Icon name="message" size={17} color={INK} />
+              </Pressable>
+            )}
+            <Pressable hitSlop={10} style={s.iconBtn} accessibilityLabel="More options">
+              <Icon name="more" size={17} color={INK} />
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -252,11 +267,7 @@ export const PatientFollowUpDetailScreen = ({
                   <Pressable
                     key={a.key}
                     testID={`action-${a.key}`}
-                    onPress={() => {
-                      setAction(a.key);
-                      // the referral tile is the escalation path
-                      if (a.tone === 'danger') onEscalate?.();
-                    }}
+                    onPress={() => setAction(a.key)}
                     style={[s.actionTile, { backgroundColor: t.bg }, on && { borderColor: t.fg }]}
                     accessibilityRole="radio"
                     accessibilityState={{ selected: on }}
@@ -318,6 +329,7 @@ const s = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   appTitle: { ...typeStyles.pageTitle, fontSize: 16, color: INK },
+  appBarActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconBtn: {
     width: 32,
     height: 32,

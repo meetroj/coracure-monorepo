@@ -67,4 +67,5 @@ export const supportIssues: SupportIssue[] = [
 export const supportContact = {
   email: 'support@coracure.com',
   phone: '+91 98765 43210',
+  whatsapp: '+91 98765 43210',
 };

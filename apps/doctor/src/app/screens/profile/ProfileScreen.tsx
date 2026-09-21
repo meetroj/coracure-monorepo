@@ -1,6 +1,6 @@
 import { typeStyles } from '../../../../../../libs/typography/src';
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Linking } from 'react-native';
 
 import { colors, spacing, typography } from '../../../theme/brand';
 import { Icon } from '../../../components/Icon';
@@ -16,6 +16,7 @@ import {
   ListRow,
 } from '../../../components/ui';
 import { doctor, inr } from '../../../data/doctor';
+import { supportContact } from '../../../data/support';
 
 /**
  * Full profile — only reachable once verification is approved AND the
@@ -34,14 +35,9 @@ export const ProfileScreen = ({
   onOpen: (key: string) => void;
 }) => (
   <Screen>
-    <AppHeader
-      right={
-        <>
-          <IconButton name="bell" badge label="Notifications" />
-          <IconButton name="settings" label="Settings" onPress={() => onOpen('settings')} />
-        </>
-      }
-    />
+    {/* No settings icon: every setting this screen owns is a row below, and a
+        gear in the header would only have duplicated them. */}
+    <AppHeader right={<IconButton name="bell" badge label="Notifications" onPress={() => onOpen('notifications')} />} />
     <PageTitle title="Profile" />
 
     {/* identity */}
@@ -136,7 +132,14 @@ export const ProfileScreen = ({
     </Card>
 
     <Card style={[s.listCard, s.spaced]} tone="mint">
-      <ListRow compact icon="headset" title="Help and support" subtitle="24/7 assistance" onPress={() => onOpen('help')} last />
+      <ListRow compact icon="headset" title="Help and support" subtitle="24/7 assistance" onPress={() => onOpen('help')} />
+      <ListRow compact
+        icon="message"
+        title="WhatsApp Support"
+        subtitle={supportContact.whatsapp}
+        onPress={() => Linking.openURL(`https://wa.me/${supportContact.whatsapp.replace(/[^\d]/g, '')}`)}
+        last
+      />
     </Card>
 
     <Card style={[s.listCard, s.spaced]}>
@@ -152,10 +155,6 @@ export const ProfileScreen = ({
     <Card style={[s.listCard, s.spaced, s.logoutCard]}>
       <ListRow compact icon="logout" title="Log out" danger onPress={onLogout} last />
     </Card>
-
-    <Text style={[typeStyles.body, s.footNote]}>
-      Professional and verification details approved by an administrator cannot be edited directly.
-    </Text>
   </Screen>
 );
 
@@ -175,7 +174,6 @@ const s = StyleSheet.create({
   listCard: { paddingVertical: 0, paddingHorizontal: 12 },
   spaced: { marginTop: spacing.md },
   logoutCard: { backgroundColor: colors.dangerSoft, borderColor: '#F7D5D3' },
-  footNote: { ...typeStyles.helper, color: colors.inkFaint, textAlign: 'center', marginTop: spacing.lg, paddingHorizontal: spacing.xl },
 });
 
 export default ProfileScreen;

@@ -8,10 +8,8 @@ import { Icon, type IconName } from '../../components/Icon';
 import {
   patientAlerts,
   sortedAlerts,
-  ALERT_CATEGORY,
   ALERT_STATUS,
   ALERT_CHIPS,
-  SORT_OPTIONS,
   type AlertCategory,
   type PatientAlert,
 } from '../../data/followup';
@@ -44,25 +42,14 @@ export const FollowUpAlertsScreen = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [chip, setChip] = useState<AlertCategory | 'all'>('all');
-  const [sort, setSort] = useState<(typeof SORT_OPTIONS)[number]>('Newest');
   const [acked, setAcked] = useState<string[]>([]);
 
-  const list = useMemo(() => {
-    const out = chip === 'all' ? patientAlerts : patientAlerts.filter((a) => a.category === chip);
-    // "Alert type" groups by severity rank. "Newest" keeps authored order,
-    // which is already newest-first — but red flags are pinned to the top
-    // either way, because a red flag must never sit below a routine alert.
-    if (sort === 'Alert type') return sortedAlerts(out);
-    return [
-      ...out.filter((a) => a.category === 'redFlag'),
-      ...out.filter((a) => a.category !== 'redFlag'),
-    ];
-  }, [chip, sort]);
-
-  const heading =
-    chip === 'all'
-      ? `${list.length} Alert${list.length === 1 ? '' : 's'}`
-      : `${list.length} ${ALERT_CATEGORY[chip].label} Alert${list.length === 1 ? '' : 's'}`;
+  // Severity rank is the only order. There is no sort control, because a red
+  // flag must never be sortable below a routine alert.
+  const list = useMemo(
+    () => sortedAlerts(chip === 'all' ? patientAlerts : patientAlerts.filter((a) => a.category === chip)),
+    [chip]
+  );
 
   return (
     <View style={s.root}>
@@ -128,31 +115,6 @@ export const FollowUpAlertsScreen = ({
             );
           })}
         </ScrollView>
-
-        <View style={s.controls}>
-          <Text style={s.countLabel}>{heading}</Text>
-          <View style={s.flex} />
-          <Pressable
-            testID="sort"
-            onPress={() => setSort((v) => (v === 'Newest' ? 'Alert type' : 'Newest'))}
-            style={s.sortBtn}
-            hitSlop={6}
-            accessibilityRole="button"
-            accessibilityLabel={`Sorted by ${sort}`}
-          >
-            <Text style={s.sortText}>{sort}</Text>
-            <Icon name="chevronDown" size={14} color={colors.ink} />
-          </Pressable>
-          <Pressable
-            testID="status-filter"
-            style={s.filterBtn}
-            hitSlop={6}
-            accessibilityRole="button"
-            accessibilityLabel="Filter alerts"
-          >
-            <Icon name="filter" size={16} color={colors.ink} />
-          </Pressable>
-        </View>
 
         {list.length === 0 ? (
           <View style={s.empty}>
@@ -340,38 +302,6 @@ const s = StyleSheet.create({
   chipCountText: { fontFamily: typography.body.family, fontSize: 11, fontWeight: '700' },
   chipCountTextOn: { color: colors.white },
 
-  /* controls */
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  countLabel: { fontFamily: typography.heading.family, fontSize: 14, fontWeight: '700', color: colors.ink },
-  sortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    borderRadius: 10,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-  },
-  sortText: { fontFamily: typography.body.family, fontSize: 12, fontWeight: '600', color: colors.ink },
-  filterBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   /* card */
   card: {

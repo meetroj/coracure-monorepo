@@ -1,6 +1,6 @@
 import { typeStyles } from '../../../../../libs/typography/src';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import LogoWide from '../../assets/brand/logo-wide.svg';
@@ -49,6 +49,33 @@ const DocTile = ({ doc, onPress }: { doc: UploadedDoc; onPress: () => void }) =>
   </Pressable>
 );
 
+/**
+ * Asks the patient for a document that is not here yet. Sized like a `DocTile`
+ * so it sits in the same row, outlined rather than filled so it never reads as
+ * a document that already exists.
+ */
+const RequestDocTile = ({ onPress }: { onPress: () => void }) => (
+  <Pressable
+    testID="request-document"
+    style={s.doc}
+    onPress={onPress}
+    accessibilityRole="button"
+    accessibilityLabel="Request a document from the patient"
+  >
+    <View style={[s.docThumb, s.docThumbRequest]}>
+      <Icon name="upload" size={22} color={colors.surfie} />
+    </View>
+    <View style={s.docCaption}>
+      <Text style={[typeStyles.body, s.docTitle]} numberOfLines={1}>
+        Request document
+      </Text>
+      <Text style={[typeStyles.body, s.docMeta]} numberOfLines={1}>
+        Ask the patient
+      </Text>
+    </View>
+  </Pressable>
+);
+
 /* --------------------------------- screen --------------------------------- */
 
 export const AppointmentDetailsScreen = ({
@@ -58,6 +85,7 @@ export const AppointmentDetailsScreen = ({
   onMessage = () => undefined,
   onMore = () => undefined,
   onOpenDoc = () => undefined,
+  onRequestDoc = () => undefined,
   onViewHistory = () => undefined,
   onCopyId,
 }: {
@@ -67,13 +95,17 @@ export const AppointmentDetailsScreen = ({
   onMessage?: () => void;
   onMore?: () => void;
   onOpenDoc?: (id: string) => void;
+  /** Opens Request a Report (DOC-DOC-02) — the doctor asks, the patient supplies. */
+  onRequestDoc?: () => void;
   onViewHistory?: () => void;
   /** Copies the appointment reference. Needs a clipboard binding to do anything. */
   onCopyId?: (id: string) => void;
 }) => {
   const d = detailFor(appointment);
   const insets = useSafeAreaInsets();
-  const [payOpen, setPayOpen] = useState(false);
+  // What the doctor notes down for this patient's known conditions — not
+  // part of the intake, since the patient never reported it themselves.
+  const [medicalHistory, setMedicalHistory] = useState('');
   const joinable = appointment.state === 'confirmed';
 
   const stateLabel =
@@ -188,8 +220,8 @@ export const AppointmentDetailsScreen = ({
           </View>
         </View>
 
-        {/* ---------------------------- presenting concern ------------------------- */}
-        <Text style={[typeStyles.body, [s.sectionTitle, s.sectionSolo]]}>Presenting Concern</Text>
+        {/* ---------------------------- presenting complaint ------------------------ */}
+        <Text style={[typeStyles.body, [s.sectionTitle, s.sectionSolo]]}>Presenting Complaint</Text>
         <View style={s.quote}>
           <View style={s.quoteMark}>
             {/* Closing mark (&rdquo;, the "99" shape), not the opening one. */}
@@ -200,46 +232,61 @@ export const AppointmentDetailsScreen = ({
 
         {/* ------------------------------ intake summary --------------------------- */}
         <Text style={[typeStyles.body, [s.sectionTitle, s.sectionSolo]]}>Intake Summary</Text>
-        <View style={s.card}>
-          {d.intake.map((row, i) => (
-            <View key={row.key} style={[s.intakeRow, i < d.intake.length - 1 && s.intakeBorder]}>
-              <View style={s.intakeIcon}>
-                <Icon name={row.icon} size={14} color={colors.surfie} />
+        <View style={[s.card, s.intakeGrid]}>
+          {d.intake.map((row) => (
+            <View key={row.key} style={s.intakeCell}>
+              <View style={s.intakeCellHead}>
+                <View style={s.intakeIcon}>
+                  <Icon name={row.icon} size={14} color={colors.surfie} />
+                </View>
+                <Text style={[typeStyles.body, s.intakeLabel]} numberOfLines={1}>{row.label}</Text>
               </View>
-              <Text style={[typeStyles.body, s.intakeLabel]}>{row.label}</Text>
-              <Text style={[typeStyles.body, s.intakeValue]}>
-                {row.value}
-              </Text>
+              <Text style={[typeStyles.body, s.intakeValue]}>{row.value}</Text>
             </View>
           ))}
         </View>
 
-        {/* ---------------------------- uploaded documents ------------------------- */}
-        {d.documents.length > 0 && (
-          <>
-            <View style={s.sectionHead}>
-              <Text style={[typeStyles.body, s.sectionTitle]}>Uploaded Documents</Text>
-              <Pressable
-                hitSlop={8}
-                style={s.link}
-                accessibilityRole="button"
-                accessibilityLabel={`View all ${d.documents.length} documents`}
-              >
-                <Text style={[typeStyles.body, s.linkText]}>View all {d.documents.length}</Text>
-                <Icon name="chevronRight" size={14} color={colors.surfie} />
-              </Pressable>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.docRow}
+        {/* ---------------------------- medical history ----------------------------- */}
+        <Text style={[typeStyles.body, [s.sectionTitle, s.sectionSolo]]}>Medical History</Text>
+        <View style={[s.card, s.historyCard]}>
+          <TextInput
+            testID="medical-history"
+            value={medicalHistory}
+            onChangeText={setMedicalHistory}
+            multiline
+            placeholder="Note any known conditions — e.g. diabetes, high blood pressure, allergies…"
+            placeholderTextColor={colors.inkFaint}
+            style={[typeStyles.body, s.historyInput]}
+          />
+        </View>
+
+        {/* ---------------------------- uploaded documents -------------------------
+            Rendered even with nothing uploaded: an empty record is precisely
+            when the doctor needs to ask the patient for one. */}
+        <View style={s.sectionHead}>
+          <Text style={[typeStyles.body, s.sectionTitle]}>Uploaded Documents</Text>
+          {d.documents.length > 0 && (
+            <Pressable
+              hitSlop={8}
+              style={s.link}
+              accessibilityRole="button"
+              accessibilityLabel={`View all ${d.documents.length} documents`}
             >
-              {d.documents.map((doc) => (
-                <DocTile key={doc.id} doc={doc} onPress={() => onOpenDoc(doc.id)} />
-              ))}
-            </ScrollView>
-          </>
-        )}
+              <Text style={[typeStyles.body, s.linkText]}>View all {d.documents.length}</Text>
+              <Icon name="chevronRight" size={14} color={colors.surfie} />
+            </Pressable>
+          )}
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.docRow}
+        >
+          {d.documents.map((doc) => (
+            <DocTile key={doc.id} doc={doc} onPress={() => onOpenDoc(doc.id)} />
+          ))}
+          <RequestDocTile onPress={onRequestDoc} />
+        </ScrollView>
 
         {/* --------------------------------- consent ------------------------------- */}
         <Text style={[typeStyles.body, [s.sectionTitle, s.sectionSolo]]}>Consent</Text>
@@ -291,40 +338,6 @@ export const AppointmentDetailsScreen = ({
           </>
         )}
 
-        {/* --------------------------- payment (collapsed) ------------------------- */}
-        <Pressable
-          testID="payment-row"
-          onPress={() => setPayOpen((v) => !v)}
-          style={[s.card, s.payRow]}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: payOpen }}
-          accessibilityLabel="Payment and appointment information"
-        >
-          <View style={s.payIcon}>
-            <Icon name="wallet" size={15} color={colors.surfie} />
-          </View>
-          <Text style={[typeStyles.body, s.payTitle]}>Payment and appointment information</Text>
-          <Icon name={payOpen ? 'chevronDown' : 'chevronRight'} size={16} color={colors.inkFaint} />
-        </Pressable>
-
-        {payOpen && (
-          <View style={[s.card, s.payBody]}>
-            {[
-              ['Status', d.payment.state],
-              ['Transaction ID', d.payment.txnId],
-              ['Method', d.payment.method],
-              ['Consultation', modeLabel[appointment.mode]],
-              ['Appointment ID', d.appointmentId],
-            ].map(([k, v], i, arr) => (
-              <View key={k} style={[s.payLine, i < arr.length - 1 && s.intakeBorder]}>
-                <Text style={[typeStyles.body, s.intakeLabel]}>{k}</Text>
-                <Text style={[typeStyles.body, s.intakeValue]}>
-                  {v}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
       </Screen>
 
       {/* --------------------------------- footer -------------------------------- */}
@@ -507,25 +520,26 @@ const s = StyleSheet.create({
   },
   quoteText: { ...typeStyles.body, flex: 1, color: colors.ink },
 
-  /* intake */
-  intakeRow: {
+  /* intake — a 2-up grid, not a single stacked list */
+  intakeGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 11,
+    padding: spacing.sm,
   },
-  intakeBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  intakeCell: { flexBasis: '45%', flexGrow: 1, minWidth: 0, gap: 3 },
+  intakeCellHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   intakeIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
     backgroundColor: colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
-  intakeLabel: { ...typeStyles.label, width: 92, color: colors.inkMuted },
-  intakeValue: { ...typeStyles.body, flex: 1, color: colors.ink },
+  intakeLabel: { ...typeStyles.caption, flexShrink: 1, color: colors.inkMuted },
+  intakeValue: { ...typeStyles.bodySmall, color: colors.ink, marginLeft: 22 + spacing.sm },
 
   /* documents */
   docRow: { paddingHorizontal: spacing.lg, gap: spacing.md },
@@ -539,6 +553,12 @@ const s = StyleSheet.create({
     padding: spacing.md,
     gap: 5,
     justifyContent: 'center',
+  },
+  docThumbRequest: {
+    borderStyle: 'dashed',
+    borderColor: colors.surfie,
+    backgroundColor: colors.successSoft,
+    alignItems: 'center',
   },
   docLine: { height: 4, borderRadius: 2, backgroundColor: colors.surface.line },
   // Stacked: title, then the upload date on its own line beneath.
@@ -583,31 +603,9 @@ const s = StyleSheet.create({
   pastTitle: { ...typeStyles.cardTitle, color: colors.ink, marginTop: 1 },
   pastNote: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
 
-  /* payment */
-  payRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    marginTop: SECTION_GAP,
-  },
-  payIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    backgroundColor: colors.successSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  payTitle: { ...typeStyles.cardTitle, flex: 1, color: colors.ink },
-  payBody: { marginTop: spacing.sm },
-  payLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-  },
+  /* medical history */
+  historyCard: { padding: spacing.md },
+  historyInput: { color: colors.ink, minHeight: 60, textAlignVertical: 'top' },
 
   /* sticky footer */
   footer: {

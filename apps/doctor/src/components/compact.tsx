@@ -341,7 +341,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
   },
   headerSide: { width: 56, justifyContent: 'center' },
-  headerRight: { alignItems: 'flex-end' },
+  /* a text action needs more than the back arrow does, so this side grows to
+     fit rather than wrapping "Save Draft" onto a second line */
+  headerRight: { width: 'auto', minWidth: 56, flexShrink: 0, alignItems: 'flex-end' },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { ...typeStyles.pageTitle, color: C.ink },
 
@@ -478,7 +480,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.white,
     gap: 6,
   },
-  footNote: { ...typeStyles.helper, color: C.muted },
+  footNote: { ...typeStyles.helper, color: C.muted, textAlign: 'center' },
   footRow: { flexDirection: 'row', gap: 8 },
   ghost: {
     flex: 1,

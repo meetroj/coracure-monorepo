@@ -219,6 +219,15 @@ export const HelpSupportScreen = ({
             <Icon name="phone" size={14} color={colors.surfie} />
             <Text style={[typeStyles.body, s.contactRowText]}>{supportContact.phone}</Text>
           </Pressable>
+          <Pressable
+            testID="contact-whatsapp"
+            onPress={() => Linking.openURL(`https://wa.me/${supportContact.whatsapp.replace(/[^\d]/g, '')}`)}
+            style={s.contactRow}
+            accessibilityRole="link"
+          >
+            <Icon name="message" size={14} color={colors.surfie} />
+            <Text style={[typeStyles.body, s.contactRowText]}>WhatsApp: {supportContact.whatsapp}</Text>
+          </Pressable>
         </View>
       </Screen>
     </View>

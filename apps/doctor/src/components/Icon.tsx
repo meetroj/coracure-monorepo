@@ -11,6 +11,7 @@ export type IconName =
   | 'calendar'
   | 'folder'
   | 'clock'
+  | 'hourglass'
   | 'user'
   | 'bell'
   | 'settings'
@@ -52,6 +53,8 @@ export type IconName =
   | 'pause'
   | 'info'
   | 'heart'
+  | 'thumbsUp'
+  | 'bookmark'
   | 'flag'
   | 'trendUp'
   | 'sort'
@@ -68,6 +71,7 @@ export type IconName =
   | 'download'
   | 'barChart'
   | 'reroute'
+  | 'reply'
   | 'brain'
   | 'moon'
   | 'leaf'
@@ -83,10 +87,14 @@ export type IconName =
   | 'faceFrown'
   | 'siren'
   | 'refresh'
+  | 'chevronUp'
+  | 'pageFold'
   | 'eye'
   | 'clip'
   | 'upload'
-  | 'mail';
+  | 'mail'
+  | 'expand'
+  | 'collapse';
 
 type Props = {
   name: IconName;
@@ -94,10 +102,12 @@ type Props = {
   color?: string;
   /** Fill variant for solid tab icons. */
   filled?: boolean;
+  /** Stroke weight. Raise it where a glyph has to carry emphasis on its own. */
+  weight?: number;
 };
 
-export const Icon = ({ name, size = 22, color = colors.surfie, filled = false }: Props) => {
-  const s = { stroke: color, strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
+export const Icon = ({ name, size = 22, color = colors.surfie, filled = false, weight = 1.8 }: Props) => {
+  const s = { stroke: color, strokeWidth: weight, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
   const solid = filled ? color : 'none';
 
   return (
@@ -118,6 +128,15 @@ export const Icon = ({ name, size = 22, color = colors.surfie, filled = false }:
         <>
           <Circle cx="12" cy="12" r="8.5" {...s} fill={solid} />
           <Path d="M12 7.5V12l3 2" {...s} stroke={filled ? colors.white : color} />
+        </>
+      )}
+      {/* The waiting-to-start counterpart of `clock`: money that has not begun
+          moving yet, rather than money already in transit. */}
+      {name === 'hourglass' && (
+        <>
+          <Path d="M7 3.5h10M7 20.5h10" {...s} />
+          <Path d="M8 3.5v3.2a4 4 0 001.5 3.1L12 12l-2.5 2.2A4 4 0 008 17.3v3.2" {...s} />
+          <Path d="M16 3.5v3.2a4 4 0 01-1.5 3.1L12 12l2.5 2.2a4 4 0 011.5 3.1v3.2" {...s} />
         </>
       )}
       {name === 'user' && (
@@ -324,6 +343,22 @@ export const Icon = ({ name, size = 22, color = colors.surfie, filled = false }:
           <Path d="M4 7l8 6 8-6" {...s} stroke={filled ? colors.white : color} />
         </>
       )}
+      {name === 'expand' && (
+        <>
+          <Path d="M8 3H5a2 2 0 00-2 2v3" {...s} />
+          <Path d="M21 8V5a2 2 0 00-2-2h-3" {...s} />
+          <Path d="M3 16v3a2 2 0 002 2h3" {...s} />
+          <Path d="M16 21h3a2 2 0 002-2v-3" {...s} />
+        </>
+      )}
+      {name === 'collapse' && (
+        <>
+          <Path d="M8 3v3a2 2 0 01-2 2H3" {...s} />
+          <Path d="M21 8h-3a2 2 0 01-2-2V3" {...s} />
+          <Path d="M3 16h3a2 2 0 012 2v3" {...s} />
+          <Path d="M16 21v-3a2 2 0 012-2h3" {...s} />
+        </>
+      )}
       {name === 'flask' && (
         <>
           <Path d="M10 3.5h4M10.5 3.5v6L5.5 18a2 2 0 001.8 3h9.4a2 2 0 001.8-3l-5-8.5v-6" {...s} />
@@ -365,6 +400,14 @@ export const Icon = ({ name, size = 22, color = colors.surfie, filled = false }:
           <Path d="M20 6.5V12h-5.5" {...s} />
         </>
       )}
+      {name === 'chevronUp' && <Polyline points="6,15 12,9 18,15" {...s} />}
+      {name === 'pageFold' && (
+        <>
+          {/* a sheet with its top-right corner turned down */}
+          <Path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" {...s} fill={solid} />
+          <Path d="M14 3v5h5" {...s} stroke={filled ? colors.white : color} />
+        </>
+      )}
       {name === 'eye' && (
         <>
           <Path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z" {...s} />
@@ -376,6 +419,12 @@ export const Icon = ({ name, size = 22, color = colors.surfie, filled = false }:
           <Circle cx="4.5" cy="12" r="1.8" fill={color} stroke="none" />
           <Path d="M6.5 12h3.5c2 0 3-2.5 5-2.5h4M6.5 12h3.5c2 0 3 2.5 5 2.5h4" {...s} />
           <Path d="M16.5 6.5L19.5 9.5 16.5 12.5" {...s} />
+        </>
+      )}
+      {name === 'reply' && (
+        <>
+          <Path d="M9.5 7L4.5 12l5 5" {...s} />
+          <Path d="M5 12h7.2c4.1 0 6.8 2.1 7.3 6-.1-6.2-3.1-9-7.3-9H9.5" {...s} />
         </>
       )}
       {name === 'pause' && (
@@ -397,6 +446,16 @@ export const Icon = ({ name, size = 22, color = colors.surfie, filled = false }:
           {...s}
           fill={solid}
         />
+      )}
+      {name === 'thumbsUp' && (
+        <Path
+          d="M7.5 10.5L11 4.8c.5-.8 1.7-.5 1.8.4l.2 3.3h4.5a2 2 0 011.9 2.6l-1.8 6.2a2 2 0 01-1.9 1.4H7.5M4 10.5h3.5v8H4z"
+          {...s}
+          fill={solid}
+        />
+      )}
+      {name === 'bookmark' && (
+        <Path d="M6.5 4.5a2 2 0 012-2h7a2 2 0 012 2v17l-5.5-3.6-5.5 3.6z" {...s} fill={solid} />
       )}
       {name === 'flag' && (
         <>

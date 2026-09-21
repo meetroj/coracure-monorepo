@@ -130,7 +130,6 @@ export const CaseDetailScreen = ({
   onOpenNotes,
   onOpenPrescription,
   onOpenSummary,
-  onOpenFollowUp,
   onOpenCheckins,
   onOpenClarification,
   recommended = [],
@@ -142,7 +141,6 @@ export const CaseDetailScreen = ({
   onOpenNotes?: () => void;
   onOpenPrescription?: () => void;
   onOpenSummary?: () => void;
-  onOpenFollowUp?: () => void;
   onOpenCheckins?: () => void;
   onOpenClarification?: () => void;
   /** Care Hub resources recommended for this consultation (DOC-FUP-04). */
@@ -298,21 +296,9 @@ export const CaseDetailScreen = ({
         />
 
         <RecordRow
-          testID="row-followup"
-          icon="calendar"
-          title="Follow-up Plan"
-          lines={
-            d.followUp
-              ? ['Follow-up scheduled on', `${d.followUp.dateLabel}  ·  ${d.followUp.mode}`]
-              : ['No follow-up assigned.']
-          }
-          onPress={onOpenFollowUp}
-        />
-
-        <RecordRow
           testID="row-checkins"
           icon="heart"
-          title="Check-in History"
+          title="Follow-up Plan"
           lines={
             d.checkins
               ? [`${d.checkins.count} Check-ins submitted`, `Latest on ${d.checkins.latest}`]

@@ -56,7 +56,7 @@ export const noteFields: NoteField[] = [
     key: 'complaint',
     label: 'Chief Complaint',
     required: true,
-    max: 300,
+    max: 1000,
     placeholder: 'What the patient came with, in clinical terms.',
     value: 'Anxiety, persistent restlessness and difficulty sleeping.',
   },
@@ -64,7 +64,7 @@ export const noteFields: NoteField[] = [
     key: 'history',
     label: 'Brief Clinical History',
     required: true,
-    max: 500,
+    max: 1000,
     placeholder: 'Onset, duration and course so far.',
     value:
       'Symptoms have continued for approximately two weeks and are affecting concentration and daily work.',
@@ -73,16 +73,16 @@ export const noteFields: NoteField[] = [
     key: 'observations',
     label: 'Observations',
     required: true,
-    max: 500,
+    max: 1000,
     placeholder: 'Mental state and presentation during the consultation.',
     value:
       'Patient is alert, oriented and cooperative. Speech is clear. Reports racing thoughts at night.',
   },
   {
     key: 'diagnosis',
-    label: 'Diagnosis or Provisional Diagnosis',
+    label: 'Diagnosis',
     required: true,
-    max: 300,
+    max: 1000,
     placeholder: 'State clearly whether provisional or confirmed.',
     value: 'Provisional diagnosis: Generalised Anxiety Disorder',
   },
@@ -90,7 +90,7 @@ export const noteFields: NoteField[] = [
     key: 'advice',
     label: 'Advice or Treatment Plan',
     required: true,
-    max: 500,
+    max: 1000,
     placeholder: 'What you advised, and why.',
     value: 'Sleep routine guidance, breathing practice and scheduled clinical review.',
   },
@@ -98,7 +98,7 @@ export const noteFields: NoteField[] = [
     key: 'followUp',
     label: 'Follow-up Plan',
     required: true,
-    max: 300,
+    max: 1000,
     placeholder: 'When to review, and what would bring it forward.',
     value: 'Review after seven days or earlier if symptoms worsen.',
   },
@@ -125,6 +125,9 @@ export type Medicine = {
   dose: string;
   frequency: string;
   duration: string;
+  /** How it is taken — with water, milk, food, etc. */
+  route: string;
+  quantity: string;
   instruction: string;
 };
 
@@ -136,6 +139,8 @@ export const draftMedicines: Medicine[] = [
     dose: '5 mg',
     frequency: 'Once daily',
     duration: '7 days',
+    route: 'With water',
+    quantity: '7 tablets',
     instruction: 'After dinner',
   },
   {
@@ -145,6 +150,8 @@ export const draftMedicines: Medicine[] = [
     dose: '0.25 mg',
     frequency: 'At bedtime',
     duration: '5 days',
+    route: 'With water',
+    quantity: '5 tablets',
     instruction: 'Use only as directed',
   },
 ];
@@ -155,13 +162,13 @@ export const adviceItems = [
   'Reduce caffeine after midday and avoid alcohol as a sleep aid.',
 ];
 
-/** Escalation guidance printed on the patient document. */
-export const warningSigns = [
-  'Any thought of self-harm, or of not wanting to be here.',
-  'Severe worsening of anxiety, or panic that does not settle.',
-  'Confusion, disorientation or unusual agitation.',
-  'Feeling unsafe or unable to cope alone.',
-  'Rash, swelling, severe drowsiness or any serious reaction to a medicine.',
+/** Escalation guidance printed on the patient document, framed as don'ts. */
+export const doNots = [
+  "Don't ignore thoughts of self-harm — contact your doctor or a helpline immediately.",
+  "Don't wait out severe anxiety or panic that does not settle — seek urgent care.",
+  "Don't dismiss confusion, disorientation or unusual agitation as normal.",
+  "Don't try to manage alone if you feel unsafe or unable to cope.",
+  "Don't continue the medicine if you notice rash, swelling, severe drowsiness or any serious reaction.",
 ];
 
 export const reportsRequested = ['Thyroid profile (T3, T4, TSH)', 'Sleep diary for seven nights'];
@@ -282,7 +289,7 @@ export type CompletionState = {
 };
 
 export const CASE_SUMMARY_MIN = 60;
-export const CASE_SUMMARY_MAX = 500;
+export const CASE_SUMMARY_MAX = 1000;
 
 /**
  * DOC-CLN-06: returns what is still missing, so the UI can list it without

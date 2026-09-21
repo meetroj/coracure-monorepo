@@ -96,7 +96,7 @@ export type ReportRequest = {
   fileIds: string[];
 };
 
-export const REASON_MAX = 300;
+export const REASON_MAX = 1000;
 
 export const newRequest = (over: Partial<ReportRequest> = {}): ReportRequest => ({
   id: 'rq-new',

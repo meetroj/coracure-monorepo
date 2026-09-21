@@ -15,7 +15,7 @@ test('tapping an appointment row opens details full-screen', () => {
   fireEvent.press(getByTestId('tab-appointments'));
   fireEvent.press(getByTestId('appt-a1'));
 
-  expect(getByText('Presenting Concern')).toBeTruthy();
+  expect(getByText('Presenting Complaint')).toBeTruthy();
   expect(getByText('Intake Summary')).toBeTruthy();
   // no bottom navigation on this screen
   expect(queryByTestId('tab-appointments')).toBeNull();
@@ -66,19 +66,6 @@ test('intake, documents and consent all render', () => {
   expect(getByText('Video follow-up')).toBeTruthy();
 });
 
-test('payment details stay collapsed until asked for', () => {
-  const { getByTestId, getByText, queryByText } = render(
-    <AppointmentDetailsScreen appointment={rahul} onBack={noop} />
-  );
-
-  expect(getByText('Payment and appointment information')).toBeTruthy();
-  expect(queryByText('CC2404287193')).toBeNull();
-
-  fireEvent.press(getByTestId('payment-row'));
-  expect(getByText('CC2404287193')).toBeTruthy();
-  expect(getByText('Transaction ID')).toBeTruthy();
-});
-
 test('join is offered for a confirmed appointment only', () => {
   const onJoin = jest.fn();
   const ok = render(<AppointmentDetailsScreen appointment={rahul} onBack={noop} onJoin={onJoin} />);
@@ -105,4 +92,27 @@ test('an appointment with no authored detail still opens usably', () => {
   const { getByText } = render(<AppointmentDetailsScreen appointment={cancelled} onBack={noop} />);
   expect(getByText('Cancelled')).toBeTruthy();
   expect(getByText('Intake Summary')).toBeTruthy();
+});
+
+// DOC-DOC-02: the doctor asks, the patient supplies. The option has to be
+// present when nothing has been uploaded — that is when it is most needed.
+test('uploaded documents offers a request option, whether or not any exist', () => {
+  const onRequestDoc = jest.fn();
+  const { getByTestId, getByText } = render(
+    <AppointmentDetailsScreen appointment={rahul} onBack={noop} onRequestDoc={onRequestDoc} />
+  );
+
+  expect(getByText('Uploaded Documents')).toBeTruthy();
+  fireEvent.press(getByTestId('request-document'));
+  expect(onRequestDoc).toHaveBeenCalled();
+});
+
+test('requesting a document from an appointment opens Request a Report', () => {
+  const { getByTestId, getByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
+
+  fireEvent.press(getByTestId('tab-appointments'));
+  fireEvent.press(getByTestId('appt-a1'));
+  fireEvent.press(getByTestId('request-document'));
+
+  expect(getByText('Request a Report')).toBeTruthy();
 });

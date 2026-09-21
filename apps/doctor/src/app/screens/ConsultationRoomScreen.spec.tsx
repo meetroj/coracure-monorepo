@@ -48,7 +48,7 @@ test('back after the call walks the post-call trail one step at a time', () => {
   // one more back returns to the appointment that opened the room — the ended
   // room itself is never re-entered, because `onEnd` replaced it.
   fireEvent.press(getByTestId('back'));
-  expect(getByText('Presenting Concern')).toBeTruthy();
+  expect(getByText('Presenting Complaint')).toBeTruthy();
 });
 
 test('the timer counts from the moment the doctor joined', () => {
@@ -163,4 +163,21 @@ test('the psychiatry action set excludes lab ordering', () => {
     expect(getByText(l)).toBeTruthy()
   );
   expect(queryByText('Order Lab Test')).toBeNull();
+});
+
+test('full screen expands the video and hides the header until collapsed', () => {
+  const { getByTestId, getByText, queryByText } = render(
+    <ConsultationRoomScreen appointment={rahul} onBack={noop} />
+  );
+
+  expect(getByText('Consultation Room')).toBeTruthy();
+  expect(getByText('Patient Summary')).toBeTruthy();
+
+  fireEvent.press(getByTestId('toggle-fullscreen'));
+  expect(queryByText('Consultation Room')).toBeNull();
+  expect(queryByText('Patient Summary')).toBeNull();
+
+  fireEvent.press(getByTestId('toggle-fullscreen'));
+  expect(getByText('Consultation Room')).toBeTruthy();
+  expect(getByText('Patient Summary')).toBeTruthy();
 });

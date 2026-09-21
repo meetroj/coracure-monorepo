@@ -86,6 +86,7 @@ const TemplateCard = ({
       accessibilityLabel={template.name}
     >
       <Pressable
+        onPress={(e) => e.stopPropagation()}
         hitSlop={8}
         style={s.moreBtn}
         accessibilityRole="button"
@@ -116,13 +117,17 @@ const TemplateCard = ({
         <Text style={[typeStyles.body, s.cardBody]} numberOfLines={2}>
           {template.description}
         </Text>
-        <View style={s.countRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.countRow}
+        >
           {counts.map((c) => (
             <View key={c} style={s.count}>
-              <Text style={[typeStyles.body, s.countText]}>{capitalize(c)}</Text>
+              <Text style={[typeStyles.body, s.countText]} numberOfLines={1}>{capitalize(c)}</Text>
             </View>
           ))}
-        </View>
+        </ScrollView>
       </View>
 
       {/* Fixed-width, never a flex item — this is what actually reserves the
@@ -138,7 +143,13 @@ const TemplateCard = ({
           <View key={label} style={s.action}>
             <Pressable
               testID={`${label.toLowerCase()}-${template.id}`}
-              onPress={() => fn(template.id)}
+              onPress={(e) => {
+                // The whole card is itself a Pressable (apply-on-tap) — without
+                // this, Android sometimes resolves the touch to the card
+                // underneath instead of this nested button.
+                e.stopPropagation();
+                fn(template.id);
+              }}
               hitSlop={6}
               style={[s.actionIcon, label === 'Delete' && s.actionIconDanger]}
               accessibilityRole="button"
@@ -299,9 +310,6 @@ export const ClinicalTemplatesScreen = ({
               );
             })}
           </ScrollView>
-          <Pressable hitSlop={8} style={s.chipMore} accessibilityRole="button" accessibilityLabel="More filters">
-            <Icon name="filter" size={15} color={colors.surfie} />
-          </Pressable>
         </View>
 
         {visible.length === 0 ? (
@@ -398,8 +406,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  chipRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.lg },
-  chips: { paddingVertical: spacing.md, paddingRight: spacing.sm, gap: spacing.sm },
+  chipRow: { flexDirection: 'row', alignItems: 'center' },
+  chips: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.sm },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -414,17 +422,6 @@ const s = StyleSheet.create({
   chipOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
   chipText: { ...typeStyles.status, color: colors.inkMuted },
   chipTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
-  chipMore: {
-    width: 34,
-    height: 34,
-    marginRight: spacing.lg,
-    borderRadius: 12,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   // One row: icon, flexible content, fixed-width actions. Compact by design —
   // ~14px padding + a tight type scale keeps the whole card near 105-115px
@@ -474,10 +471,11 @@ const s = StyleSheet.create({
     color: colors.inkMuted,
     marginTop: 4,
   },
-  // flexWrap, not a fixed row: a narrow card wraps a third chip to its own
-  // line rather than truncating any chip's text.
-  countRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
+  // A horizontal scroller, not a wrap: extra count chips scroll off to the
+  // right instead of stacking onto their own lines below the card body.
+  countRow: { flexDirection: 'row', gap: 6, marginTop: 5 },
   count: {
+    flexShrink: 0,
     backgroundColor: colors.surface.mintSoft,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,

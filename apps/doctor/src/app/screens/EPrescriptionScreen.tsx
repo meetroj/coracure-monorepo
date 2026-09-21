@@ -1,24 +1,27 @@
 import { typeStyles } from '../../../../../libs/typography/src';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 
 import { colors, radius, spacing, typography } from '../../theme/brand';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen } from '../../components/ui';
-import { PatientStrip, Section, Bullets, Notice } from '../../components/clinical';
+import { PatientStrip, Section, Bullets, Notice, FieldValue } from '../../components/clinical';
 import { detailFor, doctor, type Appointment } from '../../data/doctor';
 import {
   canPrescribe,
   draftMedicines,
   adviceItems,
-  warningSigns,
+  doNots,
   outputLabel,
+  noteFields,
   PROFESSIONAL_LABEL,
   type Medicine,
   type ProfessionalType,
 } from '../../data/clinical';
+
+const presentingComplaint = noteFields.find((f) => f.key === 'complaint')!;
 
 /**
  * E-Prescription & Advice — DOC-CLN-02.
@@ -83,6 +86,21 @@ const MedicineCard = ({
       ))}
     </View>
 
+    <View style={[s.medGrid, s.medGridSecond]}>
+      {([
+        { label: 'Route', value: medicine.route, icon: 'heart' },
+        { label: 'Quantity', value: medicine.quantity, icon: 'document' },
+      ] as { label: string; value: string; icon: IconName }[]).map((f) => (
+        <View key={f.label} style={s.medCell}>
+          <View style={s.medCellHead}>
+            <Icon name={f.icon} size={12} color={colors.surfie} />
+            <Text style={[typeStyles.body, s.medCellLabel]} numberOfLines={1}>{f.label}</Text>
+          </View>
+          <Text style={[typeStyles.body, s.medCellValue]}>{f.value}</Text>
+        </View>
+      ))}
+    </View>
+
     {/* Delete sits at the bottom, beside the instruction tile. */}
     <View style={s.medFoot}>
       <View style={[s.medCell, s.flex]}>
@@ -134,8 +152,9 @@ export const EPrescriptionScreen = ({
   const prescriber = canPrescribe(professionalType);
 
   const [medicines, setMedicines] = useState<Medicine[]>(prescriber ? draftMedicines : []);
-  // Both sections start expanded — the doctor fills them in every time.
-  const [open, setOpen] = useState<string[]>(['advice', 'warnings']);
+  const [historyAllergies, setHistoryAllergies] = useState('');
+  // All sections start expanded — the doctor fills them in every time.
+  const [open, setOpen] = useState<string[]>(['complaint', 'historyAllergies', 'advice', 'warnings']);
   /** Measured CTA size — percentage widths left a sliver of the fill uncovered. */
   const [ctaSize, setCtaSize] = useState({ w: 0, h: 0 });
   const toggle = (k: string) =>
@@ -167,7 +186,9 @@ export const EPrescriptionScreen = ({
             accessibilityLabel="Save draft"
           >
             <Icon name="document" size={14} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.draftText]}>Save Draft</Text>
+            <Text style={[typeStyles.body, s.draftText]} numberOfLines={1}>
+              Save Draft
+            </Text>
           </Pressable>
         </View>
 
@@ -177,6 +198,40 @@ export const EPrescriptionScreen = ({
           meta={`${appointment.gender} · ${appointment.age} years`}
           ids={[`Consultation ID: ${d.consultationId}`]}
         />
+
+        <Section
+          testID="section-complaint"
+          icon="message"
+          title="Presenting Complaint"
+          open={open.includes('complaint')}
+          onToggle={() => toggle('complaint')}
+        >
+          <FieldValue
+            value={presentingComplaint.value}
+            placeholder={presentingComplaint.placeholder}
+            max={presentingComplaint.max}
+          />
+        </Section>
+
+        <Section
+          testID="section-history-allergies"
+          icon="folder"
+          title="Diagnosis History & Allergies"
+          open={open.includes('historyAllergies')}
+          onToggle={() => toggle('historyAllergies')}
+        >
+          <View style={s.historyBox}>
+            <TextInput
+              testID="history-allergies"
+              style={[typeStyles.input, s.historyInput]}
+              value={historyAllergies}
+              onChangeText={(t) => setHistoryAllergies(t.slice(0, 1000))}
+              multiline
+              placeholder="Past diagnoses, ongoing conditions and known allergies…"
+              placeholderTextColor={colors.inkFaint}
+            />
+          </View>
+        </Section>
 
         <Pressable
           testID="load-template"
@@ -266,12 +321,12 @@ export const EPrescriptionScreen = ({
         <Section
           testID="section-warnings"
           icon="alertTriangle"
-          title="Warning Signs"
+          title="Don'ts"
           open={open.includes('warnings')}
           onToggle={() => toggle('warnings')}
         >
           <Text style={[typeStyles.body, s.warnLead]}>Seek urgent help if any of the following occur:</Text>
-          <Bullets items={warningSigns} />
+          <Bullets items={doNots} />
         </Section>
 
         <View style={s.preview}>
@@ -364,8 +419,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { ...typeStyles.pageTitle, flex: 1, color: colors.ink },
-  draftBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  draftText: { ...typeStyles.caption, color: colors.surfie },
+  draftBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
+  draftText: { ...typeStyles.caption, color: colors.surfie, flexShrink: 0 },
 
   // Full-width card row: icon, label, chevron.
   template: {
@@ -444,6 +499,7 @@ const s = StyleSheet.create({
    * number: the 32px badge plus the 8px head gap.
    */
   medGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, marginLeft: 32 + spacing.sm },
+  medGridSecond: { marginTop: spacing.sm },
   // Bordered tile per value — outline, not a fill.
   medCell: {
     flex: 1,
@@ -474,6 +530,14 @@ const s = StyleSheet.create({
   },
 
   warnLead: { ...typeStyles.caption, color: colors.danger, marginBottom: spacing.sm },
+
+  historyBox: {
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    borderRadius: 10,
+    padding: spacing.md,
+  },
+  historyInput: { color: colors.ink, minHeight: 60, padding: 0, textAlignVertical: 'top' },
 
   preview: {
     flexDirection: 'row',

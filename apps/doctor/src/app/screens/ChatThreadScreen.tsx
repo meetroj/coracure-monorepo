@@ -8,13 +8,14 @@ import {
   ScrollView,
   TextInput,
   StatusBar,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+
 import { colors } from '../../theme/brand';
 import { Icon } from '../../components/Icon';
+import { useKeyboardHeight } from '../../components/useKeyboard';
 import { C, SlimHeader, OverflowButton } from '../../components/compact';
 import { messagesByThread, MESSAGE_MAX, type ChatThread, type ChatMessage } from '../../data/messaging';
 
@@ -35,6 +36,10 @@ export const ChatThreadScreen = ({
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState('');
   const [sent, setSent] = useState<ChatMessage[]>([]);
+  // The safe-area inset clears the gesture bar when it's on screen — once the
+  // keyboard is up it covers that same area, so keeping the inset padding on
+  // top of it just leaves a gap above the keyboard.
+  const keyboard = useKeyboardHeight();
 
   const history = [...(messagesByThread[thread.id] ?? []), ...sent];
 
@@ -70,10 +75,7 @@ export const ChatThreadScreen = ({
         </View>
       )}
 
-      <KeyboardAvoidingView
-        style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={s.flex}>
         <ScrollView
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
@@ -100,7 +102,22 @@ export const ChatThreadScreen = ({
           })}
         </ScrollView>
 
-        <View style={[s.composer, { paddingBottom: insets.bottom + 8 }]}>
+        <View
+          style={[
+            s.composer,
+            { marginBottom: keyboard, paddingBottom: keyboard ? 8 : insets.bottom + 8 },
+          ]}
+        >
+          {/* Surfie → Paris hairline stands in for a plain grey divider. */}
+          <Svg style={s.composerAccent} height={2} width="100%">
+            <Defs>
+              <LinearGradient id="composerGrad" x1="0" y1="0" x2="1" y2="0">
+                <Stop offset="0" stopColor={colors.surfie} />
+                <Stop offset="1" stopColor={colors.paris} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width="100%" height={2} fill="url(#composerGrad)" />
+          </Svg>
           <Pressable testID="attach" hitSlop={8} style={s.attachBtn} accessibilityLabel="Attach file">
             <Icon name="clip" size={18} color={C.muted} />
           </Pressable>
@@ -112,6 +129,7 @@ export const ChatThreadScreen = ({
             placeholder="Write a message…"
             placeholderTextColor={C.muted}
             multiline
+            underlineColorAndroid="transparent"
           />
           <Pressable
             testID="send"
@@ -123,7 +141,7 @@ export const ChatThreadScreen = ({
             <Icon name="arrowRight" size={17} color={colors.white} />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 };
@@ -175,12 +193,11 @@ const s = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: C.line,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface.mint,
   },
+  composerAccent: { position: 'absolute', top: 0, left: 0, right: 0 },
   attachBtn: { height: 38, justifyContent: 'center' },
-  input: { ...typeStyles.input, flex: 1, minHeight: 38, maxHeight: 96, borderWidth: 1, borderColor: C.line, borderRadius: 999, paddingHorizontal: 12, paddingTop: 9, paddingBottom: 9, color: C.ink },
+  input: { ...typeStyles.input, flex: 1, minHeight: 38, maxHeight: 96, borderWidth: 1, borderColor: C.line, borderRadius: 999, backgroundColor: colors.white, paddingHorizontal: 12, paddingTop: 9, paddingBottom: 9, color: C.ink },
   sendBtn: {
     width: 38,
     height: 38,

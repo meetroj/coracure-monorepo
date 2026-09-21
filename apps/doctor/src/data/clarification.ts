@@ -98,11 +98,11 @@ export type ClarificationDraft = {
   files: { id: string; name: string }[];
 };
 
-export const HISTORY_MAX = 500;
-export const QUESTION_MAX = 500;
-export const REPLY_MAX = 500;
+export const HISTORY_MAX = 1000;
+export const QUESTION_MAX = 1000;
+export const REPLY_MAX = 1000;
 export const GUIDANCE_MAX = 1000;
-export const DECISION_MAX = 300;
+export const DECISION_MAX = 1000;
 
 export const initialDraft: ClarificationDraft = {
   caseId: 'CLR-2026-0184',

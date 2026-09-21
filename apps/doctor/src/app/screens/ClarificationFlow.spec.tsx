@@ -44,8 +44,11 @@ const wizard = (over = {}) =>
   render(<CreateClarificationScreen onCancel={noop} onSubmit={noop} {...over} />);
 
 test('step 1 shows only case details, not later steps', () => {
-  const { getByText, queryByText } = wizard();
+  const { getByText, getByTestId, queryByText } = wizard();
   expect(getByText('Create Clarification')).toBeTruthy();
+  expect(getByText('Select an existing case')).toBeTruthy();
+  expect(getByTestId('continue')).toBeDisabled();
+  fireEvent.press(getByTestId('select-case-c1'));
   expect(getByText('Case title')).toBeTruthy();
   expect(getByText('Brief clinical history')).toBeTruthy();
   // step 2 and 3 fields must not be on this page
@@ -54,18 +57,28 @@ test('step 1 shows only case details, not later steps', () => {
   expect(queryByText('Ready to share • Direct identifiers removed')).toBeNull();
 });
 
-test('the private source strip is marked not shared', () => {
-  const { getByText } = wizard();
-  expect(getByText('Rahul Sharma')).toBeTruthy();
-  expect(getByText('Private • not shared')).toBeTruthy();
-  expect(
-    getByText('Name, patient ID and contact details will be removed before sharing.')
-  ).toBeTruthy();
+test('choosing a case replaces the picker with that case, marked private', () => {
+  const { getByText, getAllByText, getByTestId, queryByTestId } = wizard();
+  fireEvent.press(getByTestId('select-case-c1'));
+
+  // the list is gone, so the chosen patient is named exactly once
+  expect(getAllByText('Rahul Sharma')).toHaveLength(1);
+  expect(queryByTestId('select-case-c2')).toBeNull();
+  expect(getByText('Private')).toBeTruthy();
+});
+
+test('the picker can be reopened to choose a different case', () => {
+  const { getByTestId } = wizard();
+  fireEvent.press(getByTestId('select-case-c1'));
+  fireEvent.press(getByTestId('change-case'));
+
+  expect(getByTestId('select-case-c2')).toBeTruthy();
 });
 
 test('stepping forward reaches the question step then the review', () => {
   const { getByTestId, getByText, getAllByText } = wizard();
 
+  fireEvent.press(getByTestId('select-case-c1'));
   fireEvent.press(getByTestId('continue'));
   expect(getByText('What guidance do you need?')).toBeTruthy();
   expect(getByText('Supporting files')).toBeTruthy();
@@ -78,6 +91,7 @@ test('stepping forward reaches the question step then the review', () => {
 
 test('the review preview never shows the patient name', () => {
   const { getByTestId, queryByText } = wizard();
+  fireEvent.press(getByTestId('select-case-c1'));
   fireEvent.press(getByTestId('continue'));
   fireEvent.press(getByTestId('continue'));
   expect(queryByText('Rahul Sharma')).toBeNull();
@@ -89,6 +103,7 @@ test('submission is gated on the identifier confirmation', () => {
   const onSubmit = jest.fn();
   const { getByTestId } = wizard({ onSubmit });
 
+  fireEvent.press(getByTestId('select-case-c1'));
   fireEvent.press(getByTestId('continue'));
   fireEvent.press(getByTestId('continue'));
   expect(getByTestId('submit')).toBeDisabled();
@@ -101,6 +116,7 @@ test('submission is gated on the identifier confirmation', () => {
 
 test('typing an identifier into the history warns the doctor', () => {
   const { getByTestId, getByText } = wizard();
+  fireEvent.press(getByTestId('select-case-c1'));
   fireEvent.changeText(getByTestId('history'), 'Patient PT-10482 reports poor sleep');
   expect(getByText('Possible identifier found — please review')).toBeTruthy();
 });
@@ -110,35 +126,33 @@ test('typing an identifier into the history warns the doctor', () => {
 const clar = (over = {}) =>
   render(<ExpertClarificationScreen onBack={noop} onSend={noop} {...over} />);
 
-test('clarification screen tracks status without a patient name', () => {
-  const { getByText, getAllByText, queryByText } = clar();
-  expect(getByText('CLR-2026-0184')).toBeTruthy();
-  // the state appears as the status badge and as the tracker's active step
-  expect(getAllByText('Clarification needed')).toHaveLength(2);
-  expect(getByText('De-identified • Internal only')).toBeTruthy();
+test('clarification screen shows the de-identified discussion', () => {
+  const { getByText, queryByText } = clar();
+  expect(getByText('D-23')).toBeTruthy();
+  expect(getByText('Generalized Anxiety Disorder')).toBeTruthy();
+  expect(getByText('3 Messages')).toBeTruthy();
   expect(queryByText('Rahul Sharma')).toBeNull();
 });
 
-test('close is not offered while a clarification is outstanding', () => {
-  const { queryByText, getByTestId } = clar();
-  expect(queryByText('Close Case')).toBeNull();
-  expect(queryByText('Close Thread')).toBeNull();
-  expect(getByTestId('send')).toBeTruthy();
+test('the composer and thread actions stay visible at the end', () => {
+  const { getByTestId } = clar();
+  expect(getByTestId('reply-input')).toBeTruthy();
+  expect(getByTestId('mark-reviewed')).toBeTruthy();
+  expect(getByTestId('close-thread')).toBeTruthy();
 });
 
 test('reply must have content before it can be sent', () => {
   const onSend = jest.fn();
   const { getByTestId } = clar({ onSend });
-  expect(getByTestId('send')).toBeDisabled();
-  fireEvent.changeText(getByTestId('reply'), 'Started four weeks ago, adherence consistent.');
-  fireEvent.press(getByTestId('send'));
+  expect(getByTestId('send-reply')).toBeDisabled();
+  fireEvent.changeText(getByTestId('reply-input'), 'Started four weeks ago, adherence consistent.');
+  fireEvent.press(getByTestId('send-reply'));
   expect(onSend).toHaveBeenCalledWith('Started four weeks ago, adherence consistent.');
 });
 
-test('the expert discussion is marked as hidden from the patient', () => {
-  const { getByText } = clar();
-  expect(getByText('Expert discussion is not shown to the patient.')).toBeTruthy();
-  expect(getByText('Every response and status change is time-stamped.')).toBeTruthy();
+test('the old discussion note card is removed', () => {
+  const { queryByText } = clar();
+  expect(queryByText(/This discussion is for expert collaboration/)).toBeNull();
 });
 
 /* ----------------------------- expert review ------------------------------ */
