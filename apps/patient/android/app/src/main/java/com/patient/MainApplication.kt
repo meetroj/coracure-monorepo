@@ -1,6 +1,7 @@
 package com.patient
 
 import android.app.Application
+import com.facebook.react.common.assets.ReactFontManager
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -35,6 +36,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    ReactFontManager.getInstance().addCustomFont(this, "Outfit", R.font.outfit)
+    ReactFontManager.getInstance().addCustomFont(this, "Inter", R.font.inter)
     SoLoader.init(this, OpenSourceMergedSoMapping)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.

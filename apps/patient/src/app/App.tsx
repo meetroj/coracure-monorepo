@@ -1,3 +1,4 @@
+import { typeStyles, fontWeight } from '../../../../libs/typography/src';
 /* eslint-disable jsx-a11y/accessible-emoji */
 import React, { useRef, useState } from 'react';
 import {
@@ -32,9 +33,9 @@ export const App = () => {
           style={styles.scrollView}
         >
           <View style={styles.section}>
-            <Text style={styles.textLg}>Hello there,</Text>
+            <Text style={[typeStyles.body, styles.textLg]}>Hello there,</Text>
             <Text
-              style={[styles.textXL, styles.appTitleText]}
+              style={[typeStyles.body, [styles.textXL, styles.appTitleText]]}
               testID="heading"
               role="heading"
             >
@@ -58,7 +59,7 @@ export const App = () => {
                     d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
                   />
                 </Svg>
-                <Text style={[styles.textLg, styles.heroTitleText]}>
+                <Text style={[typeStyles.body, [styles.textLg, styles.heroTitleText]]}>
                   You're up and running
                 </Text>
               </View>
@@ -71,7 +72,7 @@ export const App = () => {
                   });
                 }}
               >
-                <Text style={[styles.textMd, styles.textCenter]}>
+                <Text style={[typeStyles.body, [styles.textMd, styles.textCenter]]}>
                   What's next?
                 </Text>
               </TouchableOpacity>
@@ -79,7 +80,7 @@ export const App = () => {
           </View>
           <View style={styles.section}>
             <View style={[styles.shadowBox]}>
-              <Text style={[styles.marginBottomMd, styles.textLg]}>
+              <Text style={[typeStyles.body, [styles.marginBottomMd, styles.textLg]]}>
                 Learning materials
               </Text>
               <TouchableOpacity
@@ -105,8 +106,8 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={[styles.textMd]}>Documentation</Text>
-                  <Text style={[styles.text2XS, styles.textSubtle]}>
+                  <Text style={[typeStyles.body, [styles.textMd]]}>Documentation</Text>
+                  <Text style={[typeStyles.body, [styles.text2XS, styles.textSubtle]]}>
                     Everything is in there
                   </Text>
                 </View>
@@ -146,8 +147,8 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={[styles.textMd]}>Blog</Text>
-                  <Text style={[styles.text2XS, styles.textSubtle]}>
+                  <Text style={[typeStyles.body, [styles.textMd]]}>Blog</Text>
+                  <Text style={[typeStyles.body, [styles.text2XS, styles.textSubtle]]}>
                     Changelog, features & events
                   </Text>
                 </View>
@@ -178,8 +179,8 @@ export const App = () => {
                   <Path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={[styles.textMd]}>Youtube channel</Text>
-                  <Text style={[styles.text2XS, styles.textSubtle]}>
+                  <Text style={[typeStyles.body, [styles.textMd]]}>Youtube channel</Text>
+                  <Text style={[typeStyles.body, [styles.text2XS, styles.textSubtle]]}>
                     Nx Show, talks & tutorials
                   </Text>
                 </View>
@@ -221,8 +222,8 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={[styles.textMd]}>Interactive tutorials</Text>
-                  <Text style={[styles.text2XS, styles.textSubtle]}>
+                  <Text style={[typeStyles.body, [styles.textMd]]}>Interactive tutorials</Text>
+                  <Text style={[typeStyles.body, [styles.text2XS, styles.textSubtle]]}>
                     Create an app, step by step
                   </Text>
                 </View>
@@ -255,15 +256,15 @@ export const App = () => {
                 </Svg>
                 <View style={styles.listItemTextContainer}>
                   <Text
-                    style={[
+                    style={[typeStyles.body, [
                       styles.textMd,
                       styles.textBold,
                       styles.marginBottomSm,
-                    ]}
+                    ]]}
                   >
                     Nx is open source
                   </Text>
-                  <Text style={[styles.textXS, styles.textLight]}>
+                  <Text style={[typeStyles.body, [styles.textXS, styles.textLight]]}>
                     Love Nx? Give us a star!
                   </Text>
                 </View>
@@ -289,15 +290,15 @@ export const App = () => {
                 </Svg>
                 <View style={styles.listItemTextContainer}>
                   <Text
-                    style={[
+                    style={[typeStyles.body, [
                       styles.textMd,
                       styles.textBold,
                       styles.marginBottomSm,
-                    ]}
+                    ]]}
                   >
                     Install Nx Console for VSCode
                   </Text>
-                  <Text style={[styles.textXS, styles.textLight]}>
+                  <Text style={[typeStyles.body, [styles.textXS, styles.textLight]]}>
                     The official VSCode extension for Nx.
                   </Text>
                 </View>
@@ -331,15 +332,15 @@ export const App = () => {
                 </Svg>
                 <View style={styles.listItemTextContainer}>
                   <Text
-                    style={[
+                    style={[typeStyles.body, [
                       styles.textMd,
                       styles.textBold,
                       styles.marginBottomSm,
-                    ]}
+                    ]]}
                   >
                     Install Nx Console for JetBrains
                   </Text>
-                  <Text style={[styles.textXS, styles.textLight]}>
+                  <Text style={[typeStyles.body, [styles.textXS, styles.textLight]]}>
                     Available for WebStorm, Intellij IDEA Ultimate and more!
                   </Text>
                 </View>
@@ -373,27 +374,27 @@ export const App = () => {
                   </Svg>
                   <View style={styles.listItemTextContainer}>
                     <Text
-                      style={[
+                      style={[typeStyles.body, [
                         styles.textMd,
                         styles.textBold,
                         styles.marginBottomSm,
-                      ]}
+                      ]]}
                     >
                       Nx Cloud
                     </Text>
-                    <Text style={[styles.textSm, styles.textLight]}>
+                    <Text style={[typeStyles.body, [styles.textSm, styles.textLight]]}>
                       Enable faster CI & better DX
                     </Text>
                   </View>
                 </View>
                 <View style={styles.listItemTextContainer}>
-                <Text style={[styles.textXS, styles.textLight]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.textLight]]}>
                     You can activate distributed tasks executions and caching by
                     running:
                   </Text>
                   </View>
                 <View style={styles.codeBlock}>
-                  <Text style={[styles.monospace]}>nx connect</Text>
+                  <Text style={[typeStyles.body, [styles.monospace]]}>nx connect</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -407,11 +408,11 @@ export const App = () => {
             }}
           >
             <View style={styles.shadowBox}>
-              <Text style={[styles.textLg, styles.marginBottomMd]}>
+              <Text style={[typeStyles.body, [styles.textLg, styles.marginBottomMd]]}>
                 Next steps
               </Text>
               <Text
-                style={[styles.textSm, styles.textLight, styles.marginBottomMd]}
+                style={[typeStyles.body, [styles.textSm, styles.textLight, styles.marginBottomMd]]}
               >
                 Here are some things you can do with Nx:
               </Text>
@@ -431,51 +432,51 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={styles.textSm}>
+                  <Text style={[typeStyles.body, styles.textSm]}>
                     Build, test and lint your app
                   </Text>
                 </View>
               </View>
               <View style={styles.codeBlock}>
-                <Text style={[styles.textXS, styles.monospace, styles.comment]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace, styles.comment]]}>
                   # Build
                 </Text>
                 <Text
-                  style={[
+                  style={[typeStyles.body, [
                     styles.textXS,
                     styles.monospace,
                     styles.marginBottomMd,
-                  ]}
+                  ]]}
                 >
                   nx build Patient
                 </Text>
-                <Text style={[styles.textXS, styles.monospace, styles.comment]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace, styles.comment]]}>
                   # Test
                 </Text>
                 <Text
-                  style={[
+                  style={[typeStyles.body, [
                     styles.textXS,
                     styles.monospace,
                     styles.marginBottomMd,
-                  ]}
+                  ]]}
                 >
                   nx test Patient
                 </Text>
-                <Text style={[styles.textXS, styles.monospace, styles.comment]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace, styles.comment]]}>
                   # Lint
                 </Text>
-                <Text style={[styles.textXS, styles.monospace]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace]]}>
                   nx lint Patient
                 </Text>
-                <Text style={[styles.textXS, styles.monospace, styles.comment]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace, styles.comment]]}>
                   # Run them together!
                 </Text>
                 <Text
-                  style={[
+                  style={[typeStyles.body, [
                     styles.textXS,
                     styles.monospace,
                     styles.marginBottomMd,
-                  ]}
+                  ]]}
                 >
                   nx run-many -p Patient -t build test lint
                 </Text>
@@ -497,11 +498,11 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={styles.textSm}>View project details</Text>
+                  <Text style={[typeStyles.body, styles.textSm]}>View project details</Text>
                 </View>
               </View>
               <View style={[styles.codeBlock, styles.marginBottomLg]}>
-                <Text style={[styles.textXS, styles.monospace]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace]]}>
                   nx show project Patient
                 </Text>
               </View>
@@ -521,13 +522,13 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={styles.textSm}>
+                  <Text style={[typeStyles.body, styles.textSm]}>
                     View interactive project graph
                   </Text>
                 </View>
               </View>
               <View style={[styles.codeBlock, styles.marginBottomLg]}>
-                <Text style={[styles.textXS, styles.monospace]}>nx graph</Text>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace]]}>nx graph</Text>
               </View>
               <View style={styles.listItem}>
                 <Svg
@@ -545,36 +546,36 @@ export const App = () => {
                   />
                 </Svg>
                 <View style={styles.listItemTextContainer}>
-                  <Text style={styles.textSm}>Add UI library</Text>
+                  <Text style={[typeStyles.body, styles.textSm]}>Add UI library</Text>
                 </View>
               </View>
               <View style={[styles.codeBlock, styles.marginBottomLg]}>
-                <Text style={[styles.textXS, styles.monospace, styles.comment]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace, styles.comment]]}>
                   # Generate UI lib
                 </Text>
                 <Text
-                  style={[
+                  style={[typeStyles.body, [
                     styles.textXS,
                     styles.monospace,
                     styles.marginBottomMd,
-                  ]}
+                  ]]}
                 >
                   nx g @nx/react-native:lib ui
                 </Text>
-                <Text style={[styles.textXS, styles.monospace, styles.comment]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace, styles.comment]]}>
                   # Add a component
                 </Text>
-                <Text style={[styles.textXS, styles.monospace]}>nx g \</Text>
-                <Text style={[styles.textXS, styles.monospace]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace]]}>nx g \</Text>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace]]}>
                   @nx/react-native:component \
                 </Text>
-                <Text style={[styles.textXS, styles.monospace]}>
+                <Text style={[typeStyles.body, [styles.textXS, styles.monospace]]}>
                   ui/src/lib/button
                 </Text>
               </View>
             </View>
             <View style={[styles.listItem, styles.love]}>
-              <Text style={styles.textSubtle}>Carefully crafted with </Text>
+              <Text style={[typeStyles.body, styles.textSubtle]}>Carefully crafted with </Text>
               <Svg
                 width={24}
                 height={24}
@@ -608,7 +609,7 @@ const styles = StyleSheet.create({
   },
   monospace: {
     color: '#ffffff',
-    fontFamily: 'Courier New',
+    fontFamily: typeStyles.body.fontFamily,
     marginVertical: 4,
   },
   comment: {
@@ -624,32 +625,20 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   textLight: {
-    fontWeight: '300',
+    fontWeight: fontWeight.regular,
   },
   textBold: {
-    fontWeight: '500',
+    fontWeight: fontWeight.medium,
   },
   textCenter: {
     textAlign: 'center',
   },
-  text2XS: {
-    fontSize: 12,
-  },
-  textXS: {
-    fontSize: 14,
-  },
-  textSm: {
-    fontSize: 16,
-  },
-  textMd: {
-    fontSize: 18,
-  },
-  textLg: {
-    fontSize: 24,
-  },
-  textXL: {
-    fontSize: 48,
-  },
+  text2XS: { ...typeStyles.caption },
+  textXS: { ...typeStyles.body },
+  textSm: { ...typeStyles.body },
+  textMd: { ...typeStyles.body },
+  textLg: { ...typeStyles.body },
+  textXL: { ...typeStyles.pageTitle },
   textContainer: {
     marginVertical: 12,
   },
@@ -684,7 +673,7 @@ const styles = StyleSheet.create({
   },
   appTitleText: {
     paddingTop: 12,
-    fontWeight: '500',
+    fontWeight: fontWeight.medium,
   },
   hero: {
     borderRadius: 12,

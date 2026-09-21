@@ -1,0 +1,62 @@
+[
+  {
+    "file": "Inter-Light.ttf",
+    "family": "Inter",
+    "weight": 300,
+    "sha256": "38a1b0383f8104ed1c7ca1fb817c5eeaf9bef5c5d137a52df5c22363d6d050bb"
+  },
+  {
+    "file": "Inter-Regular.ttf",
+    "family": "Inter",
+    "weight": 400,
+    "sha256": "ae68ce4d6559f6f6ee153514b1910b8690bde0767018c8ba97920fe90d9eec36"
+  },
+  {
+    "file": "Inter-Medium.ttf",
+    "family": "Inter",
+    "weight": 500,
+    "sha256": "4fb9d1ff7635bc00dc81018fc263108521025b922c75c39f8476043c8fc24014"
+  },
+  {
+    "file": "Inter-SemiBold.ttf",
+    "family": "Inter",
+    "weight": 600,
+    "sha256": "cf2c6ffedebe7b3c5546e39f3d885204145fc0f6c0b70523320ff69c12ff47f3"
+  },
+  {
+    "file": "Inter-Bold.ttf",
+    "family": "Inter",
+    "weight": 700,
+    "sha256": "bcfaf88f5da73e33b88235354b2f2ffcab919553c2547d955873d9e55473b211"
+  },
+  {
+    "file": "Outfit-Light.ttf",
+    "family": "Outfit",
+    "weight": 300,
+    "sha256": "3112507b4784cd737cf4eb2e7fa5ee0d712b618bdf37c194a0b9107f6a0d3abf"
+  },
+  {
+    "file": "Outfit-Regular.ttf",
+    "family": "Outfit",
+    "weight": 400,
+    "sha256": "5b59524a87f73869e555c529d9992c64dc1c3c36800813ae97295eff138c3d42"
+  },
+  {
+    "file": "Outfit-Medium.ttf",
+    "family": "Outfit",
+    "weight": 500,
+    "sha256": "0011d919ef9a243e304ded108c92f85f1bb7a6c59b5db8fce06fa81ce1239acf"
+  },
+  {
+    "file": "Outfit-SemiBold.ttf",
+    "family": "Outfit",
+    "weight": 600,
+    "sha256": "b70fcb9b0f557668ba7479da5a0e9e0d80ae67c5cc862b2dafa677aa302a6c14"
+  },
+  {
+    "file": "Outfit-Bold.ttf",
+    "family": "Outfit",
+    "weight": 700,
+    "sha256": "cf3c8c2b757ceb7f9f26be0819d33c939060dae4b44d17059d2c0713546992bb"
+  }
+]

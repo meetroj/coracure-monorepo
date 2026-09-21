@@ -11,6 +11,12 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		A4D76B9B8897A7709CB17661 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8C717DB957A413DECF75BA28 /* Inter-Medium.ttf */; };
+		5C404E927CC27086E9DD4976 /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6DEABE5E11D374C41C14285C /* Inter-Regular.ttf */; };
+		F11C37C964816F8C16F762A6 /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9E1A71B95891FCEC9E4094F8 /* Inter-SemiBold.ttf */; };
+		67F86AB69C76B1AE6569984E /* Outfit-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3309AC9558DF3A5B1BB47D7B /* Outfit-Medium.ttf */; };
+		97CBB91331CC4328D19466CE /* Outfit-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 59BED5C89B4D6B4C0890A96B /* Outfit-Regular.ttf */; };
+		2829BCA4868F8273E5CEF9AD /* Outfit-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AADE5A67CB3E9B71A47701EB /* Outfit-SemiBold.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,6 +41,12 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Patient/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Patient/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		8C717DB957A413DECF75BA28 /* Inter-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter-Medium.ttf"; path = "../../../assets/fonts/static/Inter-Medium.ttf"; sourceTree = SOURCE_ROOT; };
+		6DEABE5E11D374C41C14285C /* Inter-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter-Regular.ttf"; path = "../../../assets/fonts/static/Inter-Regular.ttf"; sourceTree = SOURCE_ROOT; };
+		9E1A71B95891FCEC9E4094F8 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter-SemiBold.ttf"; path = "../../../assets/fonts/static/Inter-SemiBold.ttf"; sourceTree = SOURCE_ROOT; };
+		3309AC9558DF3A5B1BB47D7B /* Outfit-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Outfit-Medium.ttf"; path = "../../../assets/fonts/static/Outfit-Medium.ttf"; sourceTree = SOURCE_ROOT; };
+		59BED5C89B4D6B4C0890A96B /* Outfit-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Outfit-Regular.ttf"; path = "../../../assets/fonts/static/Outfit-Regular.ttf"; sourceTree = SOURCE_ROOT; };
+		AADE5A67CB3E9B71A47701EB /* Outfit-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Outfit-SemiBold.ttf"; path = "../../../assets/fonts/static/Outfit-SemiBold.ttf"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,6 +72,12 @@
 		13B07FAE1A68108700A75B9A /* Patient */ = {
 			isa = PBXGroup;
 			children = (
+				AADE5A67CB3E9B71A47701EB /* Outfit-SemiBold.ttf */,
+				59BED5C89B4D6B4C0890A96B /* Outfit-Regular.ttf */,
+				3309AC9558DF3A5B1BB47D7B /* Outfit-Medium.ttf */,
+				9E1A71B95891FCEC9E4094F8 /* Inter-SemiBold.ttf */,
+				6DEABE5E11D374C41C14285C /* Inter-Regular.ttf */,
+				8C717DB957A413DECF75BA28 /* Inter-Medium.ttf */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -176,6 +194,12 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2829BCA4868F8273E5CEF9AD /* Outfit-SemiBold.ttf in Resources */,
+				97CBB91331CC4328D19466CE /* Outfit-Regular.ttf in Resources */,
+				67F86AB69C76B1AE6569984E /* Outfit-Medium.ttf in Resources */,
+				F11C37C964816F8C16F762A6 /* Inter-SemiBold.ttf in Resources */,
+				5C404E927CC27086E9DD4976 /* Inter-Regular.ttf in Resources */,
+				A4D76B9B8897A7709CB17661 /* Inter-Medium.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
