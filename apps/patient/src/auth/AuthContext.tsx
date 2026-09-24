@@ -41,22 +41,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     isAuthenticated: false,
     isNewAccount: false,
     user: null,
-    isLoading: false,
+    isLoading: true,
   });
 
   useEffect(() => {
     let active = true;
     const init = async () => {
       try {
-        const tokensPromise = getTokens();
-        const timeoutPromise = new Promise<{ accessToken: string; refreshToken: string } | null>((resolve) =>
-          setTimeout(() => resolve(null), 100)
-        );
-        const tokens = await Promise.race([tokensPromise, timeoutPromise]);
+        const tokens = await getTokens();
         if (!active) return;
         if (tokens) {
           try {
-            const profile = await profileApi.getProfile();
+            const profile = tokens.accessToken === 'demo-access-token' ? DEFAULT_SEEDED_PROFILE : await profileApi.getProfile();
+            if (!active) return;
             setState({
               isAuthenticated: true,
               isNewAccount: false,
@@ -120,7 +117,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const loginAsDemo = async (customProfile?: Partial<OwnProfile>) => {
-    const demoUser: OwnProfile = { ...DEFAULT_SEEDED_PROFILE, ...customProfile };
+    const base = state.user || DEFAULT_SEEDED_PROFILE;
+    const demoUser: OwnProfile = { ...base, ...customProfile };
     try {
       await saveTokens('demo-access-token', 'demo-refresh-token');
     } catch {}

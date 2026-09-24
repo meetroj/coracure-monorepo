@@ -1,4 +1,4 @@
-import { api } from '../http';
+import { apiClient } from '../client';
 import type { Service } from '../types';
 
 /**
@@ -69,19 +69,14 @@ export type GuideEntry = Service & {
 };
 
 export const search = (query: string): Promise<SearchResponse> =>
-  api.post<SearchResponse>('/search', { query });
+  apiClient.post<SearchResponse>('/search', { query });
 
 /** FR-5.5's concern guide, for a patient who cannot put it into words. */
 export const searchGuide = (): Promise<{ disclaimer: string; services: GuideEntry[] }> =>
-  api.get<{ disclaimer: string; services: GuideEntry[] }>('/search/guide');
+  apiClient.get<{ disclaimer: string; services: GuideEntry[] }>('/search/guide');
 
 /**
  * What to show before anything is typed.
- *
- * The admin-edited popular list only. RECENT searches are deliberately absent:
- * FR-5.11 keeps them on the device, and an endpoint returning them would mean
- * the server had been keeping them after all — so the app must not send them
- * anywhere either.
  */
 export const searchSuggestions = (): Promise<{ disclaimer: string; popular: string[] }> =>
-  api.get<{ disclaimer: string; popular: string[] }>('/search/suggestions');
+  apiClient.get<{ disclaimer: string; popular: string[] }>('/search/suggestions');

@@ -44,7 +44,7 @@ export const LoginScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View testID="login" style={styles.container}>
       <BackgroundWatermarks />
 
       <ScrollView
@@ -302,3 +302,4 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
+

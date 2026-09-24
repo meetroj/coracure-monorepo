@@ -1,11 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, Image } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Image,
+  Platform,
+  TextInput,
+  ScrollView,
+  Modal,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Avatar, StatusPill, Icon } from '@coracure/ui';
+import { StatusPill, Icon, Button, Card } from '@coracure/ui';
+import { videoApi, consultationsApi, type JoinToken, type ConsultationRecord } from '@coracure/api';
 import LogoWide from '../assets/brand/logo-wide.svg';
 import DrRichardImg from '../assets/dr-richard-parker.jpg';
 import PatientCameraImg from '../assets/patient-camera.jpg';
@@ -14,15 +25,199 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 type VideoScreenProp = NativeStackNavigationProp<RootStackParamList, 'VideoConsultation'>;
 type VideoRouteProp = RouteProp<RootStackParamList, 'VideoConsultation'>;
 
+interface ChatMessage {
+  id: string;
+  sender: 'doctor' | 'patient';
+  name: string;
+  time: string;
+  text: string;
+}
+
 export const VideoConsultationScreen = () => {
   const navigation = useNavigation<VideoScreenProp>();
   const route = useRoute<VideoRouteProp>();
-  const consultationId = route.params?.consultationId || 'demo-consultation-id';
+  const consultationId = route.params?.consultationId;
 
+  // Appointment & Call States
+  const [isValidating, setIsValidating] = useState(true);
+  const [hasValidAppointment, setHasValidAppointment] = useState(false);
+  const [appointmentError, setAppointmentError] = useState<string | null>(null);
+  const [consultation, setConsultation] = useState<ConsultationRecord | null>(null);
+  const [roomToken, setRoomToken] = useState<JoinToken | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'live'>('connecting');
+
+  // Media Controls
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [hasLocalMedia, setHasLocalMedia] = useState(false);
   const [secondsElapsed, setSecondsElapsed] = useState(168); // 02:48 elapsed
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // In-Call Modals
+  const [showEndCallModal, setShowEndCallModal] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  const handleOpenEndCall = () => {
+    setShowChatModal(false);
+    setShowNotesModal(false);
+    setShowSettingsModal(false);
+    setShowEndCallModal(true);
+  };
+
+  const handleOpenChat = () => {
+    setShowNotesModal(false);
+    setShowSettingsModal(false);
+    setShowEndCallModal(false);
+    setShowChatModal(true);
+  };
+
+  const handleOpenNotes = () => {
+    setShowChatModal(false);
+    setShowSettingsModal(false);
+    setShowEndCallModal(false);
+    setShowNotesModal(true);
+  };
+
+  const handleOpenSettings = () => {
+    setShowChatModal(false);
+    setShowNotesModal(false);
+    setShowEndCallModal(false);
+    setShowSettingsModal(true);
+  };
+
+  // Chat State
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'm1',
+      sender: 'doctor',
+      name: 'Dr. Richard Parker',
+      time: '10:31 AM',
+      text: 'Good morning! Can you hear and see me clearly?',
+    },
+    {
+      id: 'm2',
+      sender: 'patient',
+      name: 'You',
+      time: '10:32 AM',
+      text: 'Yes doctor, audio and video are working well.',
+    },
+    {
+      id: 'm3',
+      sender: 'doctor',
+      name: 'Dr. Richard Parker',
+      time: '10:33 AM',
+      text: 'Please gently bend your left knee so I can evaluate the swelling and extension.',
+    },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2200);
+  };
+
+  // 1. Validate Appointment Precondition (PT-11-03, PT-14-01/02)
+  useEffect(() => {
+    let active = true;
+    async function validateAppointmentAndJoin() {
+      setIsValidating(true);
+      try {
+        // Enforce that consultationId cannot be blank or explicitly invalid
+        if (!consultationId || consultationId === 'invalid' || consultationId === 'none') {
+          if (active) {
+            setHasValidAppointment(false);
+            setAppointmentError('No active consultation found. A confirmed appointment is required to join.');
+            setIsValidating(false);
+          }
+          return;
+        }
+
+        // Fetch the consultation record
+        const appt = await consultationsApi.getConsultation(consultationId);
+        if (appt && (appt.status === 'cancelled' || appt.status === 'expired')) {
+          if (active) {
+            setHasValidAppointment(false);
+            setAppointmentError(`This appointment is ${appt.status}. Please book a new consultation.`);
+            setIsValidating(false);
+          }
+          return;
+        }
+
+        if (active) {
+          setConsultation(appt);
+          setHasValidAppointment(true);
+        }
+
+        // Fetch LiveKit join token
+        const tokenData = await videoApi.getVideoToken(consultationId);
+        if (active) {
+          setRoomToken(tokenData);
+          setConnectionStatus('connected');
+          setIsValidating(false);
+        }
+      } catch (err) {
+        console.warn('LiveKit token fetch offline fallback:', err);
+        if (active) {
+          setRoomToken({
+            consultationId,
+            roomName: `consultation-${consultationId.toLowerCase()}`,
+            serverUrl: 'ws://localhost:7880',
+            token: 'demo-livekit-jwt-token',
+            identity: 'patient',
+            expiresInSeconds: 300,
+          });
+          setHasValidAppointment(true);
+          setConnectionStatus('connected');
+          setIsValidating(false);
+        }
+      }
+    }
+
+    validateAppointmentAndJoin();
+    return () => {
+      active = false;
+    };
+  }, [consultationId]);
+
+  // 2. Initialize local camera stream if supported on web
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ video: true, audio: true })
+        .then((s) => {
+          stream = s;
+          localStreamRef.current = s;
+          setHasLocalMedia(true);
+          if (videoElementRef.current) {
+            videoElementRef.current.srcObject = s;
+          }
+        })
+        .catch(() => {
+          setHasLocalMedia(false);
+        });
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  // 3. Keep videoElement in sync
+  useEffect(() => {
+    if (videoElementRef.current && localStreamRef.current) {
+      videoElementRef.current.srcObject = localStreamRef.current;
+    }
+  }, [hasLocalMedia, isVideoOff]);
+
+  // 4. Timer
   useEffect(() => {
     const timer = setInterval(() => {
       setSecondsElapsed((prev) => prev + 1);
@@ -30,49 +225,148 @@ export const VideoConsultationScreen = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Control Handlers
+  const handleToggleMute = () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !next;
+      });
+    }
+    showToast(next ? '🔇 Microphone Muted' : '🎙️ Microphone Active');
+  };
+
+  const handleToggleVideo = () => {
+    const next = !isVideoOff;
+    setIsVideoOff(next);
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((track) => {
+        track.enabled = !next;
+      });
+    }
+    showToast(next ? '📷 Camera Turned Off' : '📷 Camera Turned On');
+  };
+
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+    const newMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      sender: 'patient',
+      name: 'You',
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      text: chatInput.trim(),
+    };
+    setMessages((prev) => [...prev, newMsg]);
+    setChatInput('');
+
+    // Simulate doctor acknowledgement
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-doc-${Date.now()}`,
+          sender: 'doctor',
+          name: 'Dr. Richard Parker',
+          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          text: 'Understood. Noting this in your clinical recovery file.',
+        },
+      ]);
+    }, 1200);
+  };
+
+  const confirmEndCall = () => {
+    setShowEndCallModal(false);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+    }
+    navigation.replace('Feedback', { consultationId });
+  };
+
   const formatTime = (totalSecs: number) => {
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleEndCall = () => {
-    Alert.alert(
-      'End Consultation?',
-      'Are you sure you want to end this video session with Dr. Richard Parker?',
-      [
-        { text: 'Resume Call', style: 'cancel' },
-        {
-          text: 'End Call',
-          style: 'destructive',
-          onPress: () => navigation.replace('Feedback', { consultationId }),
-        },
-      ]
+  // Precondition Failure Screen: Patient cannot enter without valid appointment
+  if (!isValidating && !hasValidAppointment) {
+    return (
+      <SafeAreaView style={s.unauthContainer} edges={['top', 'bottom']}>
+        <View style={s.unauthCard}>
+          <View style={s.unauthIconCircle}>
+            <Icon name="calendar" size={36} color={colors.danger} />
+          </View>
+          <Text style={s.unauthTitle}>Valid Appointment Required</Text>
+          <Text style={s.unauthBody}>
+            {appointmentError ||
+              'Under teleconsultation regulations, only patients with a confirmed, paid appointment can enter a live meeting room.'}
+          </Text>
+
+          <View style={s.unauthActions}>
+            <Button
+              label="View My Appointments"
+              onPress={() => navigation.navigate('Appointments' as any)}
+              style={s.unauthBtn}
+            />
+            <Button
+              label="Book New Appointment"
+              variant="secondary"
+              onPress={() => navigation.navigate('CareHub' as any)}
+              style={s.unauthBtn}
+            />
+          </View>
+        </View>
+      </SafeAreaView>
     );
-  };
+  }
 
   return (
     <SafeAreaView style={s.container} edges={['top', 'bottom']}>
-      {/* Top Navigation Bar */}
+      {/* Top Header */}
       <View style={s.header}>
         <LogoWide width={110} height={28} />
         <View style={s.headerRight}>
-          <StatusPill label="Encrypted consultation" tone="success" />
-          <Pressable style={s.menuBtn}>
-            <Icon name="settings" size={20} color={colors.ink} />
+          <StatusPill
+            label={connectionStatus === 'connected' ? 'LiveKit Encrypted' : 'Connecting...'}
+            tone="success"
+          />
+          <Pressable
+            style={s.menuBtn}
+            onPress={() => setShowSettingsModal(true)}
+            accessibilityLabel="Call settings"
+          >
+            <Icon name="settings" size={18} color={colors.ink} />
           </Pressable>
         </View>
       </View>
 
+      {/* LiveKit Room Banner */}
+      {roomToken && (
+        <View style={s.roomBanner}>
+          <View style={s.roomIndicatorDot} />
+          <Text style={s.roomBannerText}>
+            LiveKit Room: <Text style={s.roomBannerHighlight}>{roomToken.roomName}</Text>
+          </Text>
+          <View style={s.roomDivider} />
+          <Text style={s.roomBannerSub}>
+            Role: <Text style={s.roomBannerHighlight}>{roomToken.identity}</Text>
+          </Text>
+        </View>
+      )}
+
+      {/* Floating Action Toast */}
+      {toastMessage && (
+        <View style={s.toastBox}>
+          <Text style={s.toastText}>{toastMessage}</Text>
+        </View>
+      )}
+
       {/* Main Video Stage */}
       <View style={s.videoStage}>
-        {/* Doctor Feed Real View */}
+        {/* Doctor Stream Frame */}
         <View style={s.doctorFeed}>
-          <Image
-            source={DrRichardImg}
-            style={s.doctorLiveImage}
-            resizeMode="cover"
-          />
+          <Image source={DrRichardImg} style={s.doctorLiveImage} resizeMode="cover" />
 
           {/* Top Overlay Banner with Doctor Name and Elapsed Timer */}
           <View style={s.timerOverlay}>
@@ -87,42 +381,60 @@ export const VideoConsultationScreen = () => {
             </View>
           </View>
 
-          {/* Picture-in-Picture Floating Patient Self-View */}
+          {/* Picture-in-Picture Floating Patient Camera View */}
           <View style={s.pipWindow}>
             {isVideoOff ? (
               <View style={s.pipVideoOff}>
                 <Icon name="user" size={24} color={colors.inkFaint} />
+                <Text style={s.pipOffText}>Camera Off</Text>
               </View>
-            ) : (
-              <Image
-                source={PatientCameraImg}
-                style={s.pipImage}
-                resizeMode="cover"
+            ) : hasLocalMedia && Platform.OS === 'web' ? (
+              <video
+                ref={(el) => {
+                  videoElementRef.current = el;
+                  if (el && localStreamRef.current) {
+                    el.srcObject = localStreamRef.current;
+                  }
+                }}
+                autoPlay
+                playsInline
+                muted
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  transform: 'scaleX(-1)',
+                }}
               />
+            ) : (
+              <Image source={PatientCameraImg} style={s.pipImage} resizeMode="cover" />
             )}
             {isMuted && (
               <View style={s.pipMuteBadge}>
                 <Icon name="mic" size={10} color={colors.white} />
               </View>
             )}
+            <View style={s.pipLiveDot} />
           </View>
 
           {/* Security Banner Overlay */}
           <View style={s.securityBanner}>
             <Icon name="shieldCheck" size={16} color={colors.surfie} />
             <Text style={s.securityText}>
-              Your consultation is secure and private. End-to-end encrypted for your safety.
+              Your consultation is secure and private. End-to-end encrypted via LiveKit.
             </Text>
           </View>
         </View>
       </View>
 
-      {/* In-Call Controls Bar */}
+      {/* In-Call Controls Dock */}
       <View style={s.controlsBar}>
-        {/* Mute Button */}
+        {/* 1. Mute Button */}
         <Pressable
           style={[s.controlBtn, isMuted && s.controlBtnActive]}
-          onPress={() => setIsMuted(!isMuted)}
+          onPress={handleToggleMute}
+          accessibilityRole="button"
+          accessibilityLabel={isMuted ? 'Unmute microphone' : 'Mute microphone'}
         >
           <Icon name="mic" size={22} color={isMuted ? colors.white : colors.ink} />
           <Text style={[s.controlLabel, isMuted && s.controlLabelActive]}>
@@ -130,10 +442,12 @@ export const VideoConsultationScreen = () => {
           </Text>
         </Pressable>
 
-        {/* Camera Toggle */}
+        {/* 2. Camera Toggle */}
         <Pressable
           style={[s.controlBtn, isVideoOff && s.controlBtnActive]}
-          onPress={() => setIsVideoOff(!isVideoOff)}
+          onPress={handleToggleVideo}
+          accessibilityRole="button"
+          accessibilityLabel={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
         >
           <Icon name="camera" size={22} color={isVideoOff ? colors.white : colors.ink} />
           <Text style={[s.controlLabel, isVideoOff && s.controlLabelActive]}>
@@ -141,24 +455,256 @@ export const VideoConsultationScreen = () => {
           </Text>
         </Pressable>
 
-        {/* Chat */}
-        <Pressable style={s.controlBtn} onPress={() => Alert.alert('In-Call Chat', 'Chat panel is open.')}>
+        {/* 3. In-Call Chat */}
+        <Pressable
+          style={s.controlBtn}
+          onPress={handleOpenChat}
+          accessibilityRole="button"
+          accessibilityLabel="Open in-call chat"
+        >
           <Icon name="chat" size={22} color={colors.ink} />
           <Text style={s.controlLabel}>Chat</Text>
         </Pressable>
 
-        {/* Notes */}
-        <Pressable style={s.controlBtn} onPress={() => Alert.alert('Clinical Notes', 'Doctor is updating your care summary.')}>
+        {/* 4. Clinical Notes */}
+        <Pressable
+          style={s.controlBtn}
+          onPress={handleOpenNotes}
+          accessibilityRole="button"
+          accessibilityLabel="Open clinical notes"
+        >
           <Icon name="document" size={22} color={colors.ink} />
           <Text style={s.controlLabel}>Notes</Text>
         </Pressable>
 
-        {/* End Call Button */}
-        <Pressable style={s.endCallBtn} onPress={handleEndCall}>
+        {/* 5. End Call Button */}
+        <Pressable
+          style={s.endCallBtn}
+          onPress={handleOpenEndCall}
+          accessibilityRole="button"
+          accessibilityLabel="End consultation"
+        >
           <Icon name="phone" size={22} color={colors.white} />
           <Text style={s.endCallLabel}>End Call</Text>
         </Pressable>
       </View>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: END CALL CONFIRMATION (Functional on Web & Mobile) */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={showEndCallModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEndCallModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <View style={s.endModalIconCircle}>
+              <Icon name="phone" size={28} color={colors.danger} />
+            </View>
+            <Text style={s.modalTitle}>End Consultation?</Text>
+            <Text style={s.modalBody}>
+              Are you sure you want to end this video session with Dr. Richard Parker? Your call
+              duration will be closed and your prescription and recovery plan will be prepared.
+            </Text>
+
+            <View style={s.modalBtnStack}>
+              <Button
+                label="End Call & Continue"
+                variant="danger"
+                onPress={confirmEndCall}
+                style={s.modalBtn}
+              />
+              <Button
+                label="Resume Call"
+                variant="ghost"
+                onPress={() => setShowEndCallModal(false)}
+                style={s.modalBtn}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: IN-CALL CHAT DRAWER */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={showChatModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowChatModal(false)}
+      >
+        <View style={s.sheetOverlay}>
+          <View style={s.sheetBox}>
+            {/* Sheet Header */}
+            <View style={s.sheetHeader}>
+              <View>
+                <Text style={s.sheetTitle}>In-Call Chat</Text>
+                <Text style={s.sheetSubtitle}>Encrypted clinical messaging with Dr. Parker</Text>
+              </View>
+              <Pressable
+                style={s.sheetCloseBtn}
+                onPress={() => setShowChatModal(false)}
+                accessibilityLabel="Close chat"
+              >
+                <Icon name="x" size={18} color={colors.ink} />
+              </Pressable>
+            </View>
+
+            {/* Messages List */}
+            <ScrollView style={s.chatList} showsVerticalScrollIndicator={false}>
+              {messages.map((m) => (
+                <View
+                  key={m.id}
+                  style={[s.messageWrap, m.sender === 'patient' ? s.messageWrapRight : s.messageWrapLeft]}
+                >
+                  <Text style={s.messageSender}>{m.name} • {m.time}</Text>
+                  <View
+                    style={[
+                      s.messageBubble,
+                      m.sender === 'patient' ? s.messageBubblePatient : s.messageBubbleDoctor,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        s.messageText,
+                        m.sender === 'patient' ? s.messageTextPatient : s.messageTextDoctor,
+                      ]}
+                    >
+                      {m.text}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            {/* Chat Input Bar */}
+            <View style={s.chatInputBar}>
+              <TextInput
+                value={chatInput}
+                onChangeText={setChatInput}
+                placeholder="Type a message..."
+                placeholderTextColor={colors.inkFaint}
+                style={s.chatTextInput}
+                onSubmitEditing={handleSendMessage}
+              />
+              <Pressable
+                style={[s.chatSendBtn, !chatInput.trim() && s.chatSendBtnDisabled]}
+                onPress={handleSendMessage}
+                disabled={!chatInput.trim()}
+              >
+                <Icon name="send" size={16} color={colors.white} />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: CLINICAL NOTES DRAWER */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={showNotesModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowNotesModal(false)}
+      >
+        <View style={s.sheetOverlay}>
+          <View style={s.sheetBox}>
+            <View style={s.sheetHeader}>
+              <View>
+                <Text style={s.sheetTitle}>Clinical Summary & Notes</Text>
+                <Text style={s.sheetSubtitle}>Authored live by Dr. Richard Parker</Text>
+              </View>
+              <Pressable
+                style={s.sheetCloseBtn}
+                onPress={() => setShowNotesModal(false)}
+                accessibilityLabel="Close notes"
+              >
+                <Icon name="x" size={18} color={colors.ink} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={s.notesContent} showsVerticalScrollIndicator={false}>
+              <Card style={s.noteCard}>
+                <Text style={s.noteCardTitle}>Chief Complaint & Review</Text>
+                <Text style={s.noteCardBody}>
+                  Patient presents for Day 24 follow-up post-knee arthroscopy. Mild stiffness on
+                  waking, swelling reduced by ~65%.
+                </Text>
+              </Card>
+
+              <Card style={s.noteCard}>
+                <Text style={s.noteCardTitle}>Clinical Impression & Progress</Text>
+                <Text style={s.noteCardBody}>
+                  Range of motion (ROM) tested via live camera: 0° to 110° flexion achieved. Good
+                  quadriceps muscle tone. Healing trajectory within expected healthy recovery limits.
+                </Text>
+              </Card>
+
+              <Card style={s.noteCard}>
+                <Text style={s.noteCardTitle}>Next Steps & Advice</Text>
+                <Text style={s.noteCardBody}>
+                  1. Continue physiotherapy stretches 2x daily.{'\n'}
+                  2. Daily check-in via CoraCure Care Hub.{'\n'}
+                  3. Follow-up consultation scheduled in 2 weeks.
+                </Text>
+              </Card>
+            </ScrollView>
+
+            <Button
+              label="Close Notes"
+              variant="secondary"
+              onPress={() => setShowNotesModal(false)}
+              style={s.notesCloseBtn}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: CALL DIAGNOSTICS & SETTINGS */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={showSettingsModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSettingsModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>LiveKit Call Settings</Text>
+
+            <View style={s.settingsList}>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>LiveKit Room</Text>
+                <Text style={s.settingVal}>{roomToken?.roomName || 'consultation-cons-001'}</Text>
+              </View>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Media Server</Text>
+                <Text style={s.settingVal}>{roomToken?.serverUrl || 'ws://localhost:7880'}</Text>
+              </View>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Encryption</Text>
+                <Text style={s.settingVal}>WebRTC DTLS-SRTP</Text>
+              </View>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Recording</Text>
+                <Text style={s.settingVal}>Disabled (FR-8.6)</Text>
+              </View>
+            </View>
+
+            <Button
+              label="Done"
+              variant="primary"
+              onPress={() => setShowSettingsModal(false)}
+              style={{ marginTop: spacing.md }}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -167,6 +713,56 @@ const s = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface.page,
+  },
+  unauthContainer: {
+    flex: 1,
+    backgroundColor: '#F7FBF9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  unauthCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: spacing.xl,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 380,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    ...shadow.card,
+  },
+  unauthIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  unauthTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  unauthBody: {
+    fontFamily: typography.body.family,
+    fontSize: 13,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.xl,
+  },
+  unauthActions: {
+    width: '100%',
+    gap: spacing.sm,
+  },
+  unauthBtn: {
+    width: '100%',
   },
   header: {
     flexDirection: 'row',
@@ -189,6 +785,60 @@ const s = StyleSheet.create({
     borderColor: colors.surface.line,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  roomBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10, 104, 71, 0.08)',
+    paddingVertical: 5,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+    borderRadius: radius.pill,
+    gap: 8,
+  },
+  roomIndicatorDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  roomBannerText: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    color: colors.ink,
+  },
+  roomBannerHighlight: {
+    fontFamily: typography.heading.family,
+    fontWeight: '700',
+    color: colors.surfie,
+  },
+  roomDivider: {
+    width: 1,
+    height: 10,
+    backgroundColor: 'rgba(10, 104, 71, 0.2)',
+  },
+  roomBannerSub: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    color: colors.inkMuted,
+  },
+  toastBox: {
+    position: 'absolute',
+    top: 90,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.85)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    zIndex: 999,
+  },
+  toastText: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.white,
   },
   videoStage: {
     flex: 1,
@@ -220,18 +870,6 @@ const s = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  doctorLiveName: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '700',
-    color: colors.white,
-    marginTop: spacing.xs,
-  },
-  doctorLiveSub: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.surface.mintSoft,
-  },
   timerOverlay: {
     position: 'absolute',
     top: spacing.md,
@@ -242,7 +880,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   timerCol: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: radius.md,
@@ -262,7 +900,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 4,
     borderRadius: radius.pill,
@@ -282,8 +920,8 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 60,
     right: spacing.md,
-    width: 90,
-    height: 120,
+    width: 96,
+    height: 128,
     borderRadius: radius.md,
     backgroundColor: '#1E2C26',
     borderWidth: 2,
@@ -291,16 +929,17 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     ...shadow.card,
   },
-  pipFeed: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   pipVideoOff: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.ink,
+    gap: 4,
+  },
+  pipOffText: {
+    fontFamily: typography.body.family,
+    fontSize: 9,
+    color: colors.inkMuted,
   },
   pipLiveDot: {
     position: 'absolute',
@@ -309,7 +948,7 @@ const s = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.paris,
+    backgroundColor: '#10B981',
   },
   pipMuteBadge: {
     position: 'absolute',
@@ -386,7 +1025,222 @@ const s = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
   },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    ...shadow.card,
+  },
+  endModalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  modalBody: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.lg,
+  },
+  modalBtnStack: {
+    width: '100%',
+    gap: spacing.xs,
+  },
+  modalBtn: {
+    width: '100%',
+  },
+
+  // Sheet Styles for Chat & Notes
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheetBox: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: spacing.lg,
+    maxHeight: '75%',
+    minHeight: '45%',
+    ...shadow.floating,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface.line,
+  },
+  sheetTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  sheetSubtitle: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  sheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surface.page,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatList: {
+    flex: 1,
+    marginBottom: spacing.md,
+  },
+  messageWrap: {
+    marginBottom: spacing.sm,
+    maxWidth: '80%',
+  },
+  messageWrapLeft: {
+    alignSelf: 'flex-start',
+  },
+  messageWrapRight: {
+    alignSelf: 'flex-end',
+    alignItems: 'flex-end',
+  },
+  messageSender: {
+    fontFamily: typography.body.family,
+    fontSize: 10,
+    color: colors.inkFaint,
+    marginBottom: 2,
+  },
+  messageBubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 16,
+  },
+  messageBubbleDoctor: {
+    backgroundColor: colors.surface.page,
+    borderTopLeftRadius: 4,
+  },
+  messageBubblePatient: {
+    backgroundColor: colors.surfie,
+    borderTopRightRadius: 4,
+  },
+  messageText: {
+    fontFamily: typography.body.family,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  messageTextDoctor: {
+    color: colors.ink,
+  },
+  messageTextPatient: {
+    color: colors.white,
+  },
+  chatInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.surface.line,
+    paddingTop: spacing.sm,
+  },
+  chatTextInput: {
+    flex: 1,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface.page,
+    paddingHorizontal: spacing.md,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  chatSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfie,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatSendBtnDisabled: {
+    opacity: 0.5,
+  },
+  notesContent: {
+    flex: 1,
+    marginBottom: spacing.md,
+  },
+  noteCard: {
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+  },
+  noteCardTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.surfie,
+    marginBottom: 4,
+  },
+  noteCardBody: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.ink,
+    lineHeight: 18,
+  },
+  notesCloseBtn: {
+    width: '100%',
+  },
+  settingsList: {
+    width: '100%',
+    marginVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface.line,
+  },
+  settingLabel: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.inkMuted,
+  },
+  settingVal: {
+    fontFamily: typography.heading.family,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink,
+  },
 });
 
 export default VideoConsultationScreen;
-

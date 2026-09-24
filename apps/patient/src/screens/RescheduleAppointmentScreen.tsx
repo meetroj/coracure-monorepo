@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { upcomingDates, appointmentTime } from '../utils/appointmentTime';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,14 +13,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 type RescheduleScreenProp = NativeStackNavigationProp<RootStackParamList, 'RescheduleAppointment'>;
 type RescheduleRouteProp = RouteProp<RootStackParamList, 'RescheduleAppointment'>;
 
-const DATES = [
-  { day: 'Tue', date: '14', month: 'May', full: '2026-05-14' },
-  { day: 'Wed', date: '15', month: 'May', full: '2026-05-15' },
-  { day: 'Thu', date: '16', month: 'May', full: '2026-05-16' },
-  { day: 'Fri', date: '17', month: 'May', full: '2026-05-17' },
-  { day: 'Sat', date: '18', month: 'May', full: '2026-05-18' },
-  { day: 'Sun', date: '19', month: 'May', full: '2026-05-19' },
-];
+const DATES = upcomingDates(6);
 
 const TIME_SLOTS = [
   '09:00 AM', '11:00 AM', '12:00 PM', '01:30 PM',
@@ -31,14 +25,14 @@ export const RescheduleAppointmentScreen = () => {
   const route = useRoute<RescheduleRouteProp>();
   const consultationId = route.params?.consultationId || 'demo-consultation-id';
 
-  const [selectedDate, setSelectedDate] = useState('2026-05-16');
+  const [selectedDate, setSelectedDate] = useState(DATES[0].full);
   const [selectedTime, setSelectedTime] = useState('11:00 AM');
   const [loading, setLoading] = useState(false);
 
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      const startsAt = `${selectedDate}T${selectedTime.includes('PM') && !selectedTime.startsWith('12') ? (parseInt(selectedTime) + 12) : selectedTime.slice(0, 2)}:00:00.000Z`;
+      const startsAt = appointmentTime(selectedDate, selectedTime);
       await consultationsApi.rescheduleConsultation(consultationId, startsAt);
       Alert.alert(
         'Appointment Rescheduled',
@@ -427,4 +421,5 @@ const s = StyleSheet.create({
 });
 
 export default RescheduleAppointmentScreen;
+
 

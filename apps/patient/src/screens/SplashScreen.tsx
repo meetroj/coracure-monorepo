@@ -5,7 +5,7 @@ import LogoMark from '../assets/brand/logo-mark.svg';
 
 export const SplashScreen = () => {
   return (
-    <View style={styles.container}>
+    <View testID="splash" style={styles.container}>
       <LogoMark width={80} height={80} />
       <Text style={styles.title}>CoraCure</Text>
       <Text style={styles.tagline}>Care. Connected.</Text>
@@ -41,3 +41,4 @@ const styles = StyleSheet.create({
 });
 
 export default SplashScreen;
+

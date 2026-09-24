@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput as RNTextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -29,34 +29,55 @@ export const ProfileSetupScreen = () => {
   const navigation = useNavigation<Nav>();
   const { user, loginAsDemo, refreshProfile } = useAuth();
 
-  const [fullName, setFullName] = useState(user?.fullName || 'Alex Morgan');
-  const [age, setAge] = useState(user?.age ? String(user.age) : '34');
-  const [gender, setGender] = useState<string>(user?.gender || 'male');
+  const nameInputRef = useRef<RNTextInput>(null);
+  const ageInputRef = useRef<RNTextInput>(null);
+
+  const [fullName, setFullName] = useState(user?.fullName || '');
+  const [age, setAge] = useState(user?.age ? String(user.age) : '');
+  const [gender, setGender] = useState<string>(user?.gender && user.gender !== 'undisclosed' ? user.gender : 'male');
   const [preferredLanguage, setPreferredLanguage] = useState<string>(user?.preferredLanguage || 'English');
 
+  const [activeFocus, setActiveFocus] = useState<'name' | 'age' | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      setError('Please enter your full name to continue');
+      nameInputRef.current?.focus();
+      return;
+    }
+
+    const numAge = parseInt(age.trim(), 10);
+    if (!age.trim() || isNaN(numAge) || numAge < 1 || numAge > 120) {
+      setError('Please enter a valid age between 1 and 120');
+      ageInputRef.current?.focus();
+      return;
+    }
+
     setError(null);
     setLoading(true);
+
+    const currentYear = new Date().getFullYear();
+    const birthYear = currentYear - numAge;
+    const dateOfBirth = `${birthYear}-01-01`;
+
+    const profileData = {
+      fullName: trimmedName,
+      age: numAge,
+      dateOfBirth,
+      gender: (gender as any) || 'male',
+      preferredLanguage: preferredLanguage || 'English',
+      isComplete: true,
+    };
+
     try {
       try {
-        await profileApi.updateProfile({
-          fullName: fullName.trim() || 'Alex Morgan',
-          gender: (gender as any) || 'male',
-          preferredLanguage: preferredLanguage || 'English',
-        });
+        await profileApi.updateProfile(profileData);
         await refreshProfile();
       } catch {
-        // Fallback for offline / demo mode
-        await loginAsDemo({
-          fullName: fullName.trim() || 'Alex Morgan',
-          age: parseInt(age, 10) || 34,
-          gender: (gender as any) || 'male',
-          preferredLanguage,
-          isComplete: true,
-        });
+        await loginAsDemo(profileData);
       }
       navigation.navigate('Consent');
     } catch {
@@ -74,9 +95,13 @@ export const ProfileSetupScreen = () => {
         style={s.scrollView}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Brand Header */}
+        {/* Brand Header with Back Button */}
         <View style={s.header}>
+          <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={12}>
+            <Icon name="arrowLeft" size={20} color={colors.ink} />
+          </Pressable>
           <View style={s.brandRow}>
             <LogoMark width={34} height={34} />
             <View style={s.brandTextCol}>
@@ -84,6 +109,7 @@ export const ProfileSetupScreen = () => {
               <Text style={s.brandTagline}>Care. Connected.</Text>
             </View>
           </View>
+          <View style={s.headerSpacer} />
         </View>
 
         {/* Step Indicator */}
@@ -102,6 +128,7 @@ export const ProfileSetupScreen = () => {
 
         {error ? (
           <View style={s.errorBox}>
+            <Icon name="alertCircle" size={16} color={colors.danger} />
             <Text style={s.errorText}>{error}</Text>
           </View>
         ) : null}
@@ -111,34 +138,82 @@ export const ProfileSetupScreen = () => {
           {/* Full Name */}
           <View style={s.fieldGroup}>
             <Text style={s.label}>Full Name</Text>
-            <View style={s.inputContainer}>
-              <Icon name="user" size={18} color={colors.inkFaint} />
+            <Pressable
+              style={[
+                s.inputContainer,
+                activeFocus === 'name' && s.inputContainerFocused,
+                Boolean(error && !fullName.trim()) && s.inputContainerError,
+              ]}
+              onPress={() => nameInputRef.current?.focus()}
+            >
+              <Icon
+                name="user"
+                size={18}
+                color={activeFocus === 'name' ? colors.surfie : colors.inkFaint}
+              />
               <RNTextInput
+                ref={nameInputRef}
                 style={s.input}
                 value={fullName}
-                onChangeText={setFullName}
+                onChangeText={(text) => {
+                  setFullName(text);
+                  if (error) setError(null);
+                }}
+                onFocus={() => setActiveFocus('name')}
+                onBlur={() => setActiveFocus(null)}
                 placeholder="Enter your full name"
                 placeholderTextColor={colors.inkFaint}
+                autoCapitalize="words"
+                returnKeyType="next"
+                onSubmitEditing={() => ageInputRef.current?.focus()}
               />
-            </View>
+              {fullName.length > 0 && (
+                <Pressable
+                  onPress={() => setFullName('')}
+                  style={s.clearBtn}
+                  hitSlop={8}
+                >
+                  <Icon name="x" size={16} color={colors.inkFaint} />
+                </Pressable>
+              )}
+            </Pressable>
           </View>
 
           {/* Age */}
           <View style={s.fieldGroup}>
             <Text style={s.label}>Age</Text>
-            <View style={s.inputContainer}>
-              <Icon name="calendar" size={18} color={colors.inkFaint} />
+            <Pressable
+              style={[
+                s.inputContainer,
+                activeFocus === 'age' && s.inputContainerFocused,
+                Boolean(error && (!age.trim() || isNaN(Number(age)))) && s.inputContainerError,
+              ]}
+              onPress={() => ageInputRef.current?.focus()}
+            >
+              <Icon
+                name="calendar"
+                size={18}
+                color={activeFocus === 'age' ? colors.surfie : colors.inkFaint}
+              />
               <RNTextInput
+                ref={ageInputRef}
                 style={s.input}
                 value={age}
-                onChangeText={setAge}
+                onChangeText={(text) => {
+                  setAge(text.replace(/[^0-9]/g, ''));
+                  if (error) setError(null);
+                }}
+                onFocus={() => setActiveFocus('age')}
+                onBlur={() => setActiveFocus(null)}
                 placeholder="Enter your age"
                 placeholderTextColor={colors.inkFaint}
                 keyboardType="numeric"
                 maxLength={3}
+                returnKeyType="done"
+                onSubmitEditing={handleSave}
               />
               <Text style={s.unitText}>years</Text>
-            </View>
+            </Pressable>
           </View>
 
           {/* Gender */}
@@ -150,6 +225,8 @@ export const ProfileSetupScreen = () => {
                 return (
                   <Pressable
                     key={g.value}
+                    accessibilityRole="button"
+                    accessibilityLabel={g.label}
                     style={[s.genderChip, active && s.genderChipActive]}
                     onPress={() => setGender(g.value)}
                   >
@@ -174,6 +251,8 @@ export const ProfileSetupScreen = () => {
                 return (
                   <Pressable
                     key={l.value}
+                    accessibilityRole="button"
+                    accessibilityLabel={l.label}
                     style={[s.langChip, active && s.langChipActive]}
                     onPress={() => setPreferredLanguage(l.value)}
                   >
@@ -186,6 +265,20 @@ export const ProfileSetupScreen = () => {
               })}
             </View>
           </View>
+
+          {/* Quick Sample Profile Pill for Instant Testing */}
+          <Pressable
+            style={s.sampleProfileBtn}
+            onPress={() => {
+              setFullName('Alex Morgan');
+              setAge('34');
+              setGender('male');
+              setPreferredLanguage('English');
+              setError(null);
+            }}
+          >
+            <Text style={s.sampleProfileText}>⚡ Quick fill sample profile (Alex Morgan, 34)</Text>
+          </Pressable>
 
           {/* Personalized Care Card */}
           <View style={s.infoCard}>
@@ -229,11 +322,27 @@ const s = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
     paddingBottom: spacing.xxl,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.md,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSpacer: {
+    width: 36,
   },
   brandRow: {
     flexDirection: 'row',
@@ -275,12 +384,18 @@ const s = StyleSheet.create({
     marginTop: spacing.xs,
   },
   errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     backgroundColor: colors.dangerSoft,
     padding: spacing.md,
     borderRadius: radius.md,
     marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
   },
   errorText: {
+    flex: 1,
     fontFamily: typography.body.family,
     fontSize: typography.size.sm,
     color: colors.danger,
@@ -309,17 +424,32 @@ const s = StyleSheet.create({
     height: 52,
     gap: spacing.sm,
   },
+  inputContainerFocused: {
+    borderColor: colors.surfie,
+    borderWidth: 1.5,
+  },
+  inputContainerError: {
+    borderColor: colors.danger,
+    backgroundColor: '#FEF2F2',
+  },
   input: {
     flex: 1,
     fontFamily: typography.body.family,
     fontSize: typography.size.sm,
     color: '#111827',
+    height: '100%',
+    paddingVertical: 0,
     outlineStyle: 'none' as any,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
   },
   unitText: {
     fontFamily: typography.body.family,
     fontSize: typography.size.xs,
     color: colors.inkFaint,
+  },
+  clearBtn: {
+    padding: 4,
   },
   chipRow: {
     flexDirection: 'row',
@@ -385,6 +515,21 @@ const s = StyleSheet.create({
     color: '#374151',
   },
   langLabelActive: {
+    color: colors.surfie,
+    fontWeight: '700',
+  },
+  sampleProfileBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF8F5',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#D1EAE0',
+  },
+  sampleProfileText: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
     color: colors.surfie,
     fontWeight: '700',
   },

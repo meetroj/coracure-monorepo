@@ -1,443 +1,434 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, Image } from 'react-native';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, Button, Avatar, StatusPill, Icon } from '@coracure/ui';
+import { upcomingDates, appointmentTime } from '../utils/appointmentTime';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { colors, spacing, typography, radius } from '@coracure/brand';
+import { Icon, PillButton } from '@coracure/ui';
+import LogoWide from '../assets/brand/logo-wide.svg';
 import DrRichardImg from '../assets/dr-richard-parker.jpg';
 import { consultationsApi } from '@coracure/api';
-import type { RootStackParamList } from '../navigation/RootNavigator';
+import PatientTabBar from '../components/PatientTabBar';
 
-type FollowUpNavProp = NativeStackNavigationProp<RootStackParamList, 'BookFollowUp'>;
-type FollowUpRouteProp = RouteProp<RootStackParamList, 'BookFollowUp'>;
+const DATES = upcomingDates(5).map(date => ({ ...date, num: date.date }));
 
-const AVAILABLE_DATES = [
-  { label: '30 May', full: '2026-05-30' },
-  { label: '2 Jun', full: '2026-06-02' },
-  { label: '3 Jun', full: '2026-06-03' },
-  { label: '4 Jun', full: '2026-06-04' },
-  { label: '5 Jun', full: '2026-06-05' },
-];
-
-const AVAILABLE_TIMES = ['10:00 AM', '02:30 PM', '04:30 PM', '05:30 PM'];
+const TIMES = ['10:00 AM', '11:30 AM', '02:00 PM', '04:30 PM'];
 
 export const BookFollowUpScreen = () => {
-  const navigation = useNavigation<FollowUpNavProp>();
-  const route = useRoute<FollowUpRouteProp>();
+  const navigation = useNavigation<any>();
 
-  const [selectedDate, setSelectedDate] = useState('2026-05-30');
+  const [selectedDateIdx, setSelectedDateIdx] = useState(0);
   const [selectedTime, setSelectedTime] = useState('10:00 AM');
-  const [reason, setReason] = useState('Knee pain review and progress follow-up');
   const [booking, setBooking] = useState(false);
 
-  const handleContinue = async () => {
+  const handleConfirm = async () => {
     setBooking(true);
     try {
-      const startsAt = `${selectedDate}T10:00:00.000Z`;
       await consultationsApi.bookScheduled({
-        serviceId: 'follow-up-service',
-        startsAt,
-        intakeAnswers: { reason },
+        serviceId: 'spec-ortho',
+        specialtyId: 'spec-ortho',
+        startsAt: appointmentTime(DATES[selectedDateIdx].full, selectedTime),
+        concernId: 'knee-pain',
+        intakeAnswers: { type: 'follow_up' },
       });
-      Alert.alert(
-        'Follow-Up Booked',
-        `Your follow-up consultation with Dr. Richard Parker has been booked for ${selectedDate} at ${selectedTime}.`,
-        [{ text: 'View Appointments', onPress: () => navigation.navigate('MainTabs') }]
-      );
+      navigation.navigate('MainTabs');
     } catch {
-      Alert.alert(
-        'Follow-Up Confirmed (Simulated)',
-        `Your follow-up with Dr. Richard Parker is scheduled for ${selectedDate} at ${selectedTime}.`,
-        [{ text: 'Done', onPress: () => navigation.navigate('MainTabs') }]
-      );
+      navigation.navigate('MainTabs');
     } finally {
       setBooking(false);
     }
   };
 
   return (
-    <Screen bottomInset contentStyle={s.container}>
-      <AppHeader
-        onBack={() => navigation.goBack()}
-        right={<Icon name="bell" size={20} color={colors.inkMuted} />}
-      />
+    <View style={s.container}>
+      {/* Top Header */}
+      <View style={s.headerBar}>
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
 
-      <View style={s.headerWrap}>
-        <Text style={s.pageTitle}>Book Your Follow-Up</Text>
-        <Text style={s.pageSubtitle}>
-          Schedule your next consultation to stay on track with your recovery.
-        </Text>
+        <LogoWide width={110} height={28} />
+
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.navigate('Notifications')}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+        >
+          <Icon name="bell" size={20} color={colors.ink} />
+        </Pressable>
       </View>
 
-      {/* Doctor Card */}
-      <View style={s.doctorCard}>
-        <View style={s.doctorRow}>
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title */}
+        <View style={s.titleWrap}>
+          <Text style={s.pageTitle}>Book Your Follow-Up</Text>
+          <Text style={s.pageSubtitle}>
+            Recommended after 14 days of recovery plan
+          </Text>
+        </View>
+
+        {/* Doctor Card */}
+        <View style={s.doctorCard}>
           <Image
             source={DrRichardImg}
-            style={s.doctorAvatar}
+            style={s.doctorPhoto}
             resizeMode="cover"
           />
           <View style={s.doctorInfo}>
             <Text style={s.doctorName}>Dr. Richard Parker</Text>
-            <Text style={s.specialty}>Orthopedic Surgeon</Text>
-            <Text style={s.verifiedTag}>✓ Verified Specialist</Text>
-            <Text style={s.lastConsult}>Last consulted: 18 May 2026</Text>
+            <Text style={s.doctorSpecialty}>Orthopedic Surgeon</Text>
+            <Text style={s.doctorSub}>Knee Rehabilitation Specialist</Text>
+            <View style={s.ratingRow}>
+              <Icon name="star" size={14} color="#F59E0B" filled />
+              <Text style={s.ratingText}>4.9 (120+ reviews)</Text>
+            </View>
           </View>
         </View>
 
-        <View style={s.carePlanBadge}>
-          <Icon name="checkCircle" size={14} color={colors.surfie} />
-          <Text style={s.carePlanBadgeText}>Recommended by your care plan</Text>
-        </View>
-      </View>
+        {/* Slot Selection */}
+        <View style={s.cardSection}>
+          <Text style={s.sectionQuestion}>Select Available Slot</Text>
 
-      {/* Next Available Slots */}
-      <View style={s.section}>
-        <View style={s.slotHeaderRow}>
-          <Text style={s.sectionTitle}>Next Available Slots</Text>
-          <Text style={s.durationText}>⏱ Duration: 20 mins</Text>
-        </View>
-
-        {/* Date Selector */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dateScroll}>
-          {AVAILABLE_DATES.map((d) => {
-            const isSelected = selectedDate === d.full;
-            return (
-              <Pressable
-                key={d.full}
-                style={[s.dateChip, isSelected && s.dateChipActive]}
-                onPress={() => setSelectedDate(d.full)}
-              >
-                <Text style={[s.dateChipText, isSelected && s.dateChipTextActive]}>{d.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Time Selector */}
-        <View style={s.timeGrid}>
-          {AVAILABLE_TIMES.map((t) => {
-            const isSelected = selectedTime === t;
-            return (
-              <Pressable
-                key={t}
-                style={[s.timeChip, isSelected && s.timeChipActive]}
-                onPress={() => setSelectedTime(t)}
-              >
-                <Text style={[s.timeChipText, isSelected && s.timeChipTextActive]}>{t}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Need an Earlier Doctor Callout */}
-      <View style={s.earlierCallout}>
-        <View style={s.earlierIcon}>
-          <Icon name="info" size={18} color={colors.surfie} />
-        </View>
-        <View style={s.earlierTextWrap}>
-          <Text style={s.earlierTitle}>Need an earlier doctor?</Text>
-          <Text style={s.earlierDesc}>See another available doctor or visit clinic if you need urgent care.</Text>
-        </View>
-        <Pressable onPress={() => Alert.alert('Earlier Slots', 'Checking other available specialists...')}>
-          <Text style={s.earlierLink}>See Options</Text>
-        </Pressable>
-      </View>
-
-      {/* Reason for Visit */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Reason for Visit</Text>
-        <View style={s.reasonInputWrap}>
-          <TextInput
-            style={s.reasonInput}
-            value={reason}
-            onChangeText={setReason}
-            placeholder="Reason for follow-up consultation"
-          />
-          <Icon name="edit" size={16} color={colors.surfie} />
-        </View>
-      </View>
-
-      {/* Consultation Fee Card */}
-      <View style={s.feeCard}>
-        <View style={s.feeRow}>
-          <View>
-            <Text style={s.feeLabel}>Consultation Fee</Text>
-            <Text style={s.feeAmount}>₹800</Text>
+          {/* Date Picker Row */}
+          <View style={s.datesRow}>
+            {DATES.map((d, idx) => {
+              const isSelected = selectedDateIdx === idx;
+              return (
+                <Pressable
+                  key={d.num}
+                  style={[s.datePill, isSelected && s.datePillSelected]}
+                  onPress={() => setSelectedDateIdx(idx)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select date ${d.day} ${d.num}`}
+                >
+                  <Text style={[s.dateDay, isSelected && s.dateDaySelected]}>
+                    {d.day}
+                  </Text>
+                  <Text style={[s.dateNum, isSelected && s.dateNumSelected]}>
+                    {d.num}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-          <StatusPill label="Included in Care" tone="brand" />
-        </View>
-        <Text style={s.feeNotice}>
-          A detailed bill & invoice will be shared after the consultation.
-        </Text>
-      </View>
 
-      {/* Continue CTA */}
-      <View style={s.footer}>
-        <Button
-          label="Continue to Payment →"
-          onPress={handleContinue}
-          loading={booking}
+          {/* Times Grid */}
+          <View style={s.timesGrid}>
+            {TIMES.map((time) => {
+              const isSelected = selectedTime === time;
+              return (
+                <Pressable
+                  key={time}
+                  style={[s.timeBox, isSelected && s.timeBoxSelected]}
+                  onPress={() => setSelectedTime(time)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Time ${time}`}
+                >
+                  <Text style={[s.timeText, isSelected && s.timeTextSelected]}>
+                    {time}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Cancellation Notice Card */}
+        <View style={s.cancellationCard}>
+          <Icon name="alertCircle" size={16} color="#DC2626" />
+          <View style={s.cancelTextCol}>
+            <Text style={s.cancelTitle}>Free cancellation</Text>
+            <Text style={s.cancelSub}>
+              Cancel anytime up to 2 hours before the start time.
+            </Text>
+          </View>
+          <Text style={s.policyDetailsLink}>Policy ›</Text>
+        </View>
+
+        {/* Itemized Bill Card */}
+        <View style={s.billCard}>
+          <View style={s.billRow}>
+            <Text style={s.billLabel}>Consultation Fee</Text>
+            <Text style={s.billVal}>₹850</Text>
+          </View>
+          <View style={s.billRow}>
+            <Text style={s.billLabel}>Follow-up credit applied</Text>
+            <Text style={s.discountVal}>-₹200</Text>
+          </View>
+          <View style={s.billDivider} />
+          <View style={s.billTotalRow}>
+            <Text style={s.totalLabel}>Total Payable</Text>
+            <Text style={s.totalVal}>₹650</Text>
+          </View>
+        </View>
+
+        {/* Confirm Follow Up Pill Button */}
+        <PillButton
+          label={booking ? "CONFIRMING..." : "CONFIRM FOLLOW-UP"}
+          onPress={handleConfirm}
+          disabled={booking}
+          accessibilityLabel="Confirm follow-up booking"
         />
-      </View>
-    </Screen>
+      </ScrollView>
+
+      {/* 5-Tab Bar */}
+      <PatientTabBar activeTab="Appointments" />
+    </View>
   );
 };
 
 const s = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    flex: 1,
+    backgroundColor: '#F7FBF9',
   },
-  headerWrap: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    marginTop: 2,
-  },
-  doctorCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    padding: spacing.lg,
-    ...shadow.card,
-    marginBottom: spacing.lg,
-  },
-  doctorRow: {
+  headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
     gap: spacing.md,
   },
-  doctorAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  titleWrap: {
+    marginBottom: 4,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  pageSubtitle: {
+    fontSize: 13,
+    color: colors.inkMuted,
+  },
+  doctorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.surface.line,
+    borderColor: '#E5E7EB',
+    gap: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  doctorPhoto: {
+    width: 72,
+    height: 72,
+    borderRadius: 12,
   },
   doctorInfo: {
     flex: 1,
   },
   doctorName: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.ink,
   },
-  specialty: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.inkMuted,
-    marginTop: 1,
-  },
-  verifiedTag: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.surfie,
+  doctorSpecialty: {
+    fontSize: 13,
     fontWeight: '600',
+    color: colors.surfie,
     marginTop: 2,
   },
-  lastConsult: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkFaint,
-    marginTop: 1,
+  doctorSub: {
+    fontSize: 11,
+    color: colors.inkMuted,
+    marginTop: 2,
   },
-  carePlanBadge: {
+  ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surface.mintSoft,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    marginTop: spacing.md,
+    gap: 4,
+    marginTop: 4,
   },
-  carePlanBadgeText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-    color: colors.surfie,
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink,
   },
-  section: {
-    marginBottom: spacing.lg,
+  cardSection: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: spacing.md,
   },
-  slotHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
+  sectionQuestion: {
+    fontSize: 14,
     fontWeight: '700',
     color: colors.ink,
   },
-  durationText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
+  datesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  datePill: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    gap: 2,
+  },
+  datePillSelected: {
+    backgroundColor: '#EEF8F5',
+    borderColor: colors.surfie,
+  },
+  dateDay: {
+    fontSize: 11,
     color: colors.inkMuted,
+    fontWeight: '500',
   },
-  dateScroll: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+  dateDaySelected: {
+    color: colors.surfie,
   },
-  dateChip: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    backgroundColor: colors.white,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
+  dateNum: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.ink,
   },
-  dateChipActive: {
+  dateNumSelected: {
+    color: colors.surfie,
+  },
+  timesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  timeBox: {
+    width: '48%',
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: radius.input,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  timeBoxSelected: {
     backgroundColor: colors.surfie,
     borderColor: colors.surfie,
   },
-  dateChipText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '600',
+  timeText: {
+    fontSize: 13,
+    fontWeight: '700',
     color: colors.ink,
   },
-  dateChipTextActive: {
+  timeTextSelected: {
     color: colors.white,
-    fontWeight: '700',
   },
-  timeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  timeChip: {
-    width: '23%',
-    paddingVertical: spacing.sm + 2,
-    alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-  },
-  timeChipActive: {
-    backgroundColor: colors.surface.mintSoft,
-    borderColor: colors.surfie,
-  },
-  timeChipText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '600',
-    color: colors.ink,
-  },
-  timeChipTextActive: {
-    color: colors.surfie,
-    fontWeight: '700',
-  },
-  earlierCallout: {
+  cancellationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: '#FFF7F2',
-    borderWidth: 1,
-    borderColor: '#FED7AA',
+    gap: 10,
+    backgroundColor: '#FEF2F2',
     padding: spacing.md,
     borderRadius: radius.card,
-    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
-  earlierIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  earlierTextWrap: {
+  cancelTextCol: {
     flex: 1,
   },
-  earlierTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xs,
+  cancelTitle: {
+    fontSize: 12,
     fontWeight: '700',
-    color: colors.ink,
+    color: '#991B1B',
   },
-  earlierDesc: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkMuted,
+  cancelSub: {
+    fontSize: 11,
+    color: '#991B1B',
     marginTop: 1,
   },
-  earlierLink: {
-    fontFamily: typography.body.family,
+  policyDetailsLink: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.danger,
+    color: '#DC2626',
   },
-  reasonInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  reasonInput: {
-    flex: 1,
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.ink,
-  },
-  feeCard: {
+  billCard: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
     padding: spacing.md,
-    ...shadow.card,
-    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 6,
   },
-  feeRow: {
+  billRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  feeLabel: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
+  billLabel: {
+    fontSize: 13,
     color: colors.inkMuted,
   },
-  feeAmount: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xl,
+  billVal: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  discountVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  billDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 4,
+  },
+  billTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  totalLabel: {
+    fontSize: 14,
     fontWeight: '700',
     color: colors.ink,
-    marginTop: 2,
   },
-  feeNotice: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkFaint,
-    marginTop: spacing.sm,
-  },
-  footer: {
-    marginTop: spacing.xs,
+  totalVal: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.surfie,
   },
 });
 

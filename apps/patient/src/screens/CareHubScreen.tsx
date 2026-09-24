@@ -1,360 +1,464 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image, Linking, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { colors, spacing, typography, radius } from '@coracure/brand';
+import { Icon, type IconName } from '@coracure/ui';
+import LogoWide from '../assets/brand/logo-wide.svg';
+import DrRichardImg from '../assets/dr-richard-parker.jpg';
+import PatientTabBar from '../components/PatientTabBar';
 
-import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, Avatar, StatusPill, Icon, type IconName } from '@coracure/ui';
-import type { RootStackParamList } from '../navigation/RootNavigator';
-
-type CareHubNavProp = NativeStackNavigationProp<RootStackParamList, 'CareHub'>;
-
-interface HubCategory {
+interface HubService {
   id: string;
   title: string;
-  desc: string;
+  sub: string;
   icon: IconName;
-  screen?: keyof RootStackParamList;
+  screen?: string;
   isEmergency?: boolean;
 }
 
-const CATEGORIES: HubCategory[] = [
+const SERVICES: HubService[] = [
   {
-    id: 'self_help',
-    title: 'Self-Help Tools',
-    desc: 'Guided exercises, timers, and symptom tools anytime',
-    icon: 'heart',
-    screen: 'SelfHelpTool',
-  },
-  {
-    id: 'education',
-    title: 'Education Library',
-    desc: 'Expert-approved guides and learning resources',
-    icon: 'clipboard',
-    screen: 'EducationLibrary',
-  },
-  {
-    id: 'blogs',
-    title: 'Blogs & Articles',
-    desc: 'Stories, tips, and updates to keep you informed',
-    icon: 'document',
-    screen: 'BlogsArticles',
-  },
-  {
-    id: 'caregiver',
-    title: 'Caregiver & Family',
-    desc: 'Support tools for your family and care network',
-    icon: 'user',
-  },
-  {
-    id: 'ngo',
-    title: 'NGO & Support Directory',
-    desc: 'Find local groups and patient support network',
-    icon: 'globe',
+    id: 'instant',
+    title: 'Instant Consult Now',
+    sub: 'Duty doctor live video call (PT-13-01)',
+    icon: 'video',
+    screen: 'BookingFlow',
   },
   {
     id: 'emergency',
-    title: 'Emergency Guidance',
-    desc: 'What to do and who to contact in an emergency',
+    title: 'Emergency Hotline',
+    sub: 'Immediate 24/7 medical dialer',
     icon: 'emergency',
     isEmergency: true,
+  },
+  {
+    id: 'physio',
+    title: 'Physical Therapy',
+    sub: 'Guided rehabilitation exercises',
+    icon: 'shieldCheck',
+    screen: 'CarePlan',
+  },
+  {
+    id: 'meds',
+    title: 'Medication Refills',
+    sub: 'Request e-prescription refill',
+    icon: 'clipboard',
+    screen: 'Prescription',
+  },
+  {
+    id: 'lab',
+    title: 'Lab Test Booking',
+    sub: 'Home sample collection & X-Ray',
+    icon: 'folder',
+    screen: 'Reports',
+  },
+  {
+    id: 'wellness',
+    title: 'Mental Wellness',
+    sub: 'Stress relief & breathing tools',
+    icon: 'heart',
+    screen: 'SelfHelpTool',
   },
 ];
 
 export const CareHubScreen = () => {
-  const navigation = useNavigation<CareHubNavProp>();
+  const navigation = useNavigation<any>();
 
-  const handleCategoryPress = (cat: HubCategory) => {
-    if (cat.screen) {
-      navigation.navigate(cat.screen as any);
-    } else if (cat.isEmergency) {
-      Alert.alert('Emergency Assistance', 'National Helpline: 108\nCoraCure Priority Emergency: 1800-CORACURE');
+  const handleServicePress = (srv: HubService) => {
+    if (srv.isEmergency) {
+      Linking.openURL('tel:112');
+    } else if (srv.screen) {
+      navigation.navigate(srv.screen);
     } else {
-      Alert.alert(cat.title, `Opening ${cat.title} directory...`);
+      Alert.alert(srv.title, 'Connecting to your care team...');
     }
   };
 
   return (
-    <Screen bottomInset contentStyle={s.container}>
-      <AppHeader
-        right={<Icon name="bell" size={20} color={colors.inkMuted} />}
-      />
+    <View style={s.container}>
+      {/* Top Header */}
+      <View style={s.headerBar}>
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.navigate('MainTabs')}
+          accessibilityRole="button"
+          accessibilityLabel="Go to Home"
+        >
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
 
-      <View style={s.headerWrap}>
-        <Text style={s.pageTitle}>Care Hub ✨</Text>
-        <Text style={s.pageSubtitle}>Recommended support and learning for your recovery.</Text>
+        <LogoWide width={110} height={28} />
+
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.navigate('Notifications')}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+        >
+          <Icon name="bell" size={20} color={colors.ink} />
+        </Pressable>
       </View>
 
-      {/* Recommended by Doctor Card */}
-      <View style={s.recommendedCard}>
-        <View style={s.recommendedHeader}>
-          <Avatar initials="RP" size={36} />
-          <Text style={s.recommendedDoctor}>Recommended by Dr. Richard Parker</Text>
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title */}
+        <View style={s.titleWrap}>
+          <Text style={s.pageTitle}>Care Hub ✨</Text>
+          <Text style={s.pageSubtitle}>
+            Your 24/7 dedicated recovery support network
+          </Text>
         </View>
 
-        <Pressable
-          style={s.recItem}
-          onPress={() => navigation.navigate('EducationLibrary')}
-        >
-          <View style={s.recIconBox}>
-            <Icon name="clipboard" size={18} color={colors.surfie} />
+        {/* Top Card: Care Coordinator */}
+        <View style={s.coordinatorCard}>
+          <Image
+            source={DrRichardImg}
+            style={s.coordinatorPhoto}
+            resizeMode="cover"
+          />
+          <View style={s.coordinatorInfo}>
+            <View style={s.onlineBadge}>
+              <View style={s.onlineDot} />
+              <Text style={s.onlineText}>Care Team Available</Text>
+            </View>
+            <Text style={s.coordinatorName}>Dr. Richard Parker</Text>
+            <Text style={s.coordinatorSub}>Primary Orthopedic Coordinator</Text>
           </View>
-          <View style={s.recTextCol}>
-            <Text style={s.recItemTitle}>Knee Rehab Basics</Text>
-            <Text style={s.recItemSub}>A quick guide to your recovery journey • 10 min read</Text>
-          </View>
-          <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-        </Pressable>
+          <Pressable
+            style={s.chatNowBtn}
+            onPress={() => navigation.navigate('HelpSupport')}
+            accessibilityRole="button"
+            accessibilityLabel="Care Support"
+          >
+            <Icon name="info" size={15} color={colors.white} />
+            <Text style={s.chatNowText}>Support</Text>
+          </Pressable>
+        </View>
 
-        <View style={s.divider} />
-
-        <Pressable
-          style={s.recItem}
-          onPress={() => navigation.navigate('SelfHelpTool')}
-        >
-          <View style={s.recIconBox}>
-            <Icon name="video" size={18} color={colors.surfie} />
-          </View>
-          <View style={s.recTextCol}>
-            <Text style={s.recItemTitle}>Daily Recovery Routine</Text>
-            <Text style={s.recItemSub}>Simple steps for faster healing • Video • 8 min</Text>
-          </View>
-          <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-        </Pressable>
-      </View>
-
-      {/* 2x3 Grid Categories */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Explore Resources</Text>
-        <View style={s.grid}>
-          {CATEGORIES.map((cat) => (
+        {/* 2x3 Grid of Support Services */}
+        <Text style={s.sectionHeading}>Recovery Services & Support</Text>
+        <View style={s.servicesGrid}>
+          {SERVICES.map((srv) => (
             <Pressable
-              key={cat.id}
-              style={[s.gridCard, cat.isEmergency && s.gridCardEmergency]}
-              onPress={() => handleCategoryPress(cat)}
+              key={srv.id}
+              style={[s.serviceCard, srv.isEmergency && s.serviceCardEmergency]}
+              onPress={() => handleServicePress(srv)}
+              accessibilityRole="button"
+              accessibilityLabel={srv.title}
             >
-              <View style={[s.gridIconWrap, cat.isEmergency && s.gridIconWrapEmergency]}>
+              <View
+                style={[
+                  s.serviceIconWrap,
+                  { backgroundColor: srv.isEmergency ? '#FEE2E2' : '#EEF8F5' },
+                ]}
+              >
                 <Icon
-                  name={cat.icon}
+                  name={srv.icon}
                   size={22}
-                  color={cat.isEmergency ? colors.danger : colors.surfie}
+                  color={srv.isEmergency ? '#DC2626' : colors.surfie}
                 />
               </View>
-              <Text style={[s.gridTitle, cat.isEmergency && s.gridTitleEmergency]}>
-                {cat.title}
+              <Text
+                style={[
+                  s.serviceTitle,
+                  srv.isEmergency && s.serviceTitleEmergency,
+                ]}
+              >
+                {srv.title}
               </Text>
-              <Text style={s.gridDesc} numberOfLines={2}>
-                {cat.desc}
-              </Text>
+              <Text style={s.serviceSub}>{srv.sub}</Text>
             </Pressable>
           ))}
         </View>
-      </View>
 
-      {/* Recently Viewed */}
-      <Pressable
-        style={s.listLinkCard}
-        onPress={() => navigation.navigate('EducationLibrary')}
-      >
-        <View style={s.listLinkIcon}>
-          <Icon name="clock" size={18} color={colors.surfie} />
-        </View>
-        <View style={s.listLinkTextCol}>
-          <Text style={s.listLinkHeading}>Recently viewed</Text>
-          <Text style={s.listLinkSub} numberOfLines={1}>
-            Knee Rehab Basics • Sleep Better Guide • Pain Management 101
-          </Text>
-        </View>
-        <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-      </Pressable>
+        {/* Directory Navigation Links */}
+        <Text style={s.sectionHeading}>Learning & Wellness Tools</Text>
+        <View style={s.directoryList}>
+          <Pressable
+            style={s.directoryRow}
+            onPress={() => navigation.navigate('CaregiverGuide')}
+            accessibilityRole="button"
+            accessibilityLabel="Caregiver and Family Guide"
+          >
+            <View style={s.dirIconCircle}>
+              <Icon name="heart" size={18} color={colors.surfie} />
+            </View>
+            <View style={s.dirTextCol}>
+              <Text style={s.dirTitle}>Caregiver & Family Guide</Text>
+              <Text style={s.dirSub}>Guidance for family members supporting recovery</Text>
+            </View>
+            <Icon name="chevronRight" size={18} color={colors.inkFaint} />
+          </Pressable>
 
-      {/* Saved for Later */}
-      <Pressable
-        style={s.listLinkCard}
-        onPress={() => navigation.navigate('BlogsArticles')}
-      >
-        <View style={s.listLinkIcon}>
-          <Icon name="heart" size={18} color={colors.surfie} />
+          <Pressable
+            style={s.directoryRow}
+            onPress={() => navigation.navigate('SupportDirectory')}
+            accessibilityRole="button"
+            accessibilityLabel="Support Directory"
+          >
+            <View style={s.dirIconCircle}>
+              <Icon name="mapPin" size={18} color={colors.surfie} />
+            </View>
+            <View style={s.dirTextCol}>
+              <Text style={s.dirTitle}>Support Directory</Text>
+              <Text style={s.dirSub}>Verified rehabilitation clinics and helplines</Text>
+            </View>
+            <Icon name="chevronRight" size={18} color={colors.inkFaint} />
+          </Pressable>
+
+          <Pressable
+            style={s.directoryRow}
+            onPress={() => navigation.navigate('SelfHelpTool')}
+            accessibilityRole="button"
+            accessibilityLabel="Self-Help Tools"
+          >
+            <View style={s.dirIconCircle}>
+              <Icon name="shieldCheck" size={18} color={colors.surfie} />
+            </View>
+            <View style={s.dirTextCol}>
+              <Text style={s.dirTitle}>Self-Help & Breathing Tools</Text>
+              <Text style={s.dirSub}>Guided calming exercises for recovery</Text>
+            </View>
+            <Icon name="chevronRight" size={18} color={colors.inkFaint} />
+          </Pressable>
+
+          <Pressable
+            style={s.directoryRow}
+            onPress={() => navigation.navigate('EducationLibrary')}
+            accessibilityRole="button"
+            accessibilityLabel="Education Library"
+          >
+            <View style={s.dirIconCircle}>
+              <Icon name="clipboard" size={18} color={colors.surfie} />
+            </View>
+            <View style={s.dirTextCol}>
+              <Text style={s.dirTitle}>Education Library</Text>
+              <Text style={s.dirSub}>Physician-approved guides on sleep & joints</Text>
+            </View>
+            <Icon name="chevronRight" size={18} color={colors.inkFaint} />
+          </Pressable>
+
+          <Pressable
+            style={s.directoryRow}
+            onPress={() => navigation.navigate('BlogsArticles')}
+            accessibilityRole="button"
+            accessibilityLabel="Blogs and Articles"
+          >
+            <View style={s.dirIconCircle}>
+              <Icon name="document" size={18} color={colors.surfie} />
+            </View>
+            <View style={s.dirTextCol}>
+              <Text style={s.dirTitle}>Blogs & Recovery Insights</Text>
+              <Text style={s.dirSub}>Expert articles from clinical specialists</Text>
+            </View>
+            <Icon name="chevronRight" size={18} color={colors.inkFaint} />
+          </Pressable>
         </View>
-        <View style={s.listLinkTextCol}>
-          <Text style={s.listLinkHeading}>Saved for later</Text>
-          <Text style={s.listLinkSub} numberOfLines={1}>
-            Nutrition for Healing • Breathing Exercises • Return to Work Guide
-          </Text>
-        </View>
-        <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-      </Pressable>
-    </Screen>
+      </ScrollView>
+
+      {/* 5-Tab Bar */}
+      <PatientTabBar activeTab="CareHub" />
+    </View>
   );
 };
 
 const s = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#F7FBF9',
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
-  },
-  headerWrap: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    marginTop: 2,
-  },
-  recommendedCard: {
-    backgroundColor: colors.surface.mintSoft,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.selected,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  recommendedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  recommendedDoctor: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-    color: colors.surfie,
-  },
-  recItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  recIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
     backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recTextCol: {
+  scrollView: {
     flex: 1,
   },
-  recItemTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xs,
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  titleWrap: {
+    marginBottom: 2,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  pageSubtitle: {
+    fontSize: 13,
+    color: colors.inkMuted,
+  },
+  coordinatorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    gap: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  coordinatorPhoto: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+  },
+  coordinatorInfo: {
+    flex: 1,
+  },
+  onlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  onlineText: {
+    fontSize: 11,
     fontWeight: '700',
+    color: '#059669',
+  },
+  coordinatorName: {
+    fontSize: 14,
+    fontWeight: '800',
     color: colors.ink,
   },
-  recItemSub: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
+  coordinatorSub: {
+    fontSize: 11,
     color: colors.inkMuted,
     marginTop: 1,
   },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    marginVertical: spacing.xs,
+  chatNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.surfie,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
-  section: {
-    marginBottom: spacing.lg,
+  chatNowText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.white,
   },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md,
+  sectionHeading: {
+    fontSize: 14,
     fontWeight: '700',
     color: colors.ink,
-    marginBottom: spacing.sm,
+    marginTop: 4,
   },
-  grid: {
+  servicesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.md,
+    gap: 10,
   },
-  gridCard: {
-    width: '47.5%',
+  serviceCard: {
+    width: '48%',
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
     padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     gap: 6,
-    ...shadow.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  gridCardEmergency: {
-    backgroundColor: colors.dangerSoft,
-    borderColor: '#F7D5D3',
+  serviceCardEmergency: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
   },
-  gridIconWrap: {
+  serviceIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surface.mintSoft,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
   },
-  gridIconWrapEmergency: {
-    backgroundColor: colors.white,
-  },
-  gridTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xs,
+  serviceTitle: {
+    fontSize: 13,
     fontWeight: '700',
     color: colors.ink,
   },
-  gridTitleEmergency: {
-    color: colors.danger,
+  serviceTitleEmergency: {
+    color: '#991B1B',
   },
-  gridDesc: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
+  serviceSub: {
+    fontSize: 11,
     color: colors.inkMuted,
-    lineHeight: 14,
+    lineHeight: 15,
   },
-  listLinkCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  directoryList: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.surface.line,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  directoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: spacing.md,
     gap: spacing.md,
-    marginBottom: spacing.sm,
-    ...shadow.card,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
-  listLinkIcon: {
+  dirIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.surface.selected,
+    backgroundColor: '#EEF8F5',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listLinkTextCol: {
+  dirTextCol: {
     flex: 1,
   },
-  listLinkHeading: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xs,
+  dirTitle: {
+    fontSize: 13,
     fontWeight: '700',
     color: colors.ink,
   },
-  listLinkSub: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
+  dirSub: {
+    fontSize: 11,
     color: colors.inkMuted,
-    marginTop: 2,
+    marginTop: 1,
   },
 });
 
 export default CareHubScreen;
-

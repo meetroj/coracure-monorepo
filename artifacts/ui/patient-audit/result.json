@@ -1,0 +1,32 @@
+{
+  "screens": [
+    "MainTabs",
+    "Appointments",
+    "CarePlan",
+    "CareHub",
+    "Profile",
+    "Notifications",
+    "Reports",
+    "Search",
+    "BookingFlow",
+    "CaregiverGuide",
+    "SupportDirectory",
+    "HelpSupport",
+    "LegalPolicy",
+    "DailyCheckIn",
+    "CheckInComplete",
+    "SelfHelpTool",
+    "EducationLibrary",
+    "BlogsArticles",
+    "Prescription",
+    "DeviceCheck",
+    "VideoConsultation",
+    "Feedback",
+    "RescheduleAppointment",
+    "CancelRefund",
+    "BookFollowUp",
+    "ProfileSetup",
+    "Consent"
+  ],
+  "errors": []
+}

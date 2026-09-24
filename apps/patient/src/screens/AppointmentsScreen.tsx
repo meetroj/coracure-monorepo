@@ -79,21 +79,21 @@ export const AppointmentsScreen = () => {
                     <Button
                       label="Join Call"
                       size="sm"
-                      onPress={() => navigation.navigate('DeviceCheck', { consultationId: 'demo-id' })}
+                      onPress={() => navigation.navigate('DeviceCheck', { consultationId: 'cons-001' })}
                       style={s.actionBtn}
                     />
                     <Button
                       label="Reschedule"
                       variant="secondary"
                       size="sm"
-                      onPress={() => navigation.navigate('RescheduleAppointment', { consultationId: 'demo-id' })}
+                      onPress={() => navigation.navigate('RescheduleAppointment', { consultationId: 'cons-001' })}
                       style={s.actionBtn}
                     />
                     <Button
                       label="Cancel"
                       variant="ghost"
                       size="sm"
-                      onPress={() => navigation.navigate('CancelRefund', { consultationId: 'demo-id' })}
+                      onPress={() => navigation.navigate('CancelRefund', { consultationId: 'cons-001' })}
                       style={s.cancelBtn}
                     />
                   </View>
