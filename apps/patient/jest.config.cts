@@ -22,7 +22,7 @@ module.exports = {
     // The workspace libraries, mapped for Jest the way tsconfig.base.json maps
     // them for the compiler and withNxMetro maps them for the bundler.
     '^@coracure/brand$': '<rootDir>/../../libs/brand/src/index.ts',
-    '^@coracure/ui$': '<rootDir>/../../libs/ui/src/index.ts',
+    '^@coracure/ui$': '<rootDir>/../../libs/ui/src/index.tsx',
     '^@coracure/api$': '<rootDir>/../../libs/api/src/index.ts',
   },
   transform: {
@@ -37,7 +37,7 @@ module.exports = {
     ),
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?|react-native-svg|react-native-safe-area-context)/)',
+    'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?|@react-navigation|react-native-keychain|react-native-svg|react-native-safe-area-context)/)',
   ],
   coverageDirectory: '../../coverage/apps/patient'
 };

@@ -1,24 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, FilterChip, ProgressBar, Icon } from '@coracure/ui';
+import { colors, spacing, typography, radius } from '@coracure/brand';
+import { Icon, type IconName } from '@coracure/ui';
+import LogoWide from '../assets/brand/logo-wide.svg';
 import SleepScienceImg from '../assets/sleep-science.jpg';
-import type { RootStackParamList } from '../navigation/RootNavigator';
+import PatientTabBar from '../components/PatientTabBar';
 
-type EduNavProp = NativeStackNavigationProp<RootStackParamList, 'EducationLibrary'>;
-
-const TOPIC_CHIPS = [
-  'All Guides',
+const CATEGORIES = [
+  'All',
+  'Rehabilitation',
+  'Nutrition',
   'Sleep',
-  'Anxiety',
-  'Depression',
-  'Diet & Nutrition',
-  'Recovery Exercises',
-  'Women\'s Health',
-  'Elderly Care',
+  'Mental Wellness',
+  'Pain Management',
 ];
 
 interface GuideItem {
@@ -26,311 +21,410 @@ interface GuideItem {
   title: string;
   desc: string;
   readTime: string;
-  clinicallyReviewed: boolean;
+  icon: IconName;
   progress?: number;
 }
 
 const GUIDES: GuideItem[] = [
   {
     id: '1',
-    title: 'Understanding Sleep Problems',
-    desc: 'Learn about common sleep difficulties and what might be affecting your rest.',
+    title: 'Understanding Knee Cartilage & Healing',
+    desc: 'How joint cartilage repairs under controlled physical exercise.',
     readTime: '12 min read',
-    clinicallyReviewed: true,
-    progress: 40,
+    icon: 'shieldCheck',
+    progress: 75,
   },
   {
     id: '2',
-    title: 'Sleep Hygiene Basics',
-    desc: 'Simple daily habits to improve sleep quality and build a healthier routine.',
+    title: 'Diet & Joint Inflammation Secrets',
+    desc: 'Anti-inflammatory nutrition that speeds post-consultation recovery.',
     readTime: '8 min read',
-    clinicallyReviewed: true,
-    progress: 100,
+    icon: 'heart',
+    progress: 40,
   },
   {
     id: '3',
-    title: 'When to Seek Help',
-    desc: 'Know the signs when it is time to consult your doctor or specialist.',
+    title: 'Proper Walking Posture with Knee Strain',
+    desc: 'Ergonomic alignment techniques to protect knee and hip joints.',
     readTime: '5 min read',
-    clinicallyReviewed: true,
+    icon: 'mapPin',
   },
 ];
 
 export const EducationLibraryScreen = () => {
-  const navigation = useNavigation<EduNavProp>();
+  const navigation = useNavigation<any>();
 
-  const [selectedTopic, setSelectedTopic] = useState('Sleep');
+  const [selectedCat, setSelectedCat] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
   return (
-    <Screen bottomInset contentStyle={s.container}>
-      <AppHeader
-        onBack={() => navigation.goBack()}
-        right={<Icon name="search" size={20} color={colors.inkMuted} />}
-      />
+    <View style={s.container}>
+      {/* Top Header */}
+      <View style={s.headerBar}>
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
 
-      <View style={s.headerWrap}>
-        <Text style={s.pageTitle}>Education Library</Text>
-        <Text style={s.pageSubtitle}>
-          Trusted knowledge to support your overall well-being.
-        </Text>
+        <LogoWide width={110} height={28} />
+
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.navigate('Notifications')}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+        >
+          <Icon name="bell" size={20} color={colors.ink} />
+        </Pressable>
       </View>
 
-      {/* Search Input Bar */}
-      <View style={s.searchBar}>
-        <Icon name="search" size={18} color={colors.inkMuted} />
-        <TextInput
-          style={s.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search topics, keywords or conditions..."
-          placeholderTextColor={colors.inkMuted}
-        />
-      </View>
-
-      {/* Topic Chips Filter */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipsScroll}>
-        {TOPIC_CHIPS.map((chip) => {
-          const isSelected = selectedTopic === chip;
-          return (
-            <FilterChip
-              key={chip}
-              label={chip}
-              active={isSelected}
-              onPress={() => setSelectedTopic(chip)}
-            />
-          );
-        })}
-      </ScrollView>
-
-      {/* Featured Guide Banner Card */}
-      <View style={s.featuredCard}>
-        <View style={s.featuredContent}>
-          <Text style={s.featuredTag}>FEATURED GUIDE</Text>
-          <Text style={s.featuredTitle}>The Science of Sleep</Text>
-          <Text style={s.featuredDesc}>
-            Explore how sleep works, why it matters, and what happens when you don't get enough.
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title */}
+        <View style={s.titleWrap}>
+          <Text style={s.pageTitle}>Education Library 📚</Text>
+          <Text style={s.pageSubtitle}>
+            Clinician-authored guides to power your physical recovery
           </Text>
         </View>
-        <View style={s.featuredGraphic}>
+
+        {/* Search Bar */}
+        <View style={s.searchBar}>
+          <Icon name="search" size={18} color={colors.inkFaint} />
+          <TextInput
+            style={s.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search guides, recovery topics, nutrition..."
+            placeholderTextColor={colors.inkFaint}
+          />
+          <View style={s.filterIconCircle}>
+            <Icon name="filter" size={14} color={colors.white} />
+          </View>
+        </View>
+
+        {/* Category Chips Scroll */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.chipsRow}
+        >
+          {CATEGORIES.map((cat) => {
+            const isSelected = selectedCat === cat;
+            return (
+              <Pressable
+                key={cat}
+                style={[s.catChip, isSelected && s.catChipActive]}
+                onPress={() => setSelectedCat(cat)}
+                accessibilityRole="button"
+                accessibilityLabel={cat}
+              >
+                <Text style={[s.catChipText, isSelected && s.catChipTextActive]}>
+                  {cat}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Featured Hero Card: The Science of Sleep */}
+        <View style={s.featuredCard}>
+          <View style={s.featuredContent}>
+            <View style={s.featuredTag}>
+              <Text style={s.featuredTagText}>FEATURED GUIDE</Text>
+            </View>
+            <Text style={s.featuredTitle}>The Science of Sleep</Text>
+            <Text style={s.featuredDesc}>
+              Quality deep sleep accelerates cellular cartilage restoration.
+            </Text>
+            <View style={s.featuredMetaRow}>
+              <Icon name="clock" size={13} color="#A7F3D0" />
+              <Text style={s.featuredMetaText}>5 min read • Dr. Richard Parker</Text>
+            </View>
+          </View>
           <Image
             source={SleepScienceImg}
-            style={s.featuredGraphicImage}
+            style={s.featuredImg}
             resizeMode="cover"
           />
         </View>
-      </View>
 
-      {/* Structured Guides List */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Curated Guides</Text>
+        {/* Guides List */}
+        <Text style={s.sectionHeading}>Recommended Reading</Text>
         <View style={s.guidesList}>
           {GUIDES.map((guide) => (
             <Pressable
               key={guide.id}
               style={s.guideCard}
-              onPress={() => Alert.alert(guide.title, 'Opening interactive clinical guide...')}
+              onPress={() => {}}
+              accessibilityRole="button"
+              accessibilityLabel={guide.title}
             >
-              <View style={s.guideHeaderRow}>
-                <View style={s.guideIconBox}>
-                  <Icon name="clipboard" size={20} color={colors.surfie} />
-                </View>
-                <View style={s.guideTitleWrap}>
-                  <Text style={s.guideTitle}>{guide.title}</Text>
-                  <Text style={s.guideDesc}>{guide.desc}</Text>
-                </View>
-                <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+              <View style={s.guideIconCircle}>
+                <Icon name={guide.icon || 'clipboard'} size={20} color={colors.surfie} />
               </View>
-
-              <View style={s.guideMetaRow}>
-                <Text style={s.readTime}>{guide.readTime}</Text>
-                {guide.clinicallyReviewed && (
-                  <Text style={s.reviewedTag}>✓ Clinically reviewed</Text>
-                )}
-                {guide.progress !== undefined && (
-                  <Text style={s.progressText}>{guide.progress}% complete</Text>
-                )}
-              </View>
-
-              {guide.progress !== undefined && (
-                <View style={s.progressBarWrap}>
-                  <ProgressBar percent={guide.progress} />
+              <View style={s.guideTextCol}>
+                <Text style={s.guideTitle}>{guide.title}</Text>
+                <Text style={s.guideDesc}>{guide.desc}</Text>
+                <View style={s.guideMetaRow}>
+                  <Text style={s.guideTime}>{guide.readTime}</Text>
+                  {guide.progress !== undefined && (
+                    <View style={s.progressRow}>
+                      <View style={s.progressBar}>
+                        <View style={[s.progressFill, { width: `${guide.progress}%` }]} />
+                      </View>
+                      <Text style={s.progressText}>{guide.progress}%</Text>
+                    </View>
+                  )}
                 </View>
-              )}
+              </View>
+              <Icon name="chevronRight" size={18} color={colors.inkFaint} />
             </Pressable>
           ))}
         </View>
-      </View>
-    </Screen>
+      </ScrollView>
+
+      {/* 5-Tab Bar */}
+      <PatientTabBar activeTab="CareHub" />
+    </View>
   );
 };
 
 const s = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    flex: 1,
+    backgroundColor: '#F7FBF9',
   },
-  headerWrap: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  titleWrap: {
+    marginBottom: 2,
   },
   pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.ink,
+    marginBottom: 4,
   },
   pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     color: colors.inkMuted,
-    marginTop: 2,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
     backgroundColor: colors.white,
-    borderRadius: radius.card,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    height: 46,
     borderWidth: 1,
-    borderColor: colors.surface.line,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
+    borderColor: '#E5E7EB',
+    gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     color: colors.ink,
   },
-  chipsScroll: {
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
+  filterIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surfie,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  catChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  catChipActive: {
+    backgroundColor: colors.surfie,
+    borderColor: colors.surfie,
+  },
+  catChipText: {
+    fontSize: 12,
+    color: colors.ink,
+    fontWeight: '500',
+  },
+  catChipTextActive: {
+    color: colors.white,
+    fontWeight: '700',
   },
   featuredCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F2B22',
+    backgroundColor: '#0E766C',
     borderRadius: radius.card,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
   featuredContent: {
-    flex: 1,
+    flex: 1.2,
+    padding: spacing.md,
+    justifyContent: 'space-between',
+    gap: 4,
   },
   featuredTag: {
-    fontFamily: typography.body.family,
-    fontSize: 9,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  featuredTagText: {
+    fontSize: 10,
     fontWeight: '700',
-    color: colors.paris,
-    marginBottom: 2,
+    color: '#A7F3D0',
   },
   featuredTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.white,
+    marginTop: 2,
   },
   featuredDesc: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 4,
-    lineHeight: 16,
+    fontSize: 11,
+    color: '#E6F3EE',
+    lineHeight: 15,
   },
-  featuredGraphic: {
-    width: 80,
-    height: 80,
-    borderRadius: 16,
-    overflow: 'hidden',
+  featuredMetaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: spacing.sm,
+    gap: 4,
+    marginTop: 4,
   },
-  featuredGraphicImage: {
-    width: '100%',
-    height: '100%',
+  featuredMetaText: {
+    fontSize: 11,
+    color: '#A7F3D0',
+    fontWeight: '600',
   },
-  section: {
-    marginBottom: spacing.lg,
+  featuredImg: {
+    flex: 0.8,
+    height: 125,
   },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md,
+  sectionHeading: {
+    fontSize: 14,
     fontWeight: '700',
     color: colors.ink,
-    marginBottom: spacing.sm,
+    marginTop: 4,
   },
   guidesList: {
-    gap: spacing.md,
+    gap: 10,
   },
   guideCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
     padding: spacing.md,
-    ...shadow.card,
-  },
-  guideHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     gap: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  guideIconBox: {
+  guideIconCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surface.mintSoft,
+    backgroundColor: '#EEF8F5',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  guideTitleWrap: {
+  guideTextCol: {
     flex: 1,
+    gap: 2,
   },
   guideTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.ink,
   },
   guideDesc: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
+    fontSize: 11,
     color: colors.inkMuted,
-    marginTop: 2,
     lineHeight: 15,
   },
   guideMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.md,
-    paddingTop: spacing.xs,
+    gap: 10,
+    marginTop: 4,
   },
-  readTime: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkMuted,
-  },
-  reviewedTag: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
+  guideTime: {
+    fontSize: 11,
     color: colors.surfie,
     fontWeight: '600',
   },
-  progressText: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.ink,
-    fontWeight: '700',
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  progressBarWrap: {
-    marginTop: spacing.xs,
+  progressBar: {
+    width: 60,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.surfie,
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 10,
+    color: colors.inkFaint,
   },
 });
 
 export default EducationLibraryScreen;
-

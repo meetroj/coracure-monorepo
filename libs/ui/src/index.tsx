@@ -236,6 +236,7 @@ export const Button = ({
   size = 'md',
   style,
   testID,
+  accessibilityLabel,
 }: {
   label: string;
   onPress?: () => void;
@@ -246,6 +247,7 @@ export const Button = ({
   size?: 'sm' | 'md';
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  accessibilityLabel?: string;
 }) => {
   const isPrimary = variant === 'primary' || variant === 'gradient';
   const isDanger = variant === 'danger';
@@ -256,6 +258,7 @@ export const Button = ({
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
       style={({ pressed }) => [
         s.btn,
         size === 'sm' && s.btnSm,
@@ -404,6 +407,7 @@ export const PillButton = ({
   disabled,
   variant = 'primary',
   style,
+  accessibilityLabel,
 }: {
   label: string;
   onPress: () => void;
@@ -411,12 +415,15 @@ export const PillButton = ({
   disabled?: boolean;
   variant?: 'primary' | 'secondary' | 'ghost';
   style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
 }) => {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={({ pressed }) => [
         s.pillButton,
         variant === 'secondary' && s.pillButtonSecondary,

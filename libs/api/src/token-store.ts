@@ -7,7 +7,7 @@ const USERNAME = 'coracure';
 
 let memoryTokens: { accessToken: string; refreshToken: string } | null = null;
 
-const isWeb = Platform.OS === 'web' || typeof window !== 'undefined';
+const isWeb = Platform.OS === 'web';
 
 export const saveTokens = async (accessToken: string, refreshToken: string): Promise<void> => {
   memoryTokens = { accessToken, refreshToken };
@@ -49,5 +49,4 @@ export const clearTokens = async (): Promise<void> => {
     // In-memory fallback
   }
 };
-
 

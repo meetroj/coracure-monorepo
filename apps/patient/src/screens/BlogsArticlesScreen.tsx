@@ -1,376 +1,515 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Image, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, FilterChip, Icon } from '@coracure/ui';
+import { colors, spacing, typography, radius } from '@coracure/brand';
+import { Icon } from '@coracure/ui';
+import LogoWide from '../assets/brand/logo-wide.svg';
+import DrRichardImg from '../assets/dr-richard-parker.jpg';
+import DrNehaImg from '../assets/dr-neha-sharma.jpg';
+import KneeJointImg from '../assets/knee-joint.jpg';
 import MentalHealthImg from '../assets/mental-health.jpg';
-import type { RootStackParamList } from '../navigation/RootNavigator';
+import SleepScienceImg from '../assets/sleep-science.jpg';
+import PatientTabBar from '../components/PatientTabBar';
 
-type BlogNavProp = NativeStackNavigationProp<RootStackParamList, 'BlogsArticles'>;
-
-const FILTER_TABS = [
-  'All Articles',
-  'Treatment Literacy',
-  'Medicine Facts',
-  'Stigma',
-  'Family Support',
-  'Recovery',
+const CATEGORIES = [
+  'All',
+  'Trending',
+  'Specialist Advice',
+  'Rehab Exercises',
+  'Nutrition',
+  'Mental Health',
 ];
 
 interface ArticleItem {
   id: string;
-  title: string;
-  excerpt: string;
-  readTime: string;
-  author: string;
   category: string;
+  title: string;
+  author: string;
+  readTime: string;
+  thumbnail: any;
 }
 
 const ARTICLES: ArticleItem[] = [
   {
     id: '1',
-    title: 'The Power of Sleep in Mental Wellness',
-    excerpt: 'Good sleep is more than rest—it plays a vital role in mood, focus, and long-term healing.',
-    readTime: '4 min read',
+    category: 'REHABILITATION',
+    title: '10 Exercises To Strengthen Your Quads at Home',
     author: 'Dr. Richard Parker',
-    category: 'Recovery',
+    readTime: '4 min read',
+    thumbnail: DrRichardImg,
   },
   {
     id: '2',
-    title: 'Journaling for Clarity and Calm',
-    excerpt: 'Putting your thoughts on paper can reduce anxiety, improve self-awareness, and support emotional health.',
-    readTime: '5 min read',
-    author: 'CoraCure Clinical Team',
-    category: 'Self-Care',
+    category: 'MENTAL WELLNESS',
+    title: 'How Mental Health Impacts Physical Healing',
+    author: 'Dr. Neha Sharma',
+    readTime: '6 min read',
+    thumbnail: DrNehaImg,
   },
   {
     id: '3',
-    title: 'Mindfulness Techniques to Try Daily',
-    excerpt: 'Simple grounded exercises to bring calm awareness to the present moment and ease stress.',
-    readTime: '7 min read',
-    author: 'Dr. Ananya Sharma',
-    category: 'Mindfulness',
+    category: 'CLINICAL SCIENCE',
+    title: 'The Role of Collagen in Joint Repair',
+    author: 'CoraCure Ortho Team',
+    readTime: '5 min read',
+    thumbnail: KneeJointImg,
   },
 ];
 
-const RELATED_TOPICS = [
-  { id: '1', title: 'How to Support a Loved One in Recovery' },
-  { id: '2', title: 'Nutrition and Healing: What is the Link?' },
-  { id: '3', title: 'Understanding Pain Cycles & Relief' },
+const TRENDING_TOPICS = [
+  {
+    id: 't1',
+    title: 'Post-Op Physical Therapy',
+    reads: '1.2k reads',
+    thumbnail: SleepScienceImg,
+  },
+  {
+    id: 't2',
+    title: 'Joint Nutrition Guidelines',
+    reads: '980 reads',
+    thumbnail: MentalHealthImg,
+  },
 ];
 
 export const BlogsArticlesScreen = () => {
-  const navigation = useNavigation<BlogNavProp>();
+  const navigation = useNavigation<any>();
 
-  const [activeTab, setActiveTab] = useState('All Articles');
-  const [search, setSearch] = useState('');
+  const [selectedCat, setSelectedCat] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const handleArticlePress = (title: string, author: string) => {
+    Alert.alert(title, `Opening clinically reviewed article by ${author}...`);
+  };
 
   return (
-    <Screen bottomInset contentStyle={s.container}>
-      <AppHeader
-        onBack={() => navigation.goBack()}
-        right={<Icon name="search" size={20} color={colors.inkMuted} />}
-      />
+    <View style={s.container}>
+      {/* Top Header Bar */}
+      <View style={s.headerBar}>
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
 
-      <View style={s.headerWrap}>
-        <Text style={s.pageTitle}>Blogs & Articles</Text>
-        <Text style={s.pageSubtitle}>
-          Expert insights and clinical knowledge for your recovery journey.
-        </Text>
+        <LogoWide width={110} height={28} />
+
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.navigate('Notifications')}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+        >
+          <Icon name="bell" size={20} color={colors.ink} />
+        </Pressable>
       </View>
 
-      {/* Search Input */}
-      <View style={s.searchBar}>
-        <Icon name="search" size={18} color={colors.inkMuted} />
-        <TextInput
-          style={s.searchInput}
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search articles, topics or authors..."
-          placeholderTextColor={colors.inkMuted}
-        />
-      </View>
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title */}
+        <View style={s.titleWrap}>
+          <Text style={s.pageTitle}>Blogs & Articles 📖</Text>
+          <Text style={s.pageSubtitle}>
+            Evidence-based clinical insights & recovery guides
+          </Text>
+        </View>
 
-      {/* Categories Filter Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabsScroll}>
-        {FILTER_TABS.map((tab) => {
-          const isSelected = activeTab === tab;
-          return (
-            <FilterChip
-              key={tab}
-              label={tab}
-              active={isSelected}
-              onPress={() => setActiveTab(tab)}
-            />
-          );
-        })}
+        {/* Search Bar */}
+        <View style={s.searchBar}>
+          <TextInput
+            style={s.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search articles, symptoms, topics..."
+            placeholderTextColor={colors.inkFaint}
+          />
+          <Pressable
+            style={s.searchIconCircle}
+            accessibilityRole="button"
+            accessibilityLabel="Search"
+          >
+            <Icon name="search" size={16} color={colors.white} />
+          </Pressable>
+        </View>
+
+        {/* Category Filter Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.chipsRow}
+        >
+          {CATEGORIES.map((cat) => {
+            const isSelected = selectedCat === cat;
+            return (
+              <Pressable
+                key={cat}
+                style={[s.catChip, isSelected && s.catChipActive]}
+                onPress={() => setSelectedCat(cat)}
+                accessibilityRole="button"
+                accessibilityLabel={cat}
+              >
+                <Text style={[s.catChipText, isSelected && s.catChipTextActive]}>
+                  {cat}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Featured Hero Banner Card */}
+        <Pressable
+          style={s.featuredCard}
+          onPress={() => handleArticlePress('Knee Recovery 101: What To Expect In Month 1', 'Dr. Richard Parker')}
+          accessibilityRole="button"
+          accessibilityLabel="Featured Post: Knee Recovery 101"
+        >
+          <View style={s.featuredRow}>
+            <View style={s.featuredIconBox}>
+              <Image
+                source={MentalHealthImg}
+                style={s.featuredIconImg}
+                resizeMode="cover"
+              />
+            </View>
+            <View style={s.featuredTextCol}>
+              <View style={s.featuredBadgeWrap}>
+                <Text style={s.featuredBadgeText}>FEATURED POST</Text>
+              </View>
+              <Text style={s.featuredTitle}>
+                Knee Recovery 101: What To Expect In Month 1
+              </Text>
+              <Text style={s.featuredMeta}>
+                By Dr. Richard Parker • 5 min read
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+
+        {/* Latest Articles Feed */}
+        <View style={s.feedHeaderRow}>
+          <Text style={s.sectionHeading}>Latest Articles</Text>
+          <Text style={s.seeAllLink}>See all</Text>
+        </View>
+
+        <View style={s.articlesList}>
+          {ARTICLES.map((item) => (
+            <Pressable
+              key={item.id}
+              style={s.articleCard}
+              onPress={() => handleArticlePress(item.title, item.author)}
+              accessibilityRole="button"
+              accessibilityLabel={item.title}
+            >
+              <Image
+                source={item.thumbnail}
+                style={s.articleThumb}
+                resizeMode="cover"
+              />
+              <View style={s.articleTextCol}>
+                <Text style={s.articleCategory}>{item.category}</Text>
+                <Text style={s.articleTitle} numberOfLines={2}>
+                  {item.title}
+                </Text>
+                <Text style={s.articleMeta}>
+                  {item.author} • {item.readTime}
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={colors.inkFaint} />
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Trending Topics Horizontal Section */}
+        <View style={s.trendingSection}>
+          <Text style={s.sectionHeading}>Trending Topics</Text>
+          <View style={s.trendingRow}>
+            {TRENDING_TOPICS.map((topic) => (
+              <Pressable
+                key={topic.id}
+                style={s.trendingCard}
+                onPress={() => handleArticlePress(topic.title, 'Clinical Staff')}
+                accessibilityRole="button"
+                accessibilityLabel={topic.title}
+              >
+                <Image
+                  source={topic.thumbnail}
+                  style={s.trendingThumb}
+                  resizeMode="cover"
+                />
+                <View style={s.trendingInfo}>
+                  <Text style={s.trendingTitle} numberOfLines={2}>
+                    {topic.title}
+                  </Text>
+                  <Text style={s.trendingReads}>{topic.reads}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       </ScrollView>
 
-      {/* Featured Article Card */}
-      <Pressable
-        style={s.featuredCard}
-        onPress={() => Alert.alert('Understanding Mental Health', 'Opening full clinically reviewed article...')}
-      >
-        <View style={s.featuredHeaderRow}>
-          <View style={s.featuredIconBox}>
-            <Image
-              source={MentalHealthImg}
-              style={s.featuredImage}
-              resizeMode="cover"
-            />
-          </View>
-          <View style={s.featuredTextCol}>
-            <Text style={s.featuredBadge}>FEATURED ARTICLE</Text>
-            <Text style={s.featuredTitle}>Understanding Mental Health: More Than Just Stress</Text>
-            <Text style={s.featuredMeta}>Dr. Ananya Sharma • 6 min read • Clinically reviewed</Text>
-          </View>
-        </View>
-      </Pressable>
-
-      {/* Articles Feed */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Latest Articles</Text>
-        <View style={s.articlesList}>
-          {ARTICLES.map((art) => (
-            <Pressable
-              key={art.id}
-              style={s.articleCard}
-              onPress={() => Alert.alert(art.title, `Opening article by ${art.author}...`)}
-            >
-              <View style={s.articleTextCol}>
-                <Text style={s.articleCategory}>{art.category}</Text>
-                <Text style={s.articleTitle}>{art.title}</Text>
-                <Text style={s.articleExcerpt} numberOfLines={2}>{art.excerpt}</Text>
-                <Text style={s.articleMeta}>{art.author} • {art.readTime}</Text>
-              </View>
-              <View style={s.articleThumb}>
-                <Icon name="document" size={22} color={colors.surfie} />
-              </View>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      {/* Related Topics Horizontal Carousel */}
-      <View style={s.section}>
-        <View style={s.relatedHeaderRow}>
-          <Text style={s.sectionTitle}>Related Articles</Text>
-          <Text style={s.viewAllLink}>View All &gt;</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.relatedScroll}>
-          {RELATED_TOPICS.map((item) => (
-            <Pressable key={item.id} style={s.relatedCard}>
-              <View style={s.relatedIconBox}>
-                <Icon name="clipboard" size={18} color={colors.surfie} />
-              </View>
-              <Text style={s.relatedTitle} numberOfLines={2}>{item.title}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </View>
-    </Screen>
+      {/* 5-Tab Bar */}
+      <PatientTabBar activeTab="CareHub" />
+    </View>
   );
 };
 
 const s = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    flex: 1,
+    backgroundColor: '#F7FBF9',
   },
-  headerWrap: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  titleWrap: {
+    marginBottom: 2,
   },
   pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.ink,
+    marginBottom: 4,
   },
   pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     color: colors.inkMuted,
-    marginTop: 2,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
     backgroundColor: colors.white,
-    borderRadius: radius.card,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: colors.surface.line,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 2,
   },
   searchInput: {
     flex: 1,
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     color: colors.ink,
+    paddingVertical: 4,
   },
-  tabsScroll: {
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  featuredCard: {
-    backgroundColor: colors.surface.mintSoft,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.selected,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
-    ...shadow.card,
-  },
-  featuredHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  featuredIconBox: {
-    width: 68,
-    height: 68,
+  searchIconCircle: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    backgroundColor: colors.white,
-    overflow: 'hidden',
+    backgroundColor: colors.surfie,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featuredImage: {
+  chipsRow: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  catChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  catChipActive: {
+    backgroundColor: colors.surfie,
+    borderColor: colors.surfie,
+  },
+  catChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted,
+  },
+  catChipTextActive: {
+    color: colors.white,
+  },
+  featuredCard: {
+    backgroundColor: '#EEF8F5',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  featuredRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  featuredIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: colors.white,
+  },
+  featuredIconImg: {
     width: '100%',
     height: '100%',
   },
   featuredTextCol: {
     flex: 1,
+    gap: 3,
   },
-  featuredBadge: {
-    fontFamily: typography.body.family,
+  featuredBadgeWrap: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#CCFBF1',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  featuredBadgeText: {
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.surfie,
-    marginBottom: 2,
+    letterSpacing: 0.4,
   },
   featuredTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.ink,
     lineHeight: 18,
   },
   featuredMeta: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
+    fontSize: 11,
     color: colors.inkMuted,
-    marginTop: 3,
   },
-  section: {
-    marginBottom: spacing.xl,
+  feedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md,
+  sectionHeading: {
+    fontSize: 15,
     fontWeight: '700',
     color: colors.ink,
-    marginBottom: spacing.sm,
+  },
+  seeAllLink: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.surfie,
   },
   articlesList: {
-    gap: spacing.md,
+    gap: 10,
   },
   articleCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.white,
-    borderRadius: radius.card,
+    borderRadius: 14,
+    padding: 12,
+    gap: 12,
     borderWidth: 1,
-    borderColor: colors.surface.line,
-    padding: spacing.md,
-    gap: spacing.md,
-    ...shadow.card,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  articleThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
   },
   articleTextCol: {
     flex: 1,
+    gap: 2,
   },
   articleCategory: {
-    fontFamily: typography.body.family,
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.surfie,
-    marginBottom: 2,
+    letterSpacing: 0.3,
   },
   articleTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.ink,
-    lineHeight: 18,
-  },
-  articleExcerpt: {
-    fontFamily: typography.body.family,
-    fontSize: 11,
-    color: colors.inkMuted,
-    marginTop: 2,
-    lineHeight: 15,
+    lineHeight: 17,
   },
   articleMeta: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkFaint,
-    marginTop: 4,
-  },
-  articleThumb: {
-    width: 60,
-    height: 60,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface.mintSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-  },
-  relatedHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  viewAllLink: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-    color: colors.surfie,
-  },
-  relatedScroll: {
-    gap: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  relatedCard: {
-    width: 140,
-    backgroundColor: colors.white,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    padding: spacing.md,
-    gap: spacing.sm,
-    ...shadow.card,
-  },
-  relatedIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface.mintSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  relatedTitle: {
-    fontFamily: typography.body.family,
     fontSize: 11,
-    fontWeight: '600',
+    color: colors.inkMuted,
+  },
+  trendingSection: {
+    marginTop: 6,
+    gap: 10,
+  },
+  trendingRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  trendingCard: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  trendingThumb: {
+    width: '100%',
+    height: 72,
+  },
+  trendingInfo: {
+    padding: 10,
+    gap: 4,
+  },
+  trendingTitle: {
+    fontSize: 12,
+    fontWeight: '700',
     color: colors.ink,
     lineHeight: 15,
+  },
+  trendingReads: {
+    fontSize: 10,
+    color: colors.inkFaint,
   },
 });
 
 export default BlogsArticlesScreen;
-

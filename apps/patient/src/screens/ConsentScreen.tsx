@@ -16,7 +16,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Consent'>;
 export const ConsentScreen = () => {
   const navigation = useNavigation<Nav>();
   const { loginAsDemo, refreshProfile } = useAuth();
-  const [agreed, setAgreed] = useState(true);
+  const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleAccept = async () => {
@@ -358,3 +358,4 @@ const s = StyleSheet.create({
 });
 
 export default ConsentScreen;
+

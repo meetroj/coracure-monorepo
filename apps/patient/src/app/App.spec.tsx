@@ -17,9 +17,10 @@ beforeEach(() => {
 });
 
 describe('App boot', () => {
-  it('shows the splash first', () => {
+  it('shows the splash first', async () => {
     render(<App />);
     expect(screen.getByTestId('splash')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
   });
 
   it('lands on welcome when there is no session, and never calls the API', async () => {
@@ -36,7 +37,7 @@ describe('App boot', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
 
-    fireEvent.press(screen.getByTestId('get-started'));
+    fireEvent.press(screen.getByLabelText('Get Started'));
 
     await waitFor(() => expect(screen.getByTestId('login')).toBeTruthy());
     expect(screen.getByText('Welcome back')).toBeTruthy();
@@ -54,3 +55,19 @@ describe('App boot', () => {
     expect(screen.queryByTestId('dashboard')).toBeNull();
   });
 });
+
+
+describe('Demo access', () => {
+  it('opens the patient dashboard from explicit demo login without a backend', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
+    fireEvent.press(screen.getByText(/Quick Demo Login/));
+    await waitFor(() => expect(screen.getByTestId('dashboard')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('Care Hub'));
+    expect(screen.getAllByLabelText('Home')).toHaveLength(1);
+    fireEvent.press(screen.getByLabelText('Profile'));
+    expect(screen.getAllByLabelText('Home')).toHaveLength(1);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+

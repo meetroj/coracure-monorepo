@@ -20,7 +20,7 @@ export const WelcomeScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View testID="welcome" style={styles.container}>
       <BackgroundWatermarks />
       
       <ScrollView
@@ -31,7 +31,7 @@ export const WelcomeScreen = () => {
         {/* Brand Header */}
         <View style={styles.header}>
           <LogoWide width={130} height={34} />
-          <Pressable onPress={() => navigation.navigate('Login')} hitSlop={12}>
+          <Pressable accessibilityLabel="Skip the introduction and sign in" onPress={() => navigation.navigate('Login')} hitSlop={12}>
             <Text style={styles.topSkipText}>Skip</Text>
           </Pressable>
         </View>
@@ -338,4 +338,6 @@ const styles = StyleSheet.create({
 });
 
 export default WelcomeScreen;
+
+
 

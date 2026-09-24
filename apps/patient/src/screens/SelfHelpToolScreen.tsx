@@ -1,22 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Alert, Share } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, Share } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, Button, StatusPill, Icon } from '@coracure/ui';
-import type { RootStackParamList } from '../navigation/RootNavigator';
-
-type ToolNavProp = NativeStackNavigationProp<RootStackParamList, 'SelfHelpTool'>;
-
-const MORE_TOOLS = [
-  { id: 'grounding', label: '5-4-3-2-1 Grounding', icon: 'checkCircle' as const },
-  { id: 'sleep', label: 'Sleep Reset', icon: 'clock' as const },
-  { id: 'journal', label: 'Mood Journal', icon: 'heart' as const },
-];
+import { colors, spacing, typography, radius } from '@coracure/brand';
+import { Icon, PillButton } from '@coracure/ui';
+import LogoWide from '../assets/brand/logo-wide.svg';
+import PatientTabBar from '../components/PatientTabBar';
 
 export const SelfHelpToolScreen = () => {
-  const navigation = useNavigation<ToolNavProp>();
+  const navigation = useNavigation<any>();
 
   const [phase, setPhase] = useState<'Inhale' | 'Hold' | 'Exhale'>('Inhale');
   const [countdown, setCountdown] = useState(84); // 1:24
@@ -54,376 +45,314 @@ export const SelfHelpToolScreen = () => {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: 'Try this Guided Breathing exercise on CoraCure to calm anxiety and relax.',
+        message: 'Try this Guided Breathing exercise on CoraCure to calm anxiety and ease pain flare-ups.',
       });
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
-  const handleDone = () => {
-    Alert.alert('Session Complete', 'Great job! Taking time to breathe supports your recovery.', [
+  const handleFinish = () => {
+    Alert.alert('Session Complete', 'Great job! Taking time to breathe supports joint recovery and lowers stress.', [
       { text: 'Done', onPress: () => navigation.navigate('CareHub') },
     ]);
   };
 
   return (
-    <Screen bottomInset contentStyle={s.container}>
-      <AppHeader
-        onBack={() => navigation.goBack()}
-        right={
-          <Pressable onPress={handleShare}>
-            <Icon name="share" size={20} color={colors.inkMuted} />
-          </Pressable>
-        }
-      />
+    <View style={s.container}>
+      {/* Top Header */}
+      <View style={s.headerBar}>
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
 
-      <View style={s.tagWrap}>
-        <StatusPill label="Guided Tool" tone="brand" />
+        <LogoWide width={110} height={28} />
+
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={handleShare}
+          accessibilityRole="button"
+          accessibilityLabel="Share exercise"
+        >
+          <Icon name="share" size={18} color={colors.ink} />
+        </Pressable>
       </View>
 
-      <View style={s.headerWrap}>
-        <Text style={s.pageTitle}>Guided Breathing</Text>
-        <Text style={s.pageSubtitle}>A 4-minute exercise to reduce anxiety and calm the body.</Text>
-      </View>
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title */}
+        <View style={s.titleWrap}>
+          <Text style={s.pageTitle}>Self-Help Tool 🌿</Text>
+          <Text style={s.pageSubtitle}>
+            Guided breathing exercise to relax and reduce joint stress
+          </Text>
+        </View>
 
-      {/* Breathing Circle Timer Card */}
-      <View style={s.timerCard}>
-        <View style={s.circleOuter}>
-          <View style={[s.circlePulse, phase === 'Inhale' && s.circlePulseInhale, phase === 'Hold' && s.circlePulseHold]}>
-            <Text style={s.timerText}>{formatTimer(countdown)}</Text>
-            <Text style={s.phaseActiveText}>{phase}</Text>
+        {/* Breathing Ring Timer Card */}
+        <View style={s.timerCard}>
+          <View style={s.circleOuter}>
+            <View
+              style={[
+                s.circlePulse,
+                phase === 'Inhale' && s.pulseInhale,
+                phase === 'Hold' && s.pulseHold,
+                phase === 'Exhale' && s.pulseExhale,
+              ]}
+            >
+              <Text style={s.timerCountdown}>{formatTimer(countdown)}</Text>
+              <Text style={s.phaseText}>{phase}</Text>
+            </View>
+          </View>
+
+          {/* Phase Steps Row */}
+          <View style={s.phasesRow}>
+            <View style={[s.phasePill, phase === 'Inhale' && s.phasePillActive]}>
+              <Text style={[s.phasePillText, phase === 'Inhale' && s.phasePillTextActive]}>
+                Inhale (4s)
+              </Text>
+            </View>
+            <View style={[s.phasePill, phase === 'Hold' && s.phasePillActive]}>
+              <Text style={[s.phasePillText, phase === 'Hold' && s.phasePillTextActive]}>
+                Hold (7s)
+              </Text>
+            </View>
+            <View style={[s.phasePill, phase === 'Exhale' && s.phasePillActive]}>
+              <Text style={[s.phasePillText, phase === 'Exhale' && s.phasePillTextActive]}>
+                Exhale (8s)
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Phase Indicators */}
-        <View style={s.phasesRow}>
-          <View style={[s.phasePill, phase === 'Inhale' && s.phasePillActive]}>
-            <Text style={[s.phaseNum, phase === 'Inhale' && s.phaseTextActive]}>1</Text>
-            <Text style={[s.phaseLabel, phase === 'Inhale' && s.phaseTextActive]}>Inhale (4s)</Text>
+        {/* Metrics Row */}
+        <View style={s.metricsRow}>
+          <View style={s.metricCard}>
+            <Text style={s.metricVal}>72 bpm</Text>
+            <Text style={s.metricLabel}>Heart Rate</Text>
           </View>
-          <View style={[s.phasePill, phase === 'Hold' && s.phasePillActive]}>
-            <Text style={[s.phaseNum, phase === 'Hold' && s.phaseTextActive]}>2</Text>
-            <Text style={[s.phaseLabel, phase === 'Hold' && s.phaseTextActive]}>Hold (4s)</Text>
+          <View style={s.metricCard}>
+            <Text style={s.metricVal}>3 Days</Text>
+            <Text style={s.metricLabel}>Streak</Text>
           </View>
-          <View style={[s.phasePill, phase === 'Exhale' && s.phasePillActive]}>
-            <Text style={[s.phaseNum, phase === 'Exhale' && s.phaseTextActive]}>3</Text>
-            <Text style={[s.phaseLabel, phase === 'Exhale' && s.phaseTextActive]}>Exhale (4s)</Text>
-          </View>
-        </View>
-
-        <Text style={s.breathingTip}>
-          "Sit comfortably, relax your shoulders, and gently focus on each breath."
-        </Text>
-      </View>
-
-      {/* Step Guide Tracker */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Your Steps</Text>
-        <View style={s.stepsList}>
-          <View style={s.stepRow}>
-            <View style={s.stepBullet}>
-              <Text style={s.stepBulletText}>1</Text>
-            </View>
-            <View style={s.stepTextCol}>
-              <Text style={s.stepHeading}>Inhale Deeply</Text>
-              <Text style={s.stepSub}>Breathe in slowly through your nose, filling your lungs.</Text>
-            </View>
-          </View>
-
-          <View style={s.stepRow}>
-            <View style={s.stepBullet}>
-              <Text style={s.stepBulletText}>2</Text>
-            </View>
-            <View style={s.stepTextCol}>
-              <Text style={s.stepHeading}>Hold Gently</Text>
-              <Text style={s.stepSub}>Hold your breath comfortably without straining.</Text>
-            </View>
-          </View>
-
-          <View style={s.stepRow}>
-            <View style={s.stepBullet}>
-              <Text style={s.stepBulletText}>3</Text>
-            </View>
-            <View style={s.stepTextCol}>
-              <Text style={s.stepHeading}>Exhale Completely</Text>
-              <Text style={s.stepSub}>Release the breath slowly through your mouth.</Text>
-            </View>
+          <View style={s.metricCard}>
+            <Text style={s.metricVal}>85%</Text>
+            <Text style={s.metricLabel}>Calm Score</Text>
           </View>
         </View>
-      </View>
 
-      {/* Reflection Input */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Reflection</Text>
-        <View style={s.reflectionWrap}>
+        {/* Reflection Input */}
+        <View style={s.cardSection}>
+          <Text style={s.sectionQuestion}>How did this exercise feel?</Text>
           <TextInput
-            style={s.reflectionInput}
+            style={s.textArea}
             value={reflection}
             onChangeText={setReflection}
-            placeholder="How do you feel after this exercise?"
-            placeholderTextColor={colors.inkMuted}
-            maxLength={200}
+            placeholder="Record any notes on how your body or pain feels right now..."
+            placeholderTextColor={colors.inkFaint}
+            multiline
+            numberOfLines={3}
           />
-          <Text style={s.charCount}>{reflection.length}/200</Text>
         </View>
-      </View>
 
-      {/* More Tools */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>More tools you may find helpful</Text>
-        <View style={s.moreToolsRow}>
-          {MORE_TOOLS.map((tool) => (
-            <Pressable
-              key={tool.id}
-              style={s.moreToolCard}
-              onPress={() => Alert.alert(tool.label, 'Loading exercise...')}
-            >
-              <Icon name={tool.icon} size={16} color={colors.surfie} />
-              <Text style={s.moreToolText}>{tool.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
+        {/* Bottom Action Pill Button */}
+        <PillButton
+          label="FINISH SESSION"
+          onPress={handleFinish}
+          accessibilityLabel="Finish breathing session"
+        />
+      </ScrollView>
 
-      {/* Action Buttons */}
-      <View style={s.actionsRow}>
-        <Button
-          label="Save Tool"
-          variant="secondary"
-          onPress={() => Alert.alert('Saved', 'Guided Breathing saved to your favorites.')}
-          style={s.actionBtn}
-        />
-        <Button
-          label="Mark as Done →"
-          onPress={handleDone}
-          style={s.actionBtn}
-        />
-      </View>
-    </Screen>
+      {/* 5-Tab Bar */}
+      <PatientTabBar activeTab="CareHub" />
+    </View>
   );
 };
 
 const s = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#F7FBF9',
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  tagWrap: {
-    marginTop: spacing.xs,
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerWrap: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  titleWrap: {
+    marginBottom: 2,
   },
   pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.ink,
+    marginBottom: 4,
   },
   pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    fontSize: 13,
     color: colors.inkMuted,
-    marginTop: 2,
   },
   timerCard: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
     padding: spacing.xl,
     alignItems: 'center',
-    ...shadow.card,
-    marginBottom: spacing.xl,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: spacing.lg,
   },
   circleOuter: {
     width: 170,
     height: 170,
     borderRadius: 85,
     borderWidth: 6,
-    borderColor: colors.surface.selected,
+    borderColor: '#A7F3D0',
+    backgroundColor: '#EEF8F5',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: spacing.md,
   },
   circlePulse: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: colors.surface.mintSoft,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: colors.surfie,
+    shadowColor: colors.surfie,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
   },
-  circlePulseInhale: {
-    backgroundColor: '#D1EBE1',
-    transform: [{ scale: 1.05 }],
+  pulseInhale: {
+    borderColor: '#10B981',
+    backgroundColor: '#ECFDF5',
   },
-  circlePulseHold: {
-    backgroundColor: '#C5E6DB',
+  pulseHold: {
+    borderColor: '#0E766C',
+    backgroundColor: '#EEF8F5',
   },
-  timerText: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxxl,
+  pulseExhale: {
+    borderColor: '#0284C7',
+    backgroundColor: '#F0F9FF',
+  },
+  timerCountdown: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  phaseText: {
+    fontSize: 14,
     fontWeight: '700',
     color: colors.surfie,
-  },
-  phaseActiveText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-    color: colors.ink,
     marginTop: 2,
   },
   phasesRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginVertical: spacing.md,
+    gap: 8,
   },
   phasePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface.page,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   phasePillActive: {
     backgroundColor: colors.surfie,
+    borderColor: colors.surfie,
   },
-  phaseNum: {
-    fontFamily: typography.heading.family,
-    fontSize: 10,
-    fontWeight: '700',
+  phasePillText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: colors.inkMuted,
   },
-  phaseLabel: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkMuted,
-  },
-  phaseTextActive: {
+  phasePillTextActive: {
     color: colors.white,
-    fontWeight: '700',
   },
-  breathingTip: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.inkMuted,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    lineHeight: 16,
-    marginTop: spacing.xs,
+  metricsRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
-  section: {
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
-    color: colors.ink,
-    marginBottom: spacing.sm,
-  },
-  stepsList: {
+  metricCard: {
+    flex: 1,
     backgroundColor: colors.white,
     borderRadius: radius.card,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.surface.line,
-    overflow: 'hidden',
+    borderColor: '#E5E7EB',
   },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface.line,
-    gap: spacing.md,
-  },
-  stepBullet: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surface.mintSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBulletText: {
-    fontFamily: typography.heading.family,
-    fontSize: 11,
-    fontWeight: '700',
+  metricVal: {
+    fontSize: 15,
+    fontWeight: '800',
     color: colors.surfie,
   },
-  stepTextCol: {
-    flex: 1,
+  metricLabel: {
+    fontSize: 11,
+    color: colors.inkMuted,
+    marginTop: 2,
   },
-  stepHeading: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xs,
+  cardSection: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 8,
+  },
+  sectionQuestion: {
+    fontSize: 14,
     fontWeight: '700',
     color: colors.ink,
   },
-  stepSub: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkMuted,
-    marginTop: 1,
-  },
-  reflectionWrap: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
+  textArea: {
     borderWidth: 1,
-    borderColor: colors.surface.line,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  reflectionInput: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
+    borderColor: '#E5E7EB',
+    borderRadius: radius.input,
+    padding: 10,
+    fontSize: 13,
     color: colors.ink,
-    minHeight: 40,
-  },
-  charCount: {
-    fontFamily: typography.body.family,
-    fontSize: 9,
-    color: colors.inkFaint,
-    textAlign: 'right',
-    marginBottom: 4,
-  },
-  moreToolsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  moreToolCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.white,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  moreToolText: {
-    fontFamily: typography.body.family,
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.ink,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  actionBtn: {
-    flex: 1,
+    minHeight: 65,
+    textAlignVertical: 'top',
+    backgroundColor: '#F9FAFB',
   },
 });
 
 export default SelfHelpToolScreen;
-

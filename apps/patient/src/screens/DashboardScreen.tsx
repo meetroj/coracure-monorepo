@@ -1,21 +1,24 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, TextInput } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { colors, radius, spacing, typography } from '@coracure/brand';
-import { Icon, BackgroundWatermarks } from '@coracure/ui';
+import { Icon, BackgroundWatermarks, Button, StatusPill } from '@coracure/ui';
 import LogoWide from '../assets/brand/logo-wide.svg';
 import DrRichardImg from '../assets/dr-richard-parker.jpg';
 import KneeJointImg from '../assets/knee-joint.jpg';
 import { useAuth } from '../hooks/useAuth';
+import { mockConsultationsStore } from '@coracure/api';
 
 export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const userName = user?.fullName || 'Alex Morgan';
 
+  const [showInstantModal, setShowInstantModal] = useState(false);
+
   return (
-    <View style={s.container}>
+    <View testID="dashboard" style={s.container}>
       <BackgroundWatermarks />
 
       <ScrollView
@@ -26,7 +29,13 @@ export const DashboardScreen = () => {
         {/* Top Bar: Brand Logo + Notification Bell */}
         <View style={s.topBar}>
           <LogoWide width={120} height={32} />
-          <Pressable style={s.bellBtn} onPress={() => {}} hitSlop={10}>
+          <Pressable
+            style={s.bellBtn}
+            onPress={() => navigation.navigate('Notifications')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
+          >
             <Icon name="bell" size={20} color={colors.ink} />
             <View style={s.bellBadge} />
           </Pressable>
@@ -41,11 +50,13 @@ export const DashboardScreen = () => {
         {/* Search Bar */}
         <Pressable
           style={s.searchBar}
-          onPress={() => navigation.navigate('CareHub')}
+          onPress={() => navigation.navigate('Search')}
+          accessibilityRole="button"
+          accessibilityLabel="Search concerns and symptoms"
         >
           <Icon name="search" size={18} color={colors.inkFaint} />
           <Text style={s.searchPlaceholder}>
-            Search by doctors, specialisation, therapy...
+            Search by concerns, symptoms, or therapy...
           </Text>
           <View style={s.searchFilterIcon}>
             <Icon name="filter" size={16} color={colors.surfie} />
@@ -53,7 +64,10 @@ export const DashboardScreen = () => {
         </Pressable>
 
         {/* Upcoming Appointment Card with Dr. Richard Parker photo */}
-        <View style={s.appointmentCard}>
+        <Pressable
+          style={s.appointmentCard}
+          onPress={() => navigation.navigate('DeviceCheck', { consultationId: 'cons-001' })}
+        >
           <View style={s.appointmentLeft}>
             <View style={s.appointmentBadge}>
               <Text style={s.appointmentBadgeText}>Upcoming Appointment</Text>
@@ -65,19 +79,19 @@ export const DashboardScreen = () => {
             <View style={s.dateTimeRow}>
               <View style={s.timeItem}>
                 <Icon name="calendar" size={14} color="#A7F3D0" />
-                <Text style={s.timeText}>Friday, 19 May 2024</Text>
+                <Text style={s.timeText}>{new Date(mockConsultationsStore[0].scheduledStartAt).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</Text>
               </View>
               <View style={s.timeItem}>
                 <Icon name="clock" size={14} color="#A7F3D0" />
-                <Text style={s.timeText}>10:30 AM</Text>
+                <Text style={s.timeText}>{new Date(mockConsultationsStore[0].scheduledStartAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</Text>
               </View>
             </View>
 
             <Pressable
               style={s.viewDetailsBtn}
-              onPress={() => navigation.navigate('DeviceCheck')}
+              onPress={() => navigation.navigate('DeviceCheck', { consultationId: 'cons-001' })}
             >
-              <Text style={s.viewDetailsText}>View Details</Text>
+              <Text style={s.viewDetailsText}>View Details & Join</Text>
             </Pressable>
           </View>
 
@@ -89,14 +103,16 @@ export const DashboardScreen = () => {
               resizeMode="cover"
             />
           </View>
-        </View>
+        </Pressable>
 
         {/* 4 Quick Action Cards */}
         <View style={s.quickActionsGrid}>
           {/* Action 1: Consult Now */}
           <Pressable
             style={s.actionCard}
-            onPress={() => navigation.navigate('DeviceCheck')}
+            onPress={() => setShowInstantModal(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Consult Now"
           >
             <View style={s.actionIconBox}>
               <Icon name="stethoscope" size={22} color={colors.surfie} />
@@ -108,7 +124,9 @@ export const DashboardScreen = () => {
           {/* Action 2: Book Appointment */}
           <Pressable
             style={s.actionCard}
-            onPress={() => navigation.navigate('CareHub')}
+            onPress={() => navigation.navigate('BookingFlow')}
+            accessibilityRole="button"
+            accessibilityLabel="Book Appointment"
           >
             <View style={s.actionIconBox}>
               <Icon name="calendar" size={22} color={colors.surfie} />
@@ -120,7 +138,9 @@ export const DashboardScreen = () => {
           {/* Action 3: Upload Reports */}
           <Pressable
             style={s.actionCard}
-            onPress={() => navigation.navigate('Prescription')}
+            onPress={() => navigation.navigate('Reports')}
+            accessibilityRole="button"
+            accessibilityLabel="Upload Reports"
           >
             <View style={s.actionIconBox}>
               <Icon name="clipboard" size={22} color={colors.surfie} />
@@ -187,7 +207,7 @@ export const DashboardScreen = () => {
           <View style={s.carePlanInfo}>
             <Text style={s.carePlanTitle}>Knee Recovery Plan</Text>
             <Text style={s.carePlanSubtitle}>6 weeks • Day 24</Text>
-            <Text style={s.carePlanDetail}>Next check-in: 04 May 2024</Text>
+            <Text style={s.carePlanDetail}>Next check-in: Today</Text>
           </View>
 
           {/* Knee Joint Diagram Thumbnail */}
@@ -213,6 +233,86 @@ export const DashboardScreen = () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* ========================================================================= */}
+      {/* INSTANT CONSULTATION MODAL (PT-13-01 APPOINTMENT ENFORCEMENT) */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={showInstantModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowInstantModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalSheet}>
+            <View style={s.modalHeader}>
+              <View>
+                <Text style={s.modalTitle}>Consult a Doctor Now</Text>
+                <Text style={s.modalSubtitle}>
+                  Teleconsultations require a confirmed appointment or on-call request.
+                </Text>
+              </View>
+              <Pressable
+                style={s.modalCloseBtn}
+                onPress={() => setShowInstantModal(false)}
+                accessibilityLabel="Close"
+              >
+                <Icon name="x" size={18} color={colors.ink} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={s.modalContent} showsVerticalScrollIndicator={false}>
+              {/* Option 1: Existing Appointment Ready */}
+              <View style={s.optionCard}>
+                <View style={s.optionBadge}>
+                  <StatusPill label="Ready Today" tone="brand" />
+                </View>
+                <View style={s.optionRow}>
+                  <Image source={DrRichardImg} style={s.optionAvatar} resizeMode="cover" />
+                  <View style={s.optionInfo}>
+                    <Text style={s.optionDocName}>Dr. Richard Parker</Text>
+                    <Text style={s.optionSpecialty}>Orthopedic Surgeon • Knee Specialist</Text>
+                    <Text style={s.optionTime}>Today • 10:30 AM (Confirmed)</Text>
+                  </View>
+                </View>
+                <Button
+                  label="Join Dr. Parker's Call →"
+                  onPress={() => {
+                    setShowInstantModal(false);
+                    navigation.navigate('DeviceCheck', { consultationId: 'cons-001' });
+                  }}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+
+              {/* Option 2: Request Instant On-Call Doctor */}
+              <View style={s.optionCardSecondary}>
+                <View style={s.optionHeaderSecondary}>
+                  <View style={s.optionIconBox}>
+                    <Icon name="stethoscope" size={20} color={colors.surfie} />
+                  </View>
+                  <View style={s.flex}>
+                    <Text style={s.optionDocName}>Request On-Call Doctor</Text>
+                    <Text style={s.optionSpecialty}>Connect with an available doctor in ~5 mins</Text>
+                  </View>
+                </View>
+                <Text style={s.optionDesc}>
+                  Select your medical specialty and complete payment to initiate instant doctor matching.
+                </Text>
+                <Button
+                  label="Select Specialty & Book"
+                  variant="secondary"
+                  onPress={() => {
+                    setShowInstantModal(false);
+                    navigation.navigate('CareHub');
+                  }}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -223,6 +323,7 @@ const s = StyleSheet.create({
     backgroundColor: '#F7FBF9',
     position: 'relative',
   },
+  flex: { flex: 1 },
   scrollView: {
     flex: 1,
   },
@@ -559,6 +660,125 @@ const s = StyleSheet.create({
     color: colors.surfie,
     fontWeight: '700',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: spacing.lg,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface.line,
+    paddingBottom: spacing.sm,
+  },
+  modalTitle: {
+    fontFamily: typography.heading.family,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  modalSubtitle: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surface.selected,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    paddingVertical: spacing.xs,
+  },
+  optionCard: {
+    backgroundColor: '#EEF8F5',
+    borderRadius: radius.card,
+    borderWidth: 1.5,
+    borderColor: '#C7EBE0',
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  optionBadge: {
+    marginBottom: 6,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  optionAvatar: {
+    width: 52,
+    height: 64,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.surfie,
+  },
+  optionInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  optionDocName: {
+    fontFamily: typography.heading.family,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  optionSpecialty: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    color: colors.inkMuted,
+  },
+  optionTime: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    color: colors.surfie,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  optionCardSecondary: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  optionHeaderSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: 6,
+  },
+  optionIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface.selected,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionDesc: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.inkMuted,
+    lineHeight: 16,
+  },
 });
 
 export default DashboardScreen;
+
+

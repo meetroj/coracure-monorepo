@@ -10,6 +10,7 @@ import AppointmentsScreen from '../screens/AppointmentsScreen';
 import CarePlanScreen from '../screens/CarePlanScreen';
 import CareHubScreen from '../screens/CareHubScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import { ParentTabBarContext } from '../components/PatientTabBar';
 
 export type MainTabKey = 'Home' | 'Appointments' | 'CarePlan' | 'CareHub' | 'Profile';
 
@@ -20,11 +21,13 @@ export const MainTabs = () => {
   return (
     <View style={s.container}>
       <View style={s.content}>
+        <ParentTabBarContext.Provider value={true}>
         {activeTab === 'Home' && <DashboardScreen />}
         {activeTab === 'Appointments' && <AppointmentsScreen />}
         {activeTab === 'CarePlan' && <CarePlanScreen />}
         {activeTab === 'CareHub' && <CareHubScreen />}
         {activeTab === 'Profile' && <ProfileScreen />}
+        </ParentTabBarContext.Provider>
       </View>
 
       {/* 5-Tab Bar matching Figma */}

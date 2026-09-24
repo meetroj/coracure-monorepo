@@ -74,6 +74,7 @@ DerivedData
 **/.xcode.env.local
 
 # Android/IntelliJ
+tools/android-sdk/
 #
 build/
 .idea

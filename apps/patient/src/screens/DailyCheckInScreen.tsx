@@ -1,40 +1,35 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Alert, ScrollView, Image } from 'react-native';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, Button, FilterChip, Icon } from '@coracure/ui';
+import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, Image } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { colors, spacing, typography, radius } from '@coracure/brand';
+import { Icon, PillButton } from '@coracure/ui';
+import LogoWide from '../assets/brand/logo-wide.svg';
 import CheckinClipboardImg from '../assets/checkin-clipboard.jpg';
 import { checkinApi } from '@coracure/api';
-import type { RootStackParamList } from '../navigation/RootNavigator';
-
-type CheckInNavProp = NativeStackNavigationProp<RootStackParamList, 'DailyCheckIn'>;
 
 const MOODS = [
-  { id: 'very_good', emoji: '😄', label: 'Very Good' },
+  { id: 'very_good', emoji: '😄', label: 'Great' },
   { id: 'good', emoji: '🙂', label: 'Good' },
   { id: 'okay', emoji: '😐', label: 'Okay' },
-  { id: 'not_great', emoji: '🙁', label: 'Not Great' },
-  { id: 'very_poor', emoji: '😫', label: 'Very Poor' },
+  { id: 'not_great', emoji: '🙁', label: 'Poor' },
+  { id: 'very_poor', emoji: '😫', label: 'Bad' },
 ] as const;
 
 const SYMPTOMS_LIST = [
   'Headache',
   'Fatigue',
-  'Pain',
-  'Nausea',
-  'Dizziness',
-  'Shortness of breath',
+  'Mild',
   'None',
+  'Joint Stiffness',
+  'Swelling',
+  'Nausea',
 ];
 
 export const DailyCheckInScreen = () => {
-  const navigation = useNavigation<CheckInNavProp>();
+  const navigation = useNavigation<any>();
 
-  const [selectedMood, setSelectedMood] = useState<'very_good' | 'good' | 'okay' | 'not_great' | 'very_poor'>('good');
+  const [selectedMood, setSelectedMood] = useState<'very_good' | 'good' | 'okay' | 'not_great' | 'very_poor'>('okay');
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>(['None']);
-  const [otherSymptom, setOtherSymptom] = useState('');
   const [medicationTaken, setMedicationTaken] = useState(true);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -59,7 +54,6 @@ export const DailyCheckInScreen = () => {
       await checkinApi.submitCheckIn({
         mood: selectedMood,
         symptoms: selectedSymptoms,
-        otherSymptoms: otherSymptom.trim() || undefined,
         medicationTaken,
         notes: notes.trim() || undefined,
       });
@@ -72,310 +66,373 @@ export const DailyCheckInScreen = () => {
   };
 
   return (
-    <Screen bottomInset contentStyle={s.container}>
-      <AppHeader
-        onBack={() => navigation.goBack()}
-        right={<Icon name="bell" size={20} color={colors.inkMuted} />}
-      />
+    <View style={s.container}>
+      {/* Top Header Bar */}
+      <View style={s.headerBar}>
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
 
-      <View style={s.headerRow}>
-        <View style={s.headerTextCol}>
-          <Text style={s.pageTitle}>Daily Check-In</Text>
-          <Text style={s.pageSubtitle}>
-            A quick check-in helps your Care Team support your recovery.
-          </Text>
-        </View>
-        <View style={s.badgeGraphic}>
-          <Image
-            source={CheckinClipboardImg}
-            style={s.badgeGraphicImage}
-            resizeMode="contain"
-          />
-        </View>
+        <LogoWide width={110} height={28} />
+
+        <Pressable
+          style={s.headerIconBtn}
+          onPress={() => navigation.navigate('Notifications')}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+        >
+          <Icon name="bell" size={20} color={colors.ink} />
+        </Pressable>
       </View>
 
-      {/* 1. Mood Sentiment Selector */}
-      <View style={s.section}>
-        <Text style={s.sectionQuestion}>How are you feeling today?</Text>
-        <Text style={s.sectionHelper}>Select the option that best describes you.</Text>
-        <View style={s.moodRow}>
-          {MOODS.map((m) => {
-            const isSelected = selectedMood === m.id;
-            return (
-              <Pressable
-                key={m.id}
-                style={[s.moodCard, isSelected && s.moodCardActive]}
-                onPress={() => setSelectedMood(m.id)}
-              >
-                <Text style={s.moodEmoji}>{m.emoji}</Text>
-                <Text style={[s.moodLabel, isSelected && s.moodLabelActive]}>{m.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* 2. Symptoms Multi-select */}
-      <View style={s.section}>
-        <Text style={s.sectionQuestion}>Any new or worsening symptoms?</Text>
-        <Text style={s.sectionHelper}>Select all that apply.</Text>
-        <View style={s.symptomsGrid}>
-          {SYMPTOMS_LIST.map((sym) => {
-            const isSelected = selectedSymptoms.includes(sym);
-            return (
-              <FilterChip
-                key={sym}
-                label={sym}
-                active={isSelected}
-                onPress={() => toggleSymptom(sym)}
-              />
-            );
-          })}
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title & Graphic Header Row */}
+        <View style={s.heroRow}>
+          <View style={s.heroTextCol}>
+            <Text style={s.pageTitle}>Daily Check-In</Text>
+            <Text style={s.pageSubtitle}>
+              Quick 2-min update helps your care team tailor recovery.
+            </Text>
+          </View>
+          <View style={s.clipboardFrame}>
+            <Image
+              source={CheckinClipboardImg}
+              style={s.clipboardImg}
+              resizeMode="contain"
+            />
+          </View>
         </View>
 
-        <TextInput
-          style={s.otherInput}
-          value={otherSymptom}
-          onChangeText={setOtherSymptom}
-          placeholder="Other (please specify) +"
-          placeholderTextColor={colors.inkMuted}
-        />
-      </View>
-
-      {/* 3. Medication Adherence */}
-      <View style={s.section}>
-        <Text style={s.sectionQuestion}>Did you take your medication today?</Text>
-        <Text style={s.sectionHelper}>If multiple medications, mark yes if you took all as prescribed.</Text>
-        <View style={s.medToggleRow}>
-          <Pressable
-            style={[s.medToggleBtn, medicationTaken && s.medToggleBtnActive]}
-            onPress={() => setMedicationTaken(true)}
-          >
-            <Text style={[s.medToggleText, medicationTaken && s.medToggleTextActive]}>Yes</Text>
-          </Pressable>
-          <Pressable
-            style={[s.medToggleBtn, !medicationTaken && s.medToggleBtnActive]}
-            onPress={() => setMedicationTaken(false)}
-          >
-            <Text style={[s.medToggleText, !medicationTaken && s.medToggleTextActive]}>No</Text>
-          </Pressable>
+        {/* 1. Mood Sentiment Selector */}
+        <View style={s.cardSection}>
+          <Text style={s.sectionQuestion}>How are you feeling today?</Text>
+          <View style={s.moodRow}>
+            {MOODS.map((m) => {
+              const isSelected = selectedMood === m.id;
+              return (
+                <Pressable
+                  key={m.id}
+                  style={[s.moodCard, isSelected && s.moodCardActive]}
+                  onPress={() => setSelectedMood(m.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mood: ${m.label}`}
+                >
+                  {isSelected && (
+                    <View style={s.moodCheckBadge}>
+                      <Icon name="check" size={12} color={colors.white} />
+                    </View>
+                  )}
+                  <Text style={s.moodEmoji}>{m.emoji}</Text>
+                  <Text style={[s.moodLabel, isSelected && s.moodLabelActive]}>
+                    {m.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
 
-      {/* 4. Notes Textarea */}
-      <View style={s.section}>
-        <Text style={s.sectionQuestion}>Anything else you'd like to share?</Text>
-        <Text style={s.sectionHelper}>Add any notes for your care team (optional).</Text>
-        <View style={s.textAreaWrap}>
+        {/* 2. Discomfort & Symptoms Multi-select */}
+        <View style={s.cardSection}>
+          <Text style={s.sectionQuestion}>Any other discomfort or pain?</Text>
+          <View style={s.symptomsWrap}>
+            {SYMPTOMS_LIST.map((sym) => {
+              const isSelected = selectedSymptoms.includes(sym);
+              return (
+                <Pressable
+                  key={sym}
+                  style={[s.symptomChip, isSelected && s.symptomChipActive]}
+                  onPress={() => toggleSymptom(sym)}
+                  accessibilityRole="button"
+                  accessibilityLabel={sym}
+                >
+                  {isSelected && <Icon name="check" size={13} color={colors.white} />}
+                  <Text style={[s.symptomText, isSelected && s.symptomTextActive]}>
+                    {sym}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* 3. Medication Adherence */}
+        <View style={s.cardSection}>
+          <Text style={s.sectionQuestion}>Did you take your medication today?</Text>
+          <View style={s.medToggleRow}>
+            <Pressable
+              style={[s.medToggleBtn, medicationTaken && s.medToggleBtnActive]}
+              onPress={() => setMedicationTaken(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Yes, medication taken"
+            >
+              <Text style={[s.medToggleText, medicationTaken && s.medToggleTextActive]}>
+                Yes
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[s.medToggleBtn, !medicationTaken && s.medToggleBtnActive]}
+              onPress={() => setMedicationTaken(false)}
+              accessibilityRole="button"
+              accessibilityLabel="No, medication not taken"
+            >
+              <Text style={[s.medToggleText, !medicationTaken && s.medToggleTextActive]}>
+                No
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* 4. Notes Textarea */}
+        <View style={s.cardSection}>
+          <Text style={s.sectionQuestion}>Anything else you'd like to share?</Text>
           <TextInput
             style={s.textArea}
             value={notes}
             onChangeText={setNotes}
-            placeholder="Type your notes here..."
-            placeholderTextColor={colors.inkMuted}
+            placeholder="Type your notes here for your doctor..."
+            placeholderTextColor={colors.inkFaint}
             multiline
             numberOfLines={3}
-            maxLength={150}
           />
-          <Text style={s.charCount}>{notes.length}/150</Text>
         </View>
-      </View>
 
-      {/* Privacy Notice */}
-      <View style={s.privacyNotice}>
-        <Icon name="lock" size={14} color={colors.surfie} />
-        <Text style={s.privacyText}>
-          Your information is secure. Your check-in is private and only shared with your Care Team.
-        </Text>
-      </View>
+        {/* Privacy Note */}
+        <View style={s.privacyNotice}>
+          <Icon name="lock" size={14} color={colors.surfie} />
+          <Text style={s.privacyText}>
+            Your data is kept secure and private.
+          </Text>
+        </View>
 
-      {/* Submit Button */}
-      <View style={s.footer}>
-        <Button
-          label="Submit Check-In →"
+        {/* Submit Pill Button */}
+        <PillButton
+          label={submitting ? "SUBMITTING..." : "SUBMIT CHECK-IN"}
           onPress={handleSubmit}
-          loading={submitting}
+          disabled={submitting}
+          accessibilityLabel="Submit daily check-in"
         />
-      </View>
-    </Screen>
+      </ScrollView>
+    </View>
   );
 };
 
 const s = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    flex: 1,
+    backgroundColor: '#F7FBF9',
   },
-  headerRow: {
+  headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  headerTextCol: {
-    flex: 1,
-  },
-  pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  badgeGraphic: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    overflow: 'hidden',
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: spacing.sm,
   },
-  badgeGraphicImage: {
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.md,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  heroTextCol: {
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  pageSubtitle: {
+    fontSize: 13,
+    color: colors.inkMuted,
+    lineHeight: 18,
+  },
+  clipboardFrame: {
+    width: 68,
+    height: 68,
+    borderRadius: 16,
+    backgroundColor: '#EEF8F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6,
+  },
+  clipboardImg: {
     width: '100%',
     height: '100%',
   },
-  section: {
-    marginBottom: spacing.xl,
+  cardSection: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+    gap: spacing.sm,
   },
   sectionQuestion: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.ink,
-  },
-  sectionHelper: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.inkMuted,
-    marginTop: 2,
-    marginBottom: spacing.sm,
   },
   moodRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: spacing.xs,
+    marginTop: 4,
   },
   moodCard: {
-    flex: 1,
-    paddingVertical: spacing.md,
+    width: '18%',
+    paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: colors.white,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    position: 'relative',
     gap: 4,
   },
   moodCardActive: {
-    backgroundColor: colors.surface.mintSoft,
     borderColor: colors.surfie,
-    borderWidth: 2,
+    backgroundColor: '#EEF8F5',
+  },
+  moodCheckBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.surfie,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   moodEmoji: {
     fontSize: 22,
   },
   moodLabel: {
-    fontFamily: typography.body.family,
-    fontSize: 9,
+    fontSize: 11,
     color: colors.inkMuted,
-    textAlign: 'center',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   moodLabelActive: {
     color: colors.surfie,
     fontWeight: '700',
   },
-  symptomsGrid: {
+  symptomsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    gap: 8,
+    marginTop: 2,
   },
-  otherInput: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    color: colors.ink,
-  },
-  medToggleRow: {
+  symptomChip: {
     flexDirection: 'row',
-    gap: spacing.md,
-  },
-  medToggleBtn: {
-    flex: 1,
-    paddingVertical: spacing.md,
     alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: colors.surface.line,
+    borderColor: '#E5E7EB',
   },
-  medToggleBtnActive: {
+  symptomChipActive: {
     backgroundColor: colors.surfie,
     borderColor: colors.surfie,
   },
-  medToggleText: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm,
-    fontWeight: '700',
+  symptomText: {
+    fontSize: 12,
     color: colors.ink,
+    fontWeight: '500',
+  },
+  symptomTextActive: {
+    color: colors.white,
+    fontWeight: '700',
+  },
+  medToggleRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 2,
+  },
+  medToggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.input,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  medToggleBtnActive: {
+    backgroundColor: '#EEF8F5',
+    borderColor: colors.surfie,
+  },
+  medToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.inkMuted,
   },
   medToggleTextActive: {
-    color: colors.white,
-  },
-  textAreaWrap: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    padding: spacing.md,
+    color: colors.surfie,
+    fontWeight: '700',
   },
   textArea: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: radius.input,
+    padding: 10,
+    fontSize: 13,
     color: colors.ink,
-    minHeight: 60,
+    minHeight: 70,
     textAlignVertical: 'top',
-  },
-  charCount: {
-    fontFamily: typography.body.family,
-    fontSize: 10,
-    color: colors.inkFaint,
-    textAlign: 'right',
-    marginTop: 4,
+    backgroundColor: '#F9FAFB',
   },
   privacyNotice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface.mintSoft,
-    padding: spacing.md,
-    borderRadius: radius.card,
-    marginBottom: spacing.xl,
+    gap: 6,
+    justifyContent: 'center',
+    marginVertical: 2,
   },
   privacyText: {
-    flex: 1,
-    fontFamily: typography.body.family,
-    fontSize: 11,
-    color: colors.surfie,
-    lineHeight: 15,
-  },
-  footer: {
-    marginTop: spacing.xs,
+    fontSize: 12,
+    color: colors.inkMuted,
   },
 });
 
 export default DailyCheckInScreen;
-

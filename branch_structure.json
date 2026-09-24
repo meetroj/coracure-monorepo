@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "A",
+    "feature/doctor-ui",
+    "main"
+  ],
+  "parent": {
+    "A": "main",
+    "feature/doctor-ui": "main",
+    "main": null
+  },
+  "order": [
+    "main",
+    "A",
+    "feature/doctor-ui"
+  ]
+}
