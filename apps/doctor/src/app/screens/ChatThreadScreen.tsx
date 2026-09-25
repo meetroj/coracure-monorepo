@@ -1,211 +1,230 @@
-import { typeStyles } from '../../../../../libs/typography/src';
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  TextInput,
-  StatusBar,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
 
-import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-
-import { colors } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
-import { useKeyboardHeight } from '../../components/useKeyboard';
-import { C, SlimHeader, OverflowButton } from '../../components/compact';
-import { messagesByThread, MESSAGE_MAX, type ChatThread, type ChatMessage } from '../../data/messaging';
+import { Screen } from '../../components/ui';
+import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
+import { FilePickerSheet, type PickedFile } from '../../components/upload';
+import { toast } from '../../components/Toast';
+import { useStore, type ThreadLive } from '../../state/store';
+import { sendMessage } from '../../state/actions';
+import { MESSAGE_MAX } from '../../data/messaging';
+import { patientDocs } from '../../data/documents';
+
+/** A file that is also a document on the patient's record opens in the viewer. */
+const docForFile = (thread: ThreadLive, file: string) =>
+  patientDocs.find((d) => d.patientId === thread.patientId && file.toLowerCase().startsWith(d.title.toLowerCase()));
 
 /**
  * Chat thread.
  *
- * The context strip is permanent, not decorative: every message here belongs to
- * a consultation or a clarification case, and an expert thread is flagged
- * internal so the doctor is never unsure whether the patient can see it.
+ * The context line is permanent: every message belongs to a consultation or a
+ * clarification case, and an expert thread says it is internal so the doctor
+ * is never unsure whether the patient can see it. Sent messages are kept on
+ * the thread, and the view opens at the latest one.
  */
 export const ChatThreadScreen = ({
   thread,
   onBack,
+  onOpenDoc,
+  onOpenContext,
 }: {
-  thread: ChatThread;
+  thread: ThreadLive;
   onBack: () => void;
+  onOpenDoc: (docId: string) => void;
+  /** The consultation or clarification the thread belongs to. */
+  onOpenContext: () => void;
 }) => {
-  const insets = useSafeAreaInsets();
+  const live = useStore((st) => st.threads.find((t) => t.id === thread.id)) ?? thread;
   const [draft, setDraft] = useState('');
-  const [sent, setSent] = useState<ChatMessage[]>([]);
-  // The safe-area inset clears the gesture bar when it's on screen — once the
-  // keyboard is up it covers that same area, so keeping the inset padding on
-  // top of it just leaves a gap above the keyboard.
-  const keyboard = useKeyboardHeight();
-
-  const history = [...(messagesByThread[thread.id] ?? []), ...sent];
+  const [picking, setPicking] = useState(false);
+  const scroll = useRef<ScrollView>(null);
 
   const send = () => {
     const body = draft.trim();
     if (!body) return;
-    setSent((v) => [...v, { id: `s${v.length}`, from: 'me', body, at: 'Now' }]);
+    sendMessage(live.id, body);
     setDraft('');
   };
 
+  const attach = (f: PickedFile) => {
+    setPicking(false);
+    sendMessage(live.id, '', f.name);
+    toast.show(`${f.name} sent`);
+  };
+
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-      <View style={{ paddingTop: insets.top }}>
-        <SlimHeader
+    <Screen
+      testID="chat-thread"
+      background={colors.white}
+      scroll={false}
+      header={
+        <ScreenHeader
           onBack={onBack}
-          right={<OverflowButton />}
-          center={
-            <View style={s.headCenter}>
-              <Text style={[typeStyles.body, s.headName]}>
-                {thread.name}
-              </Text>
-              <Text style={[typeStyles.body, s.headContext]}>{thread.context}</Text>
-            </View>
+          inline
+          title={live.name}
+          subtitle={live.context}
+          right={
+            <HeaderAction
+              testID="thread-context"
+              icon={live.kind === 'expert' ? 'message' : 'user'}
+              label={live.kind === 'expert' ? 'Open clarification' : `Open ${live.name}'s appointment`}
+              onPress={onOpenContext}
+            />
           }
         />
-      </View>
-
-      {thread.internalOnly && (
-        <View style={s.internalStrip}>
-          <Icon name="lock" size={12} color={C.muted} />
-          <Text style={[typeStyles.body, s.internalText]}>Internal thread — not shown to the patient.</Text>
-        </View>
-      )}
-
-      <View style={s.flex}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {history.map((m) => {
-            const mine = m.from === 'me';
-            return (
-              <View key={m.id} style={[s.bubbleRow, mine && s.bubbleRowMine]}>
-                <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
-                  <Text style={[typeStyles.body, [s.body, mine && s.bodyMine]]}>{m.body}</Text>
-                  {!!m.file && (
-                    <View style={[s.fileRow, mine && s.fileRowMine]}>
-                      <Icon name="document" size={13} color={mine ? colors.white : colors.surfie} />
-                      <Text style={[typeStyles.body, [s.fileName, mine && s.bodyMine]]}>
-                        {m.file}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={[typeStyles.body, [s.at, mine && s.atMine]]}>{m.at}</Text>
-                </View>
-              </View>
-            );
-          })}
-        </ScrollView>
-
-        <View
-          style={[
-            s.composer,
-            { marginBottom: keyboard, paddingBottom: keyboard ? 8 : insets.bottom + 8 },
-          ]}
-        >
-          {/* Surfie → Paris hairline stands in for a plain grey divider. */}
-          <Svg style={s.composerAccent} height={2} width="100%">
-            <Defs>
-              <LinearGradient id="composerGrad" x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0" stopColor={colors.surfie} />
-                <Stop offset="1" stopColor={colors.paris} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width="100%" height={2} fill="url(#composerGrad)" />
-          </Svg>
-          <Pressable testID="attach" hitSlop={8} style={s.attachBtn} accessibilityLabel="Attach file">
-            <Icon name="clip" size={18} color={C.muted} />
+      }
+      footer={
+        <View style={s.composer}>
+          <Pressable
+            testID="attach"
+            onPress={() => setPicking(true)}
+            hitSlop={6}
+            style={s.attachBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Attach a file"
+          >
+            <Icon name="clip" size={19} color={colors.inkMuted} />
           </Pressable>
           <TextInput
             testID="composer"
-            style={[typeStyles.input, s.input]}
+            style={s.input}
             value={draft}
             onChangeText={(t) => setDraft(t.slice(0, MESSAGE_MAX))}
             placeholder="Write a message…"
-            placeholderTextColor={C.muted}
+            placeholderTextColor={colors.inkFaint}
             multiline
             underlineColorAndroid="transparent"
+            accessibilityLabel="Message"
           />
           <Pressable
             testID="send"
             onPress={send}
             disabled={draft.trim().length === 0}
             style={[s.sendBtn, draft.trim().length === 0 && s.sendOff]}
+            accessibilityRole="button"
             accessibilityLabel="Send message"
           >
-            <Icon name="arrowRight" size={17} color={colors.white} />
+            <Icon name="arrowRight" size={18} color={colors.white} />
           </Pressable>
         </View>
-      </View>
-    </View>
+      }
+    >
+      {live.internalOnly && (
+        <View style={s.internalStrip}>
+          <Icon name="lock" size={13} color={colors.inkMuted} />
+          <Text style={s.internalText}>Internal thread — not shown to the patient.</Text>
+        </View>
+      )}
+
+      <ScrollView
+        ref={scroll}
+        style={s.flex}
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        // open at the latest message, and follow new ones
+        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+      >
+        {live.messages.length === 0 && (
+          <Text style={s.empty}>No messages yet. Messages here stay with {live.context}.</Text>
+        )}
+        {live.messages.map((m) => {
+          const mine = m.from === 'me';
+          const doc = m.file ? docForFile(live, m.file) : undefined;
+          return (
+            <View key={m.id} testID={`message-${m.id}`} style={[s.bubbleRow, mine && s.bubbleRowMine]}>
+              <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
+                {!!m.body && <Text style={[s.body, mine && s.bodyMine]}>{m.body}</Text>}
+                {!!m.file &&
+                  (doc ? (
+                    <Pressable
+                      testID={`file-${m.id}`}
+                      onPress={() => onOpenDoc(doc.id)}
+                      style={[s.fileRow, mine && s.fileRowMine]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${m.file}`}
+                    >
+                      <Icon name="document" size={14} color={mine ? colors.white : colors.surfie} />
+                      <Text style={[s.fileName, mine && s.bodyMine]} numberOfLines={1}>
+                        {m.file}
+                      </Text>
+                      <Icon name="chevronRight" size={13} color={mine ? colors.white : colors.surfie} />
+                    </Pressable>
+                  ) : (
+                    <View style={[s.fileRow, mine && s.fileRowMine]}>
+                      <Icon name="document" size={14} color={mine ? colors.white : colors.surfie} />
+                      <Text style={[s.fileName, mine && s.bodyMine]} numberOfLines={1}>
+                        {m.file}
+                      </Text>
+                    </View>
+                  ))}
+                <Text style={[s.at, mine && s.atMine]}>{m.at}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      <FilePickerSheet visible={picking} kind="document" maxMb={10} onPick={attach} onClose={() => setPicking(false)} testID="chat-attach" />
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
   flex: { flex: 1 },
-  root: { flex: 1, backgroundColor: colors.white },
-
-  headCenter: { alignItems: 'center' },
-  headName: { ...typeStyles.name, color: C.ink },
-  headContext: { ...typeStyles.caption, color: colors.surfie },
-
   internalStrip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#F2F5F4',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 8,
   },
-  internalText: { ...typeStyles.caption, color: C.muted },
-
-  scroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  internalText: { ...typeStyles.caption, color: colors.inkMuted },
+  scroll: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
+  empty: { ...typeStyles.bodySmall, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.xl },
   bubbleRow: { flexDirection: 'row' },
   bubbleRowMine: { justifyContent: 'flex-end' },
-  bubble: { maxWidth: '82%', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8 },
+  bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 },
   bubbleTheirs: { backgroundColor: '#F3F7F5', borderTopLeftRadius: 4 },
   bubbleMine: { backgroundColor: colors.surfie, borderTopRightRadius: 4 },
-  body: { ...typeStyles.caption, color: C.ink },
+  body: { ...typeStyles.bodySmall, color: colors.ink },
   bodyMine: { color: colors.white },
   fileRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     backgroundColor: colors.white,
     borderRadius: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    minHeight: 36,
     marginTop: 6,
   },
   fileRowMine: { backgroundColor: 'rgba(255,255,255,0.18)' },
-  fileName: { ...typeStyles.caption, flex: 1, color: C.ink },
-  at: { ...typeStyles.caption, color: C.muted, marginTop: 4, textAlign: 'right' },
-  atMine: { color: 'rgba(255,255,255,0.75)' },
+  fileName: { ...typeStyles.caption, flex: 1, color: colors.ink, fontWeight: fontWeight.medium },
+  at: { ...typeStyles.caption, fontSize: 11, color: colors.inkMuted, marginTop: 4, textAlign: 'right' },
+  atMine: { color: 'rgba(255,255,255,0.8)' },
 
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    backgroundColor: colors.surface.mint,
+  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+  attachBtn: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  input: {
+    ...typeStyles.body,
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 110,
+    borderWidth: 1,
+    borderColor: colors.surface.inputBorder,
+    borderRadius: 22,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingTop: 11,
+    paddingBottom: 11,
+    color: colors.ink,
   },
-  composerAccent: { position: 'absolute', top: 0, left: 0, right: 0 },
-  attachBtn: { height: 38, justifyContent: 'center' },
-  input: { ...typeStyles.input, flex: 1, minHeight: 38, maxHeight: 96, borderWidth: 1, borderColor: C.line, borderRadius: 999, backgroundColor: colors.white, paddingHorizontal: 12, paddingTop: 9, paddingBottom: 9, color: C.ink },
-  sendBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.surfie,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfie, alignItems: 'center', justifyContent: 'center' },
   sendOff: { opacity: 0.4 },
 });
 

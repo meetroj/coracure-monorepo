@@ -1,310 +1,277 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
-import { Screen } from '../../components/ui';
-import { detailFor, doctor, type Appointment } from '../../data/doctor';
+import { Screen, Button } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { NoteInput, Notice } from '../../components/clinical';
+import { confirm } from '../../components/confirm';
+import { toast } from '../../components/Toast';
+import { useStore } from '../../state/store';
+import { selectDoctor, selectRecord } from '../../state/selectors';
+import { setSummary, submitSummary } from '../../state/actions';
+import { detailFor, type Appointment } from '../../data/doctor';
 import {
   CASE_SUMMARY_MAX,
   CASE_SUMMARY_MIN,
   RISK_LABEL,
+  canPrescribe,
+  completionOf,
   type CompletionState,
-  type ProfessionalType,
-  type RiskCategory,
 } from '../../data/clinical';
+import { pathwayByKey, reviewDateFor } from '../../data/followup';
 
 /**
- * Case Summary — DOC-CLN-04, and the gate from DOC-CLN-06.
+ * Case Summary — DOC-CLN-04, and the completion gate from DOC-CLN-06.
  *
- * The summary is mandatory: the consultation cannot be marked complete without
- * it. The checklist lists what is still outstanding rather than silently
- * refusing, and nothing entered is discarded when the gate blocks.
- *
- * Until the gate clears, new instant requests stay blocked.
+ * The summary is the doctor's own words, typed here and saved to the record as
+ * they write. The checklist is computed from the consultation's actual state:
+ * each item links to the screen that completes it, and submitting stays
+ * blocked until notes, the prescription and the follow-up plan are done.
+ * Nothing written is discarded when the gate blocks.
  */
-
-const SAMPLE =
-  'Patient reports two weeks of persistent anxiety with disturbed sleep and racing thoughts at night, affecting concentration at work. No self-harm ideation elicited. Assessed as moderate risk. Started on low-dose SSRI with short-course night sedation, alongside sleep-routine and breathing guidance. Review in seven days, earlier if symptoms worsen.';
-
 export const CaseSummaryScreen = ({
   appointment,
   onBack,
-  professionalType = doctor.professionalType,
-  completion = {
-    notesFinalised: true,
-    outputFinalised: true,
-    followUpAssigned: true,
-    summarySubmitted: false,
-  },
-  risk = 'moderate',
-  diagnosis = 'Generalised Anxiety Disorder',
-  onSubmit = () => undefined,
+  onSubmitted,
+  onOpenNotes,
+  onOpenPrescription,
+  onAssignPlan,
 }: {
   appointment: Appointment;
   onBack: () => void;
-  professionalType?: ProfessionalType;
-  completion?: CompletionState;
-  risk?: RiskCategory;
-  diagnosis?: string;
-  onSubmit?: (summary: string) => void;
+  onSubmitted: () => void;
+  onOpenNotes: () => void;
+  onOpenPrescription: () => void;
+  onAssignPlan: () => void;
 }) => {
-  const d = detailFor(appointment);
-  const insets = useSafeAreaInsets();
+  const a = appointment;
+  const d = detailFor(a);
+  const doctor = useStore(selectDoctor);
+  const record = useStore((st) => selectRecord(st, a.id));
+  const completion = completionOf(record);
+  const submitted = record.summaryStatus === 'submitted';
+  const [attempted, setAttempted] = useState(false);
 
-  // Stands in for the text input until the app has an editor primitive.
-  const [summary, setSummary] = useState('');
+  const length = record.summary.trim().length;
+  const longEnough = length >= CASE_SUMMARY_MIN;
+  const prescriber = canPrescribe(doctor.professionalType);
 
-  const longEnough = summary.trim().length >= CASE_SUMMARY_MIN;
-  const withinLimit = summary.length <= CASE_SUMMARY_MAX;
-  const canSubmit = longEnough && withinLimit;
-
-  const checklist: { key: keyof CompletionState; label: string; done: boolean }[] = [
-    { key: 'notesFinalised', label: 'Clinical notes completed', done: completion.notesFinalised },
-    { key: 'outputFinalised', label: 'Prescription or advice finalised', done: completion.outputFinalised },
-    { key: 'followUpAssigned', label: 'Follow-up plan assigned', done: completion.followUpAssigned },
-    { key: 'summarySubmitted', label: 'Case summary', done: canSubmit },
+  const checklist: { key: keyof CompletionState; label: string; done: boolean; fix?: () => void; fixLabel?: string }[] = [
+    { key: 'notesFinalised', label: 'Clinical notes completed', done: completion.notesFinalised, fix: onOpenNotes, fixLabel: 'Open notes' },
+    {
+      key: 'outputFinalised',
+      label: prescriber ? 'Prescription or advice finalised' : 'Advice & therapy plan finalised',
+      done: completion.outputFinalised,
+      fix: onOpenPrescription,
+      fixLabel: prescriber ? 'Open prescription' : 'Open plan',
+    },
+    { key: 'followUpAssigned', label: 'Follow-up plan assigned', done: completion.followUpAssigned, fix: onAssignPlan, fixLabel: 'Assign plan' },
+    { key: 'summarySubmitted', label: 'Case summary', done: submitted || longEnough },
   ];
+  const outstanding = checklist.filter((c) => c.key !== 'summarySubmitted' && !c.done);
+  const canSubmit = !submitted && longEnough && outstanding.length === 0;
+
+  const submit = () => {
+    setAttempted(true);
+    if (!longEnough) {
+      toast.show(`Write at least ${CASE_SUMMARY_MIN} characters`, 'error');
+      return;
+    }
+    if (outstanding.length > 0) {
+      toast.show(`Complete first: ${outstanding.map((o) => o.label.toLowerCase()).join(', ')}`, 'error');
+      return;
+    }
+    confirm({
+      title: 'Submit summary and complete?',
+      message: `This closes ${a.name}'s consultation. Notes, prescription and summary become read-only.`,
+      confirmLabel: 'Submit & complete',
+      onConfirm: () => {
+        submitSummary(a.id);
+        toast.show('Consultation completed');
+        onSubmitted();
+      },
+    });
+  };
+
+  const plan = record.plan ? pathwayByKey(record.plan.pathway) : undefined;
 
   return (
-    <View style={s.root}>
-      <Screen contentStyle={s.content}>
-        <View style={s.bar}>
-          <Pressable
-            testID="back"
-            onPress={onBack}
-            hitSlop={8}
-            style={s.barBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Icon name="arrowLeft" size={19} color={colors.ink} />
-          </Pressable>
-          <View style={s.barLogo}>
-            <LogoWide width={100} height={25} />
+    <Screen
+      testID="case-summary"
+      header={
+        <ScreenHeader
+          onBack={onBack}
+          title="Case Summary"
+          subtitle={submitted ? `Submitted ${record.summarySubmittedAt ?? ''}`.trim() : 'Add a 3–5 line summary to complete this consultation.'}
+        />
+      }
+      footer={
+        submitted ? (
+          <View style={s.doneFoot}>
+            <Icon name="checkCircle" size={18} color={colors.surfie} filled />
+            <Text style={s.doneFootText}>Consultation completed</Text>
           </View>
-          <Pressable
-            testID="notifications"
-            onPress={() => undefined}
-            hitSlop={8}
-            style={s.barBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <Icon name="bell" size={18} color={colors.ink} />
-          </Pressable>
+        ) : (
+          <Button
+            testID="submit-summary"
+            label="Submit Summary & Complete"
+            icon="arrowRight"
+            iconRight
+            onPress={submit}
+            accessibilityHint={canSubmit ? undefined : 'Shows what is still needed before the consultation can be completed'}
+          />
+        )
+      }
+    >
+      {/* ------------------------------ patient card ----------------------------- */}
+      <View style={s.patient}>
+        <View style={s.patientTop}>
+          <View style={s.avatar}>
+            <Text style={s.avatarText}>{a.initials}</Text>
+          </View>
+          <View style={s.flex}>
+            <Text style={s.name}>{a.name}</Text>
+            <Text style={s.meta}>
+              {a.gender} · {a.age} years
+            </Text>
+            <Text style={s.metaId} selectable>
+              Consultation ID: {d.consultationId}
+            </Text>
+          </View>
+          <View style={s.specPill}>
+            <Text style={s.specText}>Psychiatry</Text>
+          </View>
         </View>
 
-        <View style={s.titleWrap}>
-          <Text style={[typeStyles.body, s.title]}>Case Summary</Text>
-          <Text style={[typeStyles.body, s.subtitle]} numberOfLines={1}>
-            Add a 3–5 line summary to complete this consultation.
-          </Text>
-        </View>
-
-        {/* ------------------------------ patient card ----------------------------- */}
-        <View style={s.patient}>
-          <View style={s.patientTop}>
-            <View style={s.avatar}>
-              <Text style={[typeStyles.body, s.avatarText]}>{appointment.initials}</Text>
-            </View>
-            <View style={s.flex}>
-              <Text style={[typeStyles.body, s.name]}>
-                {appointment.name}
-              </Text>
-              <Text style={[typeStyles.body, s.meta]}>
-                {appointment.gender} · {appointment.age} years
-              </Text>
-              <View style={s.idRow}>
-                <Text style={[typeStyles.body, s.metaId]}>ID: {d.consultationId}</Text>
-                <Pressable
-                  testID="copy-consultation-id"
-                  onPress={() => undefined}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Copy consultation ID"
-                >
-                  <Icon name="copy" size={12} color={colors.surfie} />
-                </Pressable>
-              </View>
-            </View>
-            <View style={s.specPill}>
-              <Text style={[typeStyles.body, s.specText]}>Psychiatry</Text>
-            </View>
+        <View style={s.patientFoot}>
+          <View style={s.footCell}>
+            <Text style={s.footLabel}>Diagnosis</Text>
+            <Text testID="summary-diagnosis" style={s.footValue} numberOfLines={2}>
+              {record.notes.diagnosis.trim() || 'Not recorded in notes'}
+            </Text>
           </View>
-
-          <View style={s.patientFoot}>
-            <View style={s.footCell}>
-              <View style={s.footIcon}>
-                <Icon name="document" size={15} color={colors.surfie} />
-              </View>
-              <View style={s.flex}>
-                <Text style={[typeStyles.body, s.footLabel]}>Diagnosis</Text>
-                <Text style={[typeStyles.body, s.footValue]} numberOfLines={1}>
-                  {diagnosis}
+          <View style={s.footRule} />
+          <View style={s.footCell}>
+            <Text style={s.footLabel}>Risk category</Text>
+            {record.risk.category ? (
+              <View style={[s.riskPill, record.risk.category === 'high' && s.riskPillHigh]}>
+                <Text style={[s.riskPillText, record.risk.category === 'high' && s.riskPillTextHigh]}>
+                  {RISK_LABEL[record.risk.category]}
                 </Text>
               </View>
-            </View>
-            <View style={s.footRule} />
-            <View style={s.footCell}>
-              <View style={s.footIcon}>
-                <Icon name="shieldCheck" size={15} color={risk === 'high' ? colors.danger : colors.surfie} />
-              </View>
-              <View style={s.flex}>
-                <Text style={[typeStyles.body, s.footLabel]}>Risk category</Text>
-                <View style={[s.riskPill, risk === 'high' && s.riskPillHigh]}>
-                  <Text style={[typeStyles.body, s.riskPillText, risk === 'high' && s.riskPillTextHigh]}>
-                    {RISK_LABEL[risk]}
-                  </Text>
-                </View>
-              </View>
-            </View>
+            ) : (
+              <Text style={s.footValue}>Not assessed</Text>
+            )}
           </View>
         </View>
-
-        {/* -------------------------------- summary -------------------------------- */}
-        <View style={s.card}>
-          <View style={s.cardHead}>
-            <Text style={[typeStyles.body, s.cardTitle]}>Case Summary</Text>
-            <Text style={[typeStyles.body, s.required]}>3–5 lines required</Text>
-          </View>
-          <Text style={[typeStyles.body, s.helper]}>
-            Summarise the concern, relevant history, assessment, treatment or advice provided, risk
-            level and follow-up plan.
-          </Text>
-
-          <Pressable
-            testID="summary-input"
-            onPress={() => setSummary((v) => (v ? '' : SAMPLE))}
-            style={[s.input, !!summary && s.inputFilled]}
-            accessibilityRole="button"
-            accessibilityLabel="Case summary"
-          >
-            <View style={s.inputTextRow}>
-              <Icon name="pencil" size={15} color={colors.inkFaint} />
-              <Text style={[typeStyles.body, [s.inputText, !summary && s.inputPlaceholder], s.flex]}>
-                {summary || 'Write your case summary here...'}
-              </Text>
-            </View>
-
-            <View style={s.countRow}>
-              {!longEnough && summary.length > 0 && (
-                <Text style={[typeStyles.body, s.countHint]}>At least {CASE_SUMMARY_MIN} characters</Text>
-              )}
-              <View style={s.flex} />
-              <Text style={[typeStyles.body, [s.counter, !withinLimit && s.counterOver]]}>
-                {summary.length}/{CASE_SUMMARY_MAX}
-              </Text>
-            </View>
-          </Pressable>
-        </View>
-
-        {/* ------------------------------- checklist ------------------------------- */}
-        <Text style={[typeStyles.body, s.listTitle]}>Completion checklist</Text>
-        <View style={s.card}>
-          {checklist.map((c, i) => (
-            <View
-              key={c.key}
-              testID={`check-${c.key}`}
-              style={[s.checkRow, i < checklist.length - 1 && s.checkBorder]}
-            >
-              <View style={[s.checkIcon, c.done ? s.checkIconDone : s.checkIconPending]}>
-                <Icon
-                  name={c.done ? 'checkCircle' : 'alertCircle'}
-                  size={15}
-                  color={c.done ? colors.surfie : colors.warn}
-                  filled={c.done}
-                />
-              </View>
-              <Text style={[typeStyles.body, [s.checkText, !c.done && s.checkTextPending]]}>{c.label}</Text>
-              <Text style={[typeStyles.body, [s.checkState, !c.done && s.checkStatePending]]}>
-                {c.done ? 'Done' : 'Pending'}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </Screen>
-
-      {/* -------------------------------- footer --------------------------------- */}
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-        <Pressable
-          testID="submit-summary"
-          onPress={() => canSubmit && onSubmit(summary)}
-          disabled={!canSubmit}
-          style={[s.cta, !canSubmit && s.ctaOff]}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !canSubmit }}
-        >
-          <Text style={[typeStyles.body, s.ctaText]}>Submit Summary &amp; Complete</Text>
-          <View style={[s.ctaArrow, !canSubmit && s.ctaArrowOff]}>
-            <Icon name="arrowRight" size={18} color={colors.white} />
-          </View>
-        </Pressable>
       </View>
-    </View>
+
+      {/* -------------------------------- summary -------------------------------- */}
+      <View style={s.card}>
+        <View style={s.cardHead}>
+          <Text style={s.cardTitle}>Your summary</Text>
+          <Text style={s.required}>{submitted ? 'Submitted' : '3–5 lines required'}</Text>
+        </View>
+        <Text style={s.helper}>
+          Summarise the concern, relevant history, assessment, treatment or advice, risk level and follow-up plan.
+        </Text>
+        <View style={s.inputWrap}>
+          <NoteInput
+            testID="summary-input"
+            value={record.summary}
+            onChangeText={(v) => setSummary(a.id, v)}
+            placeholder="Write your case summary here…"
+            max={CASE_SUMMARY_MAX}
+            minHeight={160}
+            editable={!submitted}
+            invalid={attempted && !longEnough}
+            accessibilityLabel="Case summary"
+          />
+        </View>
+        {!submitted && length > 0 && !longEnough && (
+          <Text testID="summary-short" style={s.countHint}>
+            {CASE_SUMMARY_MIN - length} more characters needed
+          </Text>
+        )}
+        {!submitted && length > 0 && (
+          <Text style={s.savedHint}>Draft saved as you type</Text>
+        )}
+      </View>
+
+      {/* ------------------------------- checklist ------------------------------- */}
+      <Text style={s.listTitle}>Completion checklist</Text>
+      <View style={s.card}>
+        {checklist.map((c, i) => (
+          <View key={c.key} testID={`check-${c.key}`} style={[s.checkRow, i < checklist.length - 1 && s.checkBorder]}>
+            <View style={[s.checkIcon, c.done ? s.checkIconDone : s.checkIconPending]}>
+              <Icon name={c.done ? 'check' : 'alertCircle'} size={15} weight={c.done ? 3 : 1.8} color={c.done ? colors.surfie : colors.warn} />
+            </View>
+            <View style={s.flex}>
+              <Text style={[s.checkText, !c.done && s.checkTextPending]}>{c.label}</Text>
+              {c.key === 'followUpAssigned' && plan && record.plan && (
+                <Text style={s.checkSub}>
+                  {plan.label} · {record.plan.duration} days · review {reviewDateFor(record.plan.start, record.plan.duration)}
+                </Text>
+              )}
+            </View>
+            {c.done ? (
+              <Text style={s.checkState}>Done</Text>
+            ) : c.fix && !submitted ? (
+              <Pressable
+                testID={`fix-${c.key}`}
+                onPress={c.fix}
+                hitSlop={8}
+                style={s.fixBtn}
+                accessibilityRole="button"
+                accessibilityLabel={c.fixLabel}
+              >
+                <Text style={s.fixText}>{c.fixLabel}</Text>
+              </Pressable>
+            ) : (
+              <Text style={[s.checkState, s.checkStatePending]}>Pending</Text>
+            )}
+          </View>
+        ))}
+      </View>
+
+      {attempted && outstanding.length > 0 && (
+        <Notice testID="summary-blocked" tone="warn" icon="alertCircle">
+          Still to do: {outstanding.map((o) => o.label.toLowerCase()).join(', ')}. Instant requests stay paused until this
+          consultation is complete.
+        </Notice>
+      )}
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface.page },
-  flex: { flex: 1 },
-  // the footer is a sibling, not an overlay — nothing to scroll clear of
-  content: { paddingBottom: spacing.md },
-
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  barLogo: { flex: 1, alignItems: 'center' },
-
-  titleWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
-  title: { ...typeStyles.pageTitle, color: colors.ink },
-  subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 3 },
+  flex: { flex: 1, minWidth: 0 },
 
   patient: {
     marginHorizontal: spacing.lg,
     padding: spacing.md,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
   patientTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { ...typeStyles.avatar, fontSize: 19, color: colors.surfie },
+  avatarText: { ...typeStyles.avatar, fontSize: 18, lineHeight: undefined, color: colors.surfie },
   name: { ...typeStyles.name, color: colors.ink },
   meta: { ...typeStyles.caption, color: colors.inkMuted },
-  idRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
-  metaId: { ...typeStyles.caption, color: colors.inkFaint },
-  specPill: {
-    backgroundColor: colors.successSoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-  },
+  metaId: { ...typeStyles.caption, color: colors.inkFaint, marginTop: 2 },
+  specPill: { backgroundColor: colors.successSoft, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: 4 },
   specText: { ...typeStyles.caption, color: colors.surfie },
   patientFoot: {
     flexDirection: 'row',
@@ -313,28 +280,13 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.surface.line,
   },
-  footCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingRight: spacing.sm },
-  footIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: colors.successSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  footCell: { flex: 1, paddingRight: spacing.sm, gap: 3 },
   footRule: { width: 1, alignSelf: 'stretch', backgroundColor: colors.surface.line, marginRight: spacing.md },
-  footLabel: { ...typeStyles.label, color: colors.inkFaint },
-  footValue: { ...typeStyles.bodySmall, color: colors.ink, marginTop: 2, fontWeight: fontWeight.semibold },
-  riskPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.successSoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    marginTop: 3,
-  },
+  footLabel: { ...typeStyles.caption, color: colors.inkFaint },
+  footValue: { ...typeStyles.bodySmall, color: colors.ink, fontWeight: fontWeight.semibold },
+  riskPill: { alignSelf: 'flex-start', backgroundColor: colors.successSoft, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 2 },
   riskPillHigh: { backgroundColor: colors.dangerSoft },
-  riskPillText: { ...typeStyles.caption, color: colors.surfie },
+  riskPillText: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },
   riskPillTextHigh: { color: colors.danger },
 
   card: {
@@ -342,7 +294,7 @@ const s = StyleSheet.create({
     marginTop: spacing.md,
     padding: spacing.md,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
@@ -350,71 +302,33 @@ const s = StyleSheet.create({
   cardTitle: { ...typeStyles.cardTitle, color: colors.ink },
   required: { ...typeStyles.caption, color: colors.surfie },
   helper: { ...typeStyles.helper, color: colors.inkMuted, marginTop: 6 },
-  input: {
-    minHeight: 180,
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.surface.inputBorder,
-    backgroundColor: colors.white,
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-  },
-  inputFilled: { backgroundColor: colors.surface.mintSoft },
-  inputTextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  inputText: { ...typeStyles.input, color: colors.ink },
-  inputPlaceholder: { color: colors.inkFaint },
-  countRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  countHint: { ...typeStyles.number, color: colors.warn },
-  counter: { ...typeStyles.number, color: colors.inkFaint },
-  counterOver: { color: colors.danger, fontWeight: fontWeight.semibold },
+  inputWrap: { marginTop: spacing.md },
+  countHint: { ...typeStyles.caption, color: colors.warn, marginTop: 6 },
+  savedHint: { ...typeStyles.caption, color: colors.inkFaint, marginTop: 2 },
 
-  listTitle: { ...typeStyles.sectionTitle, color: colors.ink, marginHorizontal: spacing.lg, marginTop: spacing.xl },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 11 },
+  listTitle: { ...typeStyles.sectionTitle, fontSize: 17, lineHeight: 23, color: colors.ink, marginHorizontal: spacing.lg, marginTop: spacing.xl },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 52, paddingVertical: spacing.sm },
   checkBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
-  checkIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  checkIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   checkIconDone: { backgroundColor: colors.successSoft },
   checkIconPending: { backgroundColor: colors.warnSoft },
-  checkText: { ...typeStyles.body, flex: 1, color: colors.ink },
+  checkText: { ...typeStyles.body, color: colors.ink },
   checkTextPending: { color: colors.inkMuted },
-  checkState: { ...typeStyles.caption, color: colors.surfie },
+  checkSub: { ...typeStyles.caption, color: colors.inkMuted },
+  checkState: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },
   checkStatePending: { color: colors.warn },
+  fixBtn: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.surfie,
+  },
+  fixText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.line,
-  },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 60,
-    paddingLeft: spacing.lg,
-    paddingRight: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfie,
-  },
-  ctaOff: { backgroundColor: colors.inkFaint },
-  ctaText: { ...typeStyles.button, flex: 1, textAlign: 'center', color: colors.white },
-  ctaArrow: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.paris,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaArrowOff: { backgroundColor: 'rgba(255,255,255,0.24)' },
+  doneFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: 52 },
+  doneFootText: { ...typeStyles.button, color: colors.surfie },
 });
 
 export default CaseSummaryScreen;

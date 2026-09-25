@@ -1,12 +1,24 @@
-import { typeStyles, fontWeight } from '../../../../../../libs/typography/src';
-import React, { useState, type ReactNode } from 'react';
-import { View, Text, StyleSheet, Image, Pressable, Modal, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { type ReactNode } from 'react';
+import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../../theme/brand';
+import { colors, radius, spacing } from '../../../theme/brand';
+import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon } from '../../../components/Icon';
-import { Screen, AppHeader, IconButton, PageTitle, Card, Button, StatusPill, ProgressBar } from '../../../components/ui';
-import { pendingItems, rejectedItems, approvedItems, type VerificationItem } from '../../../data/doctor';
+import { Screen, PageTitle, Card, Button, StatusPill } from '../../../components/ui';
+import { ScreenHeader } from '../../../components/ScreenHeader';
+import { Tracker } from '../../../components/compact';
+import { confirm } from '../../../components/confirm';
+import { TabHeader } from '../../navigation/TabHeader';
+import type { VerificationItem } from '../../../data/doctor';
+import {
+  OTHER_ID,
+  maskId,
+  totalExperienceYears,
+  type RegistrationDraft,
+  type StepKey,
+} from '../../../data/registration';
+import { TODAY } from '../../../data/calendar';
+import type { VerificationState } from '../../../state/store';
 
 /**
  * Supplied banner artwork. b1/b2/b3 are the 3D clipboard set:
@@ -19,563 +31,329 @@ const ART = {
   rejected: require('../../../assets/b3.png'),
 };
 
-/* --------------------------- shared status header -------------------------- */
+type Status = Exclude<VerificationState, 'notSubmitted'>;
 
-type Phase = 'approved' | 'pending' | 'rejected';
+/**
+ * What the verification team is looking at, built from what the doctor
+ * submitted — so a new doctor sees their own ID type and degrees, not a
+ * fixture's.
+ */
+export const verificationItems = (status: Status, draft: RegistrationDraft): VerificationItem[] => {
+  const idp = draft.identity;
+  const idName = idp.idType === OTHER_ID ? idp.idTypeName || 'Government ID' : idp.idType || 'Government ID';
+  const years = totalExperienceYears(
+    draft.experience,
+    `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`
+  );
+  const base: (VerificationItem & { step: StepKey })[] = [
+    {
+      key: 'basic',
+      step: 'basic',
+      icon: 'idCard',
+      title: 'Basic details & photo',
+      body: [draft.basic.fullName, draft.basic.languages.join(', ')].filter(Boolean).join(' · '),
+      state: 'underReview',
+    },
+    {
+      key: 'identity',
+      step: 'identity',
+      icon: 'shieldCheck',
+      title: 'Proof of identity',
+      body: `${idName} · ${maskId(idp.idNumber.replace(/\s/g, ''))}`,
+      state: 'underReview',
+    },
+    {
+      key: 'qualifications',
+      step: 'qualifications',
+      icon: 'document',
+      title: 'Qualifications',
+      body: draft.qualifications.map((q) => q.degree).join(', ') || 'None submitted',
+      state: 'underReview',
+    },
+    {
+      key: 'experience',
+      step: 'experience',
+      icon: 'inPerson',
+      title: 'Experience',
+      body: `${draft.experience.length} ${draft.experience.length === 1 ? 'role' : 'roles'} · ${years} ${years === 1 ? 'year' : 'years'}`,
+      state: 'underReview',
+    },
+  ];
+  if (status === 'approved') return base.map((i) => ({ ...i, state: 'verified' as const }));
+  if (status === 'pending') return base;
+  const issues: Partial<Record<StepKey, { issueLabel: string; body: string }>> = {
+    identity: { issueLabel: 'Name mismatch', body: 'The name on your ID must match the name on your registration.' },
+    qualifications: { issueLabel: 'Document unclear', body: 'Upload a clear, complete copy of each degree certificate.' },
+  };
+  return base.map((i) => {
+    const issue = issues[i.step];
+    return issue ? { ...i, state: 'issue' as const, ...issue } : { ...i, state: 'verified' as const };
+  });
+};
 
-const StatusTabs = ({ phase, onSelect }: { phase: Phase; onSelect?: (p: Phase) => void }) => (
-  <View style={s.tabs}>
-    {(
-      [
-        ['approved', 'Approved', 'shieldCheck'],
-        ['pending', 'Pending', 'clock'],
-        ['rejected', 'Rejected', 'banCircle'],
-      ] as const
-    ).map(([key, label, icon]) => {
-      const on = phase === key;
-      const tint = key === 'pending' ? colors.warn : key === 'rejected' ? colors.danger : colors.surfie;
-      return (
-        <Pressable
-          key={key}
-          testID={`status-tab-${key}`}
-          onPress={() => onSelect?.(key)}
-          disabled={!onSelect}
-          accessibilityRole="button"
-          accessibilityState={{ selected: on }}
-          style={[
-            s.tab,
-            on && {
-              backgroundColor:
-                key === 'pending' ? colors.warnSoft : key === 'rejected' ? colors.dangerSoft : colors.successSoft,
-            },
-          ]}
-        >
-          <Icon name={icon} size={17} color={on ? tint : colors.inkFaint} />
-          {/* Label is fixed per tab — it must not change when selected. */}
-          <Text style={[typeStyles.body, [s.tabText, on && { color: tint, fontWeight: fontWeight.semibold }]]}>
-            {label}
-          </Text>
-        </Pressable>
-      );
-    })}
-  </View>
-);
+/* ---------------------------------- parts ---------------------------------- */
 
-/** Keep native image dimensions out of layout; copy determines banner height. */
+/** Native image dimensions stay out of layout; the copy sets the banner height. */
 const Banner = ({ kind, children }: { kind: keyof typeof ART; children?: ReactNode }) => (
   <View style={s.bannerWrap}>
-    <Image
-      source={ART[kind]}
-      style={s.bannerImg}
-      resizeMode="contain"
-      accessible={false}
-    />
+    <Image source={ART[kind]} style={s.bannerImg} resizeMode="contain" accessible={false} />
     {!!children && <View style={s.bannerOverlay}>{children}</View>}
   </View>
 );
 
+/** Information, not a control: no chevron, no press. */
 const ItemRow = ({ item, last }: { item: VerificationItem; last?: boolean }) => {
-  const tone =
-    item.state === 'verified' ? 'success' : item.state === 'underReview' ? 'warn' : ('danger' as const);
-  const label =
-    item.state === 'verified' ? 'Verified' : item.state === 'underReview' ? 'Under review' : item.issueLabel ?? 'Issue';
+  const tone = item.state === 'verified' ? 'success' : item.state === 'underReview' ? 'warn' : ('danger' as const);
+  const label = item.state === 'verified' ? 'Verified' : item.state === 'underReview' ? 'Under review' : item.issueLabel ?? 'Issue';
   return (
-    <Pressable style={[s.item, !last && s.itemBorder]}>
+    <View testID={`verification-${item.key}`} style={[s.item, !last && s.itemBorder]} accessible accessibilityLabel={`${item.title}, ${label}. ${item.body}`}>
       <View style={[s.itemIcon, item.state === 'issue' && s.itemIconIssue]}>
         <Icon name={item.icon} size={19} color={item.state === 'issue' ? colors.danger : colors.surfie} />
       </View>
-      {/* Title on top, description beneath. No line cap — the copy wraps so it
-          is always readable in full, even if that makes rows uneven. */}
       <View style={s.itemCopy}>
-        <Text style={[typeStyles.body, s.itemTitle]}>{item.title}</Text>
-        <Text style={[typeStyles.body, s.itemBody]}>{item.body}</Text>
+        <Text style={s.itemTitle}>{item.title}</Text>
+        <Text style={s.itemBody}>{item.body}</Text>
       </View>
-      <StatusPill label={label} tone={tone} icon={item.state === 'verified' ? 'checkCircle' : undefined} />
-      <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-    </Pressable>
+      <StatusPill label={label} tone={tone} icon={item.state === 'verified' ? 'checkCircle' : undefined} dot={item.state !== 'verified'} />
+    </View>
   );
 };
 
-/* ------------------------------- help card -------------------------------- */
+const HelpCard = ({ onGetSupport }: { onGetSupport: () => void }) => (
+  <View style={s.helpCard}>
+    <View style={s.helpIcon}>
+      <Icon name="headset" size={18} color={colors.surfie} />
+    </View>
+    <View style={s.flex}>
+      <Text style={s.helpTitle}>Need help with verification?</Text>
+      <Text style={s.helpBody}>Raise an issue with the verification team.</Text>
+    </View>
+    <Pressable
+      testID="help-get-support"
+      onPress={onGetSupport}
+      hitSlop={6}
+      accessibilityRole="button"
+      style={({ pressed }) => [s.helpBtn, pressed && s.helpBtnPressed]}
+    >
+      <Text style={s.helpBtnText}>Get Support</Text>
+      <Icon name="chevronRight" size={14} color={colors.surfie} />
+    </Pressable>
+  </View>
+);
+
+/* --------------------------------- screen ---------------------------------- */
+
+const COPY: Record<Status, { kind: keyof typeof ART; pill: string; tone: 'warn' | 'danger' | 'success'; title: string; body: string; subtitle: string }> = {
+  pending: {
+    kind: 'review',
+    pill: 'Pending verification',
+    tone: 'warn',
+    title: 'Under Review',
+    body: 'The verification team is reviewing your details. You will be notified once the review is complete.',
+    subtitle: 'Your account is under review',
+  },
+  rejected: {
+    kind: 'rejected',
+    pill: 'Verification unsuccessful',
+    tone: 'danger',
+    title: 'Changes Required',
+    body: 'Some of your details could not be verified. Review the issues below and resubmit.',
+    subtitle: 'Your account needs attention',
+  },
+  approved: {
+    kind: 'approved',
+    pill: 'Verification complete',
+    tone: 'success',
+    title: 'Account Approved',
+    body: 'Your professional details have been verified. You can now use all doctor features.',
+    subtitle: 'Your doctor account is active',
+  },
+};
 
 /**
- * Support topics. Deliberately routed through the support workflow rather than
- * naming an individual administrator — no personal contact details are exposed.
+ * Account Status — the verification state of the doctor's own account.
+ *
+ * Shown in place of the profile on the Profile tab until the doctor has seen
+ * it and continued with "Go to Dashboard"; afterwards it stays reachable from
+ * Profile › Account status (with `onBack`).
  */
-const SUPPORT_TOPICS = [
-  { key: 'verification', label: 'Verification issue', icon: 'shieldCheck' },
-  { key: 'documents', label: 'Document upload issue', icon: 'document' },
-  { key: 'access', label: 'Account access issue', icon: 'lock' },
-  { key: 'other', label: 'Other', icon: 'message' },
-] as const;
+export const AccountStatusScreen = ({
+  status,
+  acknowledged,
+  submittedAt,
+  items,
+  onBack,
+  onAcknowledge,
+  onGetSupport,
+  onResubmit,
+  onLogout,
+}: {
+  status: Status;
+  acknowledged: boolean;
+  submittedAt?: string;
+  items: VerificationItem[];
+  /** Present when opened from Profile; absent on the Profile tab itself. */
+  onBack?: () => void;
+  onAcknowledge: () => void;
+  onGetSupport: () => void;
+  onResubmit: () => void;
+  /** Offered on the Profile tab, where this screen stands in for the profile and its Log out. */
+  onLogout?: () => void;
+}) => {
+  const c = COPY[status];
+  const steps: { label: string; state: 'done' | 'active' | 'todo' }[] = [
+    { label: 'Submitted', state: 'done' },
+    { label: 'Under review', state: status === 'pending' ? 'active' : 'done' },
+    { label: status === 'rejected' ? 'Changes needed' : 'Approved', state: status === 'approved' ? 'done' : status === 'rejected' ? 'active' : 'todo' },
+  ];
+  const issues = items.filter((i) => i.state === 'issue').length;
 
-/** Outlined, compact CTA. `hitSlop` lifts the 38px control past a 44px target. */
-const GetSupportButton = ({ onPress, block }: { onPress: () => void; block?: boolean }) => (
-  <Pressable
-    testID="help-get-support"
-    onPress={onPress}
-    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-    accessibilityRole="button"
-    accessibilityLabel="Get support"
-    style={({ pressed }) => [s.helpBtn, block && s.helpBtnBlock, pressed && s.helpBtnPressed]}
-  >
-    <Text style={[typeStyles.body, s.helpBtnText]}>Get Support</Text>
-    <Icon name="chevronRight" size={14} color={colors.surfie} />
-  </Pressable>
-);
-
-const HelpCard = ({ onContact }: { onContact: () => void }) => {
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  // Below 360 the button drops under the copy rather than squeezing it.
-  const stacked = width < 360;
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [topic, setTopic] = useState<string | null>(null);
+  const footer =
+    status === 'rejected' ? (
+      <View style={s.ctaRow}>
+        <Button testID="contact-admin" label="Contact Admin" variant="secondary" onPress={onGetSupport} style={s.ctaHalf} />
+        <Button testID="resubmit" label="Resubmit" icon="arrowRight" iconRight onPress={onResubmit} style={s.ctaHalf} />
+      </View>
+    ) : !acknowledged ? (
+      <Button testID="acknowledge" label="Go to Dashboard" icon="arrowRight" iconRight onPress={onAcknowledge} />
+    ) : undefined;
 
   return (
-    <>
-      <View style={s.helpCard}>
-        <View style={s.helpRow}>
-          <View style={s.helpIcon}>
-            <Icon name="headset" size={18} color={colors.surfie} />
+    <Screen
+      testID={`account-status-${status}`}
+      header={onBack ? <ScreenHeader onBack={onBack} title="Account Status" subtitle={c.subtitle} /> : undefined}
+      footer={footer}
+    >
+      {!onBack && (
+        <>
+          <TabHeader />
+          <PageTitle title="Account Status" subtitle={c.subtitle} />
+        </>
+      )}
+
+      <Card tone={status === 'pending' ? 'warn' : status === 'rejected' ? 'danger' : 'mint'} style={s.heroCard}>
+        <Banner kind={c.kind}>
+          <StatusPill label={c.pill} tone={c.tone} />
+          <Text style={s.bannerTitle}>{c.title}</Text>
+          <Text style={s.heroBody}>{c.body}</Text>
+        </Banner>
+        <View style={s.progressCard}>
+          <View style={s.progressHead}>
+            <Text style={s.progressLabel}>Verification</Text>
+            {!!submittedAt && <Text style={s.progressValue}>Submitted {submittedAt}</Text>}
           </View>
-          <View style={s.flex}>
-            <Text style={[typeStyles.body, s.helpTitle]}>Need help with verification?</Text>
-            <Text style={[typeStyles.body, s.helpBody]} numberOfLines={2}>
-              Get assistance with documents or account review.
-            </Text>
-          </View>
-          {!stacked && <GetSupportButton onPress={() => setSheetOpen(true)} />}
+          <Tracker steps={steps} />
         </View>
-        {stacked && (
-          <View style={s.helpStackedWrap}>
-            <GetSupportButton onPress={() => setSheetOpen(true)} block />
-          </View>
-        )}
+      </Card>
+
+      <View style={s.sectionWrap}>
+        <Text style={s.sectionTitle}>{status === 'rejected' ? 'Issues to Resolve' : status === 'approved' ? 'Verified Details' : 'Submitted Details'}</Text>
+        <Text style={s.sectionSub}>
+          {status === 'rejected'
+            ? `${issues} ${issues === 1 ? 'item needs' : 'items need'} your attention before your account can be activated.`
+            : status === 'approved'
+              ? 'Your information has been verified and is up to date.'
+              : 'The status of each part of your submission.'}
+        </Text>
       </View>
+      <Card style={s.listCard}>
+        {items.map((it, i) => (
+          <ItemRow key={it.key} item={it} last={i === items.length - 1} />
+        ))}
+      </Card>
 
-      <Modal
-        visible={sheetOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSheetOpen(false)}
-      >
-        <Pressable style={s.backdrop} onPress={() => setSheetOpen(false)}>
-          {/* Swallow taps so pressing the sheet itself does not dismiss it. */}
-          <Pressable
-            style={[s.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}
-            onPress={() => {}}
-          >
-            <View style={s.sheetHandle} />
-            <Text style={[typeStyles.body, s.sheetTitle]}>How can we help?</Text>
-            <Text style={[typeStyles.body, s.sheetSub]}>
-              Choose a topic so we can route your request to the right team.
-            </Text>
+      {status === 'rejected' && (
+        <View style={s.inlineWarn}>
+          <Icon name="alertCircle" size={17} color={colors.danger} />
+          <Text style={s.inlineWarnText}>Your doctor account stays inactive until these issues are resolved.</Text>
+        </View>
+      )}
 
-            {SUPPORT_TOPICS.map((t) => {
-              const on = topic === t.key;
-              return (
-                <Pressable
-                  key={t.key}
-                  testID={`support-topic-${t.key}`}
-                  onPress={() => setTopic(t.key)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  style={[s.topicRow, on && s.topicRowOn]}
-                >
-                  <View style={[s.topicIcon, on && s.topicIconOn]}>
-                    <Icon name={t.icon} size={16} color={colors.surfie} />
-                  </View>
-                  <Text style={[typeStyles.body, s.topicLabel]}>{t.label}</Text>
-                  <View style={[s.radio, on && s.radioOn]}>
-                    {on && <Icon name="check" size={11} color={colors.white} />}
-                  </View>
-                </Pressable>
-              );
-            })}
+      <HelpCard onGetSupport={onGetSupport} />
 
-            <Button
-              testID="support-submit"
-              label="Contact Support"
-              onPress={() => { setSheetOpen(false); onContact(); }}
-              disabled={!topic}
-              style={s.sheetCta}
-            />
-          </Pressable>
+      {status === 'pending' && <Text style={s.gateNote}>Your full profile unlocks once verification is complete.</Text>}
+
+      {!!onLogout && (
+        <Pressable
+          testID="logout"
+          onPress={() =>
+            confirm({
+              title: 'Log out?',
+              message: 'You will need a one-time code to sign in again.',
+              confirmLabel: 'Log out',
+              destructive: true,
+              onConfirm: onLogout,
+            })
+          }
+          style={({ pressed }) => [s.logout, pressed && s.helpBtnPressed]}
+          accessibilityRole="button"
+        >
+          <Icon name="logout" size={17} color={colors.danger} />
+          <Text style={s.logoutText}>Log out</Text>
         </Pressable>
-      </Modal>
-    </>
+      )}
+    </Screen>
   );
 };
 
-/* -------------------------------- pending --------------------------------- */
-
-export const PendingStatusScreen = ({
-  onContact,
-  onSelectPhase,
-}: {
-  onContact: () => void;
-  onSelectPhase?: (p: Phase) => void;
-}) => (
-  <Screen>
-    <AppHeader right={<IconButton name="bell" badge label="Notifications" />} />
-    <PageTitle title="Account Status" subtitle="Your account is under review" />
-    <StatusTabs phase="pending" onSelect={onSelectPhase} />
-
-    <Card tone="warn" style={s.heroCard}>
-      <Banner kind="review">
-        <StatusPill label="Pending verification" tone="warn" />
-        <Text style={[typeStyles.body, s.bannerTitle]}>Under Review</Text>
-        <Text style={[typeStyles.body, s.heroBody]}>
-          Your submitted details are being reviewed. We will notify you once verification is complete.
-        </Text>
-      </Banner>
-
-      <View style={s.progressCard}>
-        <View style={s.progressHead}>
-          <Text style={[typeStyles.body, s.progressLabel]}>Verification progress</Text>
-          <Text style={[typeStyles.body, s.progressValue]}>60% Complete</Text>
-        </View>
-        <ProgressBar percent={60} />
-      </View>
-    </Card>
-
-    <View style={s.sectionWrap}>
-      <Text style={[typeStyles.body, s.sectionTitle]}>Submitted Details</Text>
-      <Text style={[typeStyles.body, s.sectionSub]}>Here is the status of your submitted information.</Text>
-    </View>
-    <Card style={s.listCard}>
-      {pendingItems.map((it, i) => (
-        <ItemRow key={it.key} item={it} last={i === pendingItems.length - 1} />
-      ))}
-    </Card>
-
-    <HelpCard onContact={onContact} />
-
-    <Text style={[typeStyles.body, s.gateNote]}>
-      Your full profile unlocks once verification is complete.
-    </Text>
-  </Screen>
-);
-
-/* -------------------------------- rejected -------------------------------- */
-
-export const RejectedStatusScreen = ({
-  onResubmit,
-  onContact,
-  onSelectPhase,
-}: {
-  onResubmit: () => void;
-  onContact: () => void;
-  onSelectPhase?: (p: Phase) => void;
-}) => (
-  <Screen>
-    <AppHeader right={<IconButton name="bell" badge label="Notifications" />} />
-    <PageTitle title="Account Status" subtitle="Your account needs attention" />
-    <StatusTabs phase="rejected" onSelect={onSelectPhase} />
-
-    <Card tone="danger" style={s.heroCard}>
-      <Banner kind="rejected">
-        <StatusPill label="Verification unsuccessful" tone="danger" />
-        <Text style={[typeStyles.body, s.bannerTitle]}>Changes Required</Text>
-        {/* Kept to two short sentences, matching the pending and approved
-            heroes — the detail lives in "Issues to Resolve" below. */}
-        <Text style={[typeStyles.body, s.heroBody]}>
-          Some of your details could not be verified. Review the issues below and resubmit.
-        </Text>
-      </Banner>
-
-      <Pressable style={s.reviewStatusRow}>
-        {/* Label and value share one line. */}
-        <View style={s.reviewStatusCopy}>
-          <Text style={[typeStyles.body, s.reviewStatusLabel]} numberOfLines={1}>Review status</Text>
-          <Text style={[typeStyles.body, s.reviewStatusValue]} numberOfLines={1}>Action required</Text>
-        </View>
-        <Icon name="chevronRight" size={17} color={colors.danger} />
-      </Pressable>
-    </Card>
-
-    <View style={s.sectionWrap}>
-      <Text style={[typeStyles.body, s.sectionTitle]}>Issues to Resolve</Text>
-      <Text style={[typeStyles.body, s.sectionSub]}>Please address the following to activate your account.</Text>
-    </View>
-    <Card style={s.listCard}>
-      {rejectedItems.map((it, i) => (
-        <ItemRow key={it.key} item={it} last={i === rejectedItems.length - 1} />
-      ))}
-    </Card>
-
-    <View style={s.inlineWarn}>
-      <Icon name="alertCircle" size={17} color={colors.danger} />
-      <Text style={[typeStyles.body, s.inlineWarnText]}>
-        Your doctor account remains inactive until these issues are resolved.
-      </Text>
-    </View>
-
-    <View style={[s.ctaWrap, s.ctaRow]}>
-      {/* only the rejected items may be updated and resubmitted */}
-      <Button testID="resubmit" label="Resubmit" icon="arrowRight" iconRight onPress={onResubmit} style={s.ctaHalf} />
-      <Button label="Contact Admin" onPress={onContact} style={s.ctaHalf} />
-    </View>
-  </Screen>
-);
-
-/* ---------------------------- approved (once) ----------------------------- */
-
-export const ApprovedStatusScreen = ({
-  onAcknowledge,
-  onSelectPhase,
-}: {
-  onAcknowledge: () => void;
-  onSelectPhase?: (p: Phase) => void;
-}) => (
-  <Screen>
-    <AppHeader right={<IconButton name="bell" badge label="Notifications" />} />
-    <PageTitle title="Account Status" subtitle="Your doctor account is active" />
-    <StatusTabs phase="approved" onSelect={onSelectPhase} />
-
-    <Card tone="mint" style={s.heroCard}>
-      <Banner kind="approved">
-        <StatusPill label="Verification complete" tone="success" />
-        <Text style={[typeStyles.body, s.bannerTitle]}>Account Approved</Text>
-        <Text style={[typeStyles.body, s.heroBody]}>
-          Your professional details have been verified. You can now use all doctor features.
-        </Text>
-      </Banner>
-
-      <View style={s.progressCard}>
-        <View style={s.progressHead}>
-          <Text style={[typeStyles.body, s.progressLabel]}>Verification progress</Text>
-          <Text style={[typeStyles.body, s.progressValue]}>100% Complete</Text>
-        </View>
-        <ProgressBar percent={100} />
-      </View>
-    </Card>
-
-    <View style={s.sectionWrap}>
-      <Text style={[typeStyles.body, s.sectionTitle]}>Verified Details</Text>
-      <Text style={[typeStyles.body, s.sectionSub]}>Your information has been verified and is up to date.</Text>
-    </View>
-    <Card style={s.listCard}>
-      {approvedItems.map((it, i) => (
-        <ItemRow key={it.key} item={it} last={i === approvedItems.length - 1} />
-      ))}
-    </Card>
-
-    <HelpCard onContact={onAcknowledge} />
-
-    <View style={s.ctaWrap}>
-      <Button testID="acknowledge" label="Go to Dashboard" icon="arrowRight" onPress={onAcknowledge} />
-    </View>
-  </Screen>
-);
-
 const s = StyleSheet.create({
-  flex: { flex: 1 },
-  tabs: {
-    flexDirection: 'row',
-    marginHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    borderRadius: radius.md,
-    padding: 4,
-    backgroundColor: colors.white,
-    marginBottom: spacing.md,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-  },
-  tabText: { ...typeStyles.body, color: colors.inkFaint },
+  flex: { flex: 1, minWidth: 0 },
 
   bannerWrap: { minHeight: 132, justifyContent: 'center' },
-  /**
-   * Pinned to the right, not stretched across the card. b1/b2/b3 are square
-   * canvases, so a full-width box plus `contain` parked them dead centre,
-   * behind the copy. A right-hand box roughly as wide as the banner is tall
-   * lets `contain` fill it, which puts the art flush right.
-   */
-  bannerImg: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: '42%',
-    height: '100%',
-  },
-  bannerOverlay: {
-    width: '56%',
-    paddingVertical: spacing.xs,
-    alignItems: 'flex-start',
-    gap: spacing.xs,
-  },
+  // pinned right rather than centred behind the copy (the art is square)
+  bannerImg: { position: 'absolute', top: 0, right: 0, width: '42%', height: '100%' },
+  bannerOverlay: { width: '58%', paddingVertical: spacing.xs, alignItems: 'flex-start', gap: spacing.xs },
   bannerTitle: { ...typeStyles.cardTitle, color: colors.ink },
-  /**
-   * Colour comes from the Card `tone` per phase — mint for approved, amber for
-   * pending, red for rejected — so the whole card carries the status.
-   */
   heroCard: { padding: spacing.md },
-  heroBody: { ...typeStyles.caption, color: colors.inkMuted, marginTop: spacing.xs },
-  progressCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-  },
-  progressHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
+  heroBody: { ...typeStyles.caption, color: colors.inkMuted },
+  progressCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
+  progressHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
   progressLabel: { ...typeStyles.label, color: colors.ink },
-  progressValue: { ...typeStyles.body, color: colors.surfie },
-
-  reviewStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-  },
-  // Label pinned left, value pushed to the right of the same line.
-  reviewStatusCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  reviewStatusLabel: { ...typeStyles.label, color: colors.ink, flexShrink: 0 },
-  reviewStatusValue: { ...typeStyles.body, color: colors.danger },
+  progressValue: { ...typeStyles.caption, color: colors.inkMuted },
 
   sectionWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionTitle: { ...typeStyles.sectionTitle, color: colors.ink },
   sectionSub: { ...typeStyles.bodySmall, color: colors.inkMuted },
 
   listCard: { paddingVertical: 0 },
-  // Tighter gaps than the default 12 — every pixel saved here is width the
-  // title and description get before they have to wrap.
   item: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
   itemBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
-  itemIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  itemIcon: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surface.selected, alignItems: 'center', justifyContent: 'center' },
   itemIconIssue: { backgroundColor: colors.dangerSoft },
   itemCopy: { flex: 1, minWidth: 0 },
   itemTitle: { ...typeStyles.cardTitle, color: colors.ink },
   itemBody: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
 
-  /* ------------------------------ help card ------------------------------ */
   helpCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     marginTop: spacing.lg,
     marginHorizontal: spacing.lg,
     backgroundColor: colors.surface.mintSoft,
-    borderRadius: 14,
+    borderRadius: radius.input,
     borderWidth: 1,
     borderColor: colors.surface.selected,
-    padding: 14,
-    shadowColor: colors.surfie,
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    padding: spacing.md,
+    flexWrap: 'wrap',
   },
-  helpRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  helpIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    // Light chip on the mint card — white reads cleaner than mint-on-mint.
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  helpTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: 13,
-    lineHeight: 17,
-    fontWeight: fontWeight.semibold,
-    color: colors.ink,
-  },
-  helpBody: {
-    fontFamily: typography.body.family,
-    fontSize: 11,
-    lineHeight: 14,
-    color: colors.inkMuted,
-    marginTop: 4,
-  },
+  helpIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  helpTitle: { ...typeStyles.label, color: colors.ink, fontWeight: fontWeight.semibold },
+  helpBody: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
   helpBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    height: 38,
+    minHeight: 40,
     paddingHorizontal: spacing.md,
-    // Capsule, unlike the squircle buttons elsewhere — requested for this CTA.
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.surfie,
     backgroundColor: colors.white,
-    flexShrink: 0,
   },
-  helpBtnBlock: { alignSelf: 'flex-start' },
   helpBtnPressed: { backgroundColor: colors.surface.selected },
-  helpBtnText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: fontWeight.semibold,
-    color: colors.surfie,
-  },
-  helpStackedWrap: { marginTop: spacing.md },
-
-  /* ----------------------------- support sheet ---------------------------- */
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-  },
-  sheetHandle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: colors.surface.line, alignSelf: 'center', marginBottom: spacing.lg,
-  },
-  sheetTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg, fontWeight: fontWeight.semibold, color: colors.ink,
-  },
-  sheetSub: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted,
-    marginTop: 2, marginBottom: spacing.md,
-  },
-  topicRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    paddingVertical: 10, paddingHorizontal: spacing.md,
-    borderRadius: radius.md, borderWidth: 1, borderColor: colors.surface.line,
-    marginBottom: spacing.sm,
-  },
-  topicRowOn: { borderColor: colors.paris, backgroundColor: colors.surface.mintSoft },
-  topicIcon: {
-    width: 30, height: 30, borderRadius: radius.sm,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  topicIconOn: { backgroundColor: colors.white },
-  topicLabel: {
-    flex: 1,
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm, fontWeight: fontWeight.semibold, color: colors.ink,
-  },
-  radio: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 1.5, borderColor: colors.surface.inputBorder,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  radioOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  sheetCta: { marginTop: spacing.sm },
+  helpBtnText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
   inlineWarn: {
     flexDirection: 'row',
@@ -589,9 +367,21 @@ const s = StyleSheet.create({
   },
   inlineWarnText: { ...typeStyles.helper, flex: 1, color: colors.danger },
 
-  ctaWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.xl, gap: spacing.sm },
-  ctaRow: { flexDirection: 'row' },
-  // Equal halves, each free to shrink so neither label gets clipped.
+  ctaRow: { flexDirection: 'row', gap: spacing.sm },
   ctaHalf: { flex: 1, minWidth: 0, paddingHorizontal: spacing.sm },
-  gateNote: { ...typeStyles.caption, color: colors.inkFaint, textAlign: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.xl },
+  gateNote: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.xl },
+  logout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 48,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
+  },
+  logoutText: { ...typeStyles.button, color: colors.danger },
 });
+
+export default AccountStatusScreen;

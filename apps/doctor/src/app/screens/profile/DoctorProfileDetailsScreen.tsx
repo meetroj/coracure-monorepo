@@ -1,228 +1,196 @@
-import { typeStyles, fontWeight } from '../../../../../../libs/typography/src';
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
-import LogoWide from '../../../assets/brand/logo-wide.svg';
 import { colors, radius, spacing } from '../../../theme/brand';
+import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon, type IconName } from '../../../components/Icon';
-import { Screen, Avatar, Card, Button, StatusPill, ListRow } from '../../../components/ui';
-import { doctor, inr } from '../../../data/doctor';
+import { Screen, Avatar, Card, Button, StatusPill } from '../../../components/ui';
+import { ScreenHeader } from '../../../components/ScreenHeader';
+import { useStore } from '../../../state/store';
+import { selectDoctor } from '../../../state/selectors';
+import { inr } from '../../../data/doctor';
+
+/** A verified value: read-only, with a lock instead of a chevron. */
+const LockedRow = ({ icon, title, value, last }: { icon: IconName; title: string; value: string; last?: boolean }) => (
+  <View style={[s.row, !last && s.rowRule]} accessible accessibilityLabel={`${title}: ${value}. Locked after verification`}>
+    <View style={s.rowIcon}>
+      <Icon name={icon} size={17} color={colors.surfie} />
+    </View>
+    <View style={s.flex}>
+      <Text style={s.rowTitle}>{title}</Text>
+      <Text style={s.rowValue}>{value}</Text>
+    </View>
+    <Icon name="lock" size={15} color={colors.inkMuted} />
+  </View>
+);
 
 /**
- * Doctor Profile — the detailed, read-mostly view behind the Profile tab's
- * "Profile Details" row. Admin-approved fields route through "Request
- * changes" rather than being directly editable here.
+ * Doctor Profile — the detailed view behind Profile › Profile Details.
+ *
+ * Administrator-verified fields are read-only here; one "Request a change"
+ * covers them all. The fee is the doctor's own setting and has its own edit.
  */
 export const DoctorProfileDetailsScreen = ({
   onBack,
-  onOpen,
+  onEditFee,
+  onRequestChange,
 }: {
   onBack: () => void;
-  onOpen: (key: string) => void;
-}) => (
-  <View style={s.root}>
-    <Screen>
-      <View style={s.bar}>
-        <Pressable
-          testID="back"
-          onPress={onBack}
-          hitSlop={8}
-          style={s.barBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Icon name="arrowLeft" size={19} color={colors.ink} />
-        </Pressable>
-        <View style={s.barLogo}>
-          <LogoWide width={100} height={25} />
-        </View>
-        <Pressable hitSlop={8} style={s.barBtn} accessibilityRole="button" accessibilityLabel="Notifications">
-          <Icon name="bell" size={18} color={colors.ink} />
-        </Pressable>
-      </View>
+  onEditFee: () => void;
+  onRequestChange: () => void;
+}) => {
+  const doctor = useStore(selectDoctor);
+  const fee = useStore((s) => s.profile.fee);
+  const duration = useStore((s) => s.availability.durationMin);
 
-      <View style={s.titleWrap}>
-        <Text style={[typeStyles.body, s.title]}>Doctor Profile</Text>
-        <Text style={[typeStyles.body, s.subtitle]}>Manage your professional information</Text>
-      </View>
+  const facts: [IconName, string, string][] = [
+    ['stethoscope', doctor.speciality, 'Speciality'],
+    ['language', doctor.languages.join(', '), 'Languages'],
+    ['clock', `${duration} min`, 'Consultation'],
+  ];
 
-      {/* identity + quick facts */}
+  return (
+    <Screen testID="profile-details" header={<ScreenHeader onBack={onBack} title="Doctor Profile" subtitle="Your professional information." />}>
       <Card style={s.hero}>
         <View style={s.heroTop}>
-          <Avatar initials={doctor.initials} photo={doctor.photo} size={72} online />
-          <View style={s.heroCopy}>
+          <Avatar initials={doctor.initials} size={68} tone="brand" />
+          <View style={s.flex}>
             <View style={s.nameRow}>
-              <Text style={[typeStyles.body, s.name]} numberOfLines={1}>{doctor.name}</Text>
-              <StatusPill label="Verified" tone="success" icon="checkCircle" />
+              <Text style={s.name}>{doctor.name}</Text>
+              {doctor.registrationVerified ? (
+                <StatusPill label="Verified" tone="success" icon="checkCircle" />
+              ) : (
+                <StatusPill label="Under review" tone="warn" />
+              )}
             </View>
-            <Text style={[typeStyles.body, s.qual]}>{doctor.qualification}</Text>
+            <Text style={s.qual}>{doctor.qualification}</Text>
           </View>
         </View>
 
         <View style={s.metaRow}>
           <View style={s.metaItem}>
             <Icon name="idCard" size={15} color={colors.surfie} />
-            <View>
-              <Text style={[typeStyles.body, s.metaLabel]}>Registration No.</Text>
-              <Text style={[typeStyles.body, s.metaValue]}>{doctor.registrationNo}</Text>
+            <View style={s.flex}>
+              <Text style={s.metaLabel}>Registration No.</Text>
+              <Text style={s.metaValue} selectable>
+                {doctor.registrationNo}
+              </Text>
             </View>
           </View>
           <View style={s.metaRule} />
           <View style={s.metaItem}>
             <Icon name="star" size={15} color={colors.surfie} />
-            <View>
-              <Text style={[typeStyles.body, s.metaLabel]}>Experience</Text>
-              <Text style={[typeStyles.body, s.metaValue]}>{doctor.yearsExperience}+ years</Text>
+            <View style={s.flex}>
+              <Text style={s.metaLabel}>Experience</Text>
+              <Text style={s.metaValue}>{doctor.yearsExperience}+ years</Text>
             </View>
           </View>
         </View>
 
         <View style={s.factRow}>
-          {(
-            [
-              ['stethoscope', doctor.speciality, 'Specialist'],
-              ['language', doctor.languages.join(', '), 'Languages'],
-              ['clock', `${doctor.consultationMinutes} mins`, 'Consultation Duration'],
-            ] as [IconName, string, string][]
-          ).map(([icon, value, label]) => (
+          {facts.map(([icon, value, label]) => (
             <View key={label} style={s.fact}>
               <Icon name={icon} size={15} color={colors.surfie} />
-              <Text style={[typeStyles.body, s.factValue]} numberOfLines={1}>{value}</Text>
-              <Text style={[typeStyles.body, s.factLabel]}>{label}</Text>
+              <Text style={s.factValue} numberOfLines={2}>
+                {value}
+              </Text>
+              <Text style={s.factLabel}>{label}</Text>
             </View>
           ))}
         </View>
       </Card>
 
-      {/* professional details — admin-approved, review required to change */}
-      <Text style={[typeStyles.body, s.section]}>Professional Details</Text>
+      <Text style={s.section}>Professional Details</Text>
       <Card style={s.listCard}>
-        <ListRow compact
-          icon="stethoscope"
-          title="Specialties"
-          subtitle={doctor.specialisations.join(', ')}
-          right={<StatusPill label="Verified" tone="success" icon="checkCircle" />}
-          onPress={() => onOpen('specialisations')}
-        />
-        <ListRow compact
-          icon="idCard"
-          title="Qualification"
-          subtitle={doctor.qualification}
-          right={<StatusPill label="Verified" tone="success" icon="checkCircle" />}
-          onPress={() => onOpen('qualification')}
-        />
-        <ListRow compact
-          icon="idCard"
-          title="Registration Number"
-          subtitle={doctor.registrationNo}
-          right={<StatusPill label="Verified" tone="neutral" icon="lock" />}
-          onPress={() => onOpen('registration')}
-        />
-        <ListRow compact
-          icon="clock"
-          title="Years of Experience"
-          subtitle={`${doctor.yearsExperience}+ years`}
-          right={<StatusPill label="Verified" tone="neutral" icon="lock" />}
-          onPress={() => onOpen('experience')}
-        />
-        <ListRow compact
-          icon="tag"
-          title="Consultation Fee"
-          subtitle={inr(doctor.consultationFee)}
-          right={<Button label="Edit" variant="secondary" size="sm" icon="pencil" onPress={() => onOpen('fee')} />}
-          last
-        />
+        <LockedRow icon="stethoscope" title="Specialties" value={doctor.specialisations.join(', ') || doctor.speciality} />
+        <LockedRow icon="document" title="Qualification" value={doctor.qualification} />
+        <LockedRow icon="idCard" title="Registration Number" value={doctor.registrationNo} />
+        <LockedRow icon="clock" title="Years of Experience" value={`${doctor.yearsExperience}+ years`} last />
       </Card>
-
-      {/* about */}
-      <Text style={[typeStyles.body, s.section]}>About</Text>
-      <Card style={s.aboutCard} tone="mint">
-        <Text style={[typeStyles.body, s.quoteMark]}>&ldquo;</Text>
-        <Text style={[typeStyles.body, s.bio]}>{doctor.bio}</Text>
-      </Card>
-
       <View style={s.lockNote}>
-        <Icon name="lock" size={13} color={colors.inkFaint} />
-        <Text style={[typeStyles.body, s.lockNoteText]}>Some details are locked after admin verification</Text>
+        <Icon name="lock" size={13} color={colors.inkMuted} />
+        <Text style={s.lockNoteText}>These details are locked after verification.</Text>
       </View>
+      <Button testID="request-change" label="Request a change" variant="secondary" size="sm" icon="pencil" onPress={onRequestChange} style={s.requestBtn} />
+
+      <Text style={s.section}>Consultation Fee</Text>
+      <Card style={s.listCard}>
+        <View style={s.row}>
+          <View style={s.rowIcon}>
+            <Icon name="tag" size={17} color={colors.surfie} />
+          </View>
+          <View style={s.flex}>
+            <Text style={s.rowTitle}>Per consultation</Text>
+            <Text style={s.rowValue}>{inr(fee)}</Text>
+          </View>
+          <Pressable testID="edit-fee" onPress={onEditFee} hitSlop={8} style={s.editBtn} accessibilityRole="button" accessibilityLabel="Edit consultation fee">
+            <Icon name="pencil" size={14} color={colors.surfie} />
+            <Text style={s.editText}>Edit</Text>
+          </Pressable>
+        </View>
+      </Card>
+
+      <Text style={s.section}>About</Text>
+      <Card style={s.aboutCard} tone="mint">
+        {doctor.bio ? (
+          <>
+            <Text style={s.quoteMark}>“</Text>
+            <Text style={s.bio}>{doctor.bio}</Text>
+          </>
+        ) : (
+          <Text style={s.bio}>No bio yet. Use “Request a change” to add one.</Text>
+        )}
+      </Card>
     </Screen>
-  </View>
-);
+  );
+};
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface.page },
+  flex: { flex: 1, minWidth: 0 },
 
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  barLogo: { flex: 1, alignItems: 'center' },
-
-  titleWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  title: { ...typeStyles.pageTitle, color: colors.ink },
-  subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 3 },
-
-  hero: { marginHorizontal: spacing.lg, padding: spacing.md },
+  hero: { padding: spacing.md },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  heroCopy: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   name: { ...typeStyles.name, flexShrink: 1, color: colors.ink },
   qual: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
 
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.line,
-  },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.surface.line },
   metaItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   metaRule: { width: 1, height: 28, backgroundColor: colors.surface.line, marginHorizontal: spacing.sm },
-  metaLabel: { ...typeStyles.label, color: colors.inkFaint },
+  metaLabel: { ...typeStyles.caption, color: colors.inkMuted },
   metaValue: { ...typeStyles.bodySmall, color: colors.ink, marginTop: 1 },
 
   factRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  fact: {
-    flex: 1,
-    alignItems: 'flex-start',
-    gap: 3,
-    padding: spacing.sm,
-    backgroundColor: colors.surface.mintSoft,
-    borderRadius: radius.md,
-  },
+  fact: { flex: 1, alignItems: 'flex-start', gap: 3, padding: spacing.sm, backgroundColor: colors.surface.mintSoft, borderRadius: radius.md },
   factValue: { ...typeStyles.bodySmall, fontWeight: fontWeight.semibold, color: colors.ink },
   factLabel: { ...typeStyles.caption, color: colors.inkMuted },
 
   section: { ...typeStyles.sectionTitle, color: colors.ink, paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.sm },
-  listCard: { marginHorizontal: spacing.lg, paddingVertical: 0, paddingHorizontal: 12 },
-
-  aboutCard: { flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.lg, padding: spacing.md },
-  quoteMark: { ...typeStyles.pageTitle, fontSize: 26, lineHeight: 22, color: colors.surfie },
-  bio: { ...typeStyles.bodySmall, flex: 1, color: colors.inkMuted },
-
-  lockNote: {
+  listCard: { paddingVertical: 0, paddingHorizontal: spacing.md },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 56, paddingVertical: spacing.sm + 2 },
+  rowRule: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  rowIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.surface.selected, alignItems: 'center', justifyContent: 'center' },
+  rowTitle: { ...typeStyles.body, fontWeight: fontWeight.medium, color: colors.ink },
+  rowValue: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
+  editBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.surfie,
   },
-  lockNoteText: { ...typeStyles.caption, color: colors.inkFaint },
+  editText: { ...typeStyles.buttonSmall, color: colors.surfie },
+
+  lockNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: spacing.lg, marginTop: spacing.sm },
+  lockNoteText: { ...typeStyles.caption, color: colors.inkMuted },
+  requestBtn: { marginHorizontal: spacing.lg, marginTop: spacing.md, alignSelf: 'flex-start' },
+
+  aboutCard: { flexDirection: 'row', gap: spacing.sm, padding: spacing.md },
+  quoteMark: { ...typeStyles.pageTitle, fontSize: 26, lineHeight: 26, color: colors.surfie },
+  bio: { ...typeStyles.bodySmall, flex: 1, color: colors.inkMuted },
 });
 
 export default DoctorProfileDetailsScreen;

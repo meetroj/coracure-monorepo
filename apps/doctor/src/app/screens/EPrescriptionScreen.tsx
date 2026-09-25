@@ -1,452 +1,589 @@
-import { typeStyles } from '../../../../../libs/typography/src';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen } from '../../components/ui';
-import { PatientStrip, Section, Bullets, Notice, FieldValue } from '../../components/clinical';
-import { detailFor, doctor, type Appointment } from '../../data/doctor';
+import { ScreenHeader, HeaderTextAction } from '../../components/ScreenHeader';
+import { PatientStrip, Section, NoteInput, Notice } from '../../components/clinical';
+import { ActionSheet } from '../../components/BottomSheet';
+import { confirm } from '../../components/confirm';
+import { toast } from '../../components/Toast';
+import { MedicineSheet } from './MedicineSheet';
+import { useStore } from '../../state/store';
+import { selectDoctor, selectRecord } from '../../state/selectors';
 import {
+  addMedicine,
+  finaliseRx,
+  removeMedicine,
+  saveRxDraft,
+  setAdvice,
+  setAllergies,
+  setDonts,
+  updateMedicine,
+} from '../../state/actions';
+import { detailFor, type Appointment } from '../../data/doctor';
+import {
+  ADVICE_ITEM_MAX,
   canPrescribe,
-  draftMedicines,
-  adviceItems,
-  doNots,
   outputLabel,
-  noteFields,
   PROFESSIONAL_LABEL,
   type Medicine,
   type ProfessionalType,
 } from '../../data/clinical';
 
-const presentingComplaint = noteFields.find((f) => f.key === 'complaint')!;
-
 /**
  * E-Prescription & Advice — DOC-CLN-02.
  *
  * The medication section exists only for a professional whose type carries
- * prescribing permission. A psychologist, therapist or counsellor never sees a
- * medicine field: they get an Advice & Therapy Plan instead, which is a
- * different document, not a disabled version of this one.
+ * prescribing permission; a psychologist, therapist or counsellor completes an
+ * advice and therapy plan instead — a different document, not a disabled
+ * version of this one.
  *
- * Finalising locks the version and generates the access-controlled patient
- * PDF, linked to the consultation.
+ * Everything here edits this consultation's record. Save Draft stamps it;
+ * Finalise checks there is something to issue, asks, then locks the version.
  */
+
+const HISTORY_MAX = 1000;
+
+/* ------------------------------ medicine card ------------------------------ */
 
 const MedicineCard = ({
   medicine,
   index,
-  onEdit,
-  onDelete,
+  onMenu,
+  locked,
 }: {
   medicine: Medicine;
   index: number;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  onMenu: () => void;
+  locked: boolean;
 }) => (
-  <View style={s.med}>
+  <View testID={`medicine-${medicine.id}`} style={s.med}>
     <View style={s.medHead}>
       <View style={s.medNum}>
-        <Text style={[typeStyles.body, s.medNumText]}>{index + 1}</Text>
+        <Text style={s.medNumText}>{index + 1}</Text>
       </View>
       <View style={s.flex}>
-        <Text style={[typeStyles.body, s.medName]}>
-          {medicine.name}
-        </Text>
-        <Text style={[typeStyles.body, s.medGeneric]}>
-          {medicine.generic}
-        </Text>
+        <Text style={s.medName}>{medicine.name}</Text>
+        {!!medicine.generic && <Text style={s.medGeneric}>{medicine.generic}</Text>}
       </View>
-      <Pressable
-        onPress={() => onEdit(medicine.id)}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`Edit ${medicine.name}`}
-      >
-        <Icon name="moreVertical" size={16} color={colors.inkFaint} />
-      </Pressable>
+      {!locked && (
+        <Pressable
+          testID={`med-menu-${medicine.id}`}
+          onPress={onMenu}
+          hitSlop={8}
+          style={s.menuBtn}
+          accessibilityRole="button"
+          accessibilityLabel={`Options for ${medicine.name}`}
+        >
+          <Icon name="moreVertical" size={18} color={colors.inkMuted} />
+        </Pressable>
+      )}
     </View>
 
-    {/* Each value is its own bordered tile, led by an icon. */}
     <View style={s.medGrid}>
-      {([
-        { label: 'Dose', value: medicine.dose, icon: 'prescription' },
-        { label: 'Frequency', value: medicine.frequency, icon: 'clock' },
-        { label: 'Duration', value: medicine.duration, icon: 'calendar' },
-      ] as { label: string; value: string; icon: IconName }[]).map((f) => (
+      {(
+        [
+          { label: 'Dose', value: medicine.dose, icon: 'prescription' },
+          { label: 'Frequency', value: medicine.frequency, icon: 'clock' },
+          { label: 'Duration', value: medicine.duration, icon: 'calendar' },
+        ] as { label: string; value: string; icon: IconName }[]
+      ).map((f) => (
         <View key={f.label} style={s.medCell}>
           <View style={s.medCellHead}>
             <Icon name={f.icon} size={12} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.medCellLabel]} numberOfLines={1}>{f.label}</Text>
+            <Text style={s.medCellLabel} numberOfLines={1}>
+              {f.label}
+            </Text>
           </View>
-          <Text style={[typeStyles.body, s.medCellValue]}>{f.value}</Text>
+          <Text style={s.medCellValue}>{f.value || '—'}</Text>
         </View>
       ))}
     </View>
-
     <View style={[s.medGrid, s.medGridSecond]}>
-      {([
-        { label: 'Route', value: medicine.route, icon: 'heart' },
-        { label: 'Quantity', value: medicine.quantity, icon: 'document' },
-      ] as { label: string; value: string; icon: IconName }[]).map((f) => (
-        <View key={f.label} style={s.medCell}>
-          <View style={s.medCellHead}>
-            <Icon name={f.icon} size={12} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.medCellLabel]} numberOfLines={1}>{f.label}</Text>
-          </View>
-          <Text style={[typeStyles.body, s.medCellValue]}>{f.value}</Text>
+      <View style={s.medCell}>
+        <View style={s.medCellHead}>
+          <Icon name="heart" size={12} color={colors.surfie} />
+          <Text style={s.medCellLabel}>Take it</Text>
         </View>
-      ))}
+        <Text style={s.medCellValue}>{medicine.route || '—'}</Text>
+      </View>
+      <View style={s.medCell}>
+        <View style={s.medCellHead}>
+          <Icon name="document" size={12} color={colors.surfie} />
+          <Text style={s.medCellLabel}>Quantity</Text>
+        </View>
+        <Text style={s.medCellValue}>{medicine.quantity || '—'}</Text>
+      </View>
     </View>
-
-    {/* Delete sits at the bottom, beside the instruction tile. */}
-    <View style={s.medFoot}>
-      <View style={[s.medCell, s.flex]}>
+    {!!medicine.instruction && (
+      <View style={[s.medCell, s.medInstruction]}>
         <View style={s.medCellHead}>
           <Icon name="message" size={12} color={colors.surfie} />
-          <Text style={[typeStyles.body, s.medCellLabel]}>Instruction (optional)</Text>
+          <Text style={s.medCellLabel}>Instruction</Text>
         </View>
-        <Text style={[typeStyles.body, s.medCellValue]}>{medicine.instruction}</Text>
+        <Text style={s.medCellValue}>{medicine.instruction}</Text>
       </View>
-      <Pressable
-        testID={`delete-${medicine.id}`}
-        onPress={() => onDelete(medicine.id)}
-        hitSlop={8}
-        style={s.medDelete}
-        accessibilityRole="button"
-        accessibilityLabel={`Delete ${medicine.name}`}
-      >
-        <Icon name="trash" size={15} color={colors.danger} />
-      </Pressable>
-    </View>
+    )}
   </View>
 );
 
-export const EPrescriptionScreen = ({
-  appointment,
-  onBack,
-  professionalType = doctor.professionalType,
-  onSaveDraft = () => undefined,
-  onFinalise = () => undefined,
-  onLoadTemplate = () => undefined,
-  onPreviewPdf = () => undefined,
-  onRecommendResources = () => undefined,
-  recommendedCount = 0,
+/* ------------------------------- item editor ------------------------------- */
+
+/** An editable bullet list: remove a line, add a line. */
+const EditableList = ({
+  items,
+  onChange,
+  addPlaceholder,
+  testID,
+  locked,
 }: {
-  appointment: Appointment;
-  onBack: () => void;
-  professionalType?: ProfessionalType;
-  onSaveDraft?: () => void;
-  onFinalise?: () => void;
-  onLoadTemplate?: () => void;
-  onPreviewPdf?: () => void;
-  /** Opens the Care Hub picker for this consultation (DR-15-06). */
-  onRecommendResources?: () => void;
-  /** How many resources are already recommended, shown as a badge. */
-  recommendedCount?: number;
+  items: string[];
+  onChange: (next: string[]) => void;
+  addPlaceholder: string;
+  testID: string;
+  locked: boolean;
 }) => {
-  const d = detailFor(appointment);
-  const insets = useSafeAreaInsets();
-  const prescriber = canPrescribe(professionalType);
-
-  const [medicines, setMedicines] = useState<Medicine[]>(prescriber ? draftMedicines : []);
-  const [historyAllergies, setHistoryAllergies] = useState('');
-  // All sections start expanded — the doctor fills them in every time.
-  const [open, setOpen] = useState<string[]>(['complaint', 'historyAllergies', 'advice', 'warnings']);
-  /** Measured CTA size — percentage widths left a sliver of the fill uncovered. */
-  const [ctaSize, setCtaSize] = useState({ w: 0, h: 0 });
-  const toggle = (k: string) =>
-    setOpen((o) => (o.includes(k) ? o.filter((x) => x !== k) : [...o, k]));
-
+  const [draft, setDraft] = useState('');
+  const add = () => {
+    const v = draft.trim();
+    if (!v) return;
+    onChange([...items, v]);
+    setDraft('');
+  };
   return (
-    <View style={s.root}>
-      <Screen contentStyle={s.content}>
-        <View style={s.bar}>
-          <Pressable
-            testID="back"
-            onPress={onBack}
-            hitSlop={8}
-            style={s.barBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Icon name="arrowLeft" size={19} color={colors.ink} />
-          </Pressable>
-          <Text style={[typeStyles.body, s.title]} numberOfLines={1}>
-            {prescriber ? 'E-Prescription' : 'Therapy Plan'}
-          </Text>
-          <Pressable
-            testID="save-draft"
-            onPress={onSaveDraft}
-            hitSlop={8}
-            style={s.draftBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Save draft"
-          >
-            <Icon name="document" size={14} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.draftText]} numberOfLines={1}>
-              Save Draft
-            </Text>
-          </Pressable>
+    <View style={s.list}>
+      {items.length === 0 && <Text style={s.listEmpty}>Nothing added yet.</Text>}
+      {items.map((it, i) => (
+        <View key={`${i}-${it}`} style={s.listRow}>
+          <View style={s.bulletDot} />
+          <Text style={s.listText}>{it}</Text>
+          {!locked && (
+            <Pressable
+              testID={`${testID}-remove-${i}`}
+              onPress={() => onChange(items.filter((_, j) => j !== i))}
+              hitSlop={10}
+              style={s.listRemove}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove: ${it}`}
+            >
+              <Icon name="close" size={14} color={colors.inkMuted} />
+            </Pressable>
+          )}
         </View>
-
-        <PatientStrip
-          initials={appointment.initials}
-          name={appointment.name}
-          meta={`${appointment.gender} · ${appointment.age} years`}
-          ids={[`Consultation ID: ${d.consultationId}`]}
-        />
-
-        <Section
-          testID="section-complaint"
-          icon="message"
-          title="Presenting Complaint"
-          open={open.includes('complaint')}
-          onToggle={() => toggle('complaint')}
-        >
-          <FieldValue
-            value={presentingComplaint.value}
-            placeholder={presentingComplaint.placeholder}
-            max={presentingComplaint.max}
+      ))}
+      {!locked && (
+        <View style={s.addRow}>
+          <TextInput
+            testID={`${testID}-input`}
+            value={draft}
+            onChangeText={(t) => setDraft(t.slice(0, ADVICE_ITEM_MAX))}
+            placeholder={addPlaceholder}
+            placeholderTextColor={colors.inkFaint}
+            style={s.addInput}
+            onSubmitEditing={add}
+            returnKeyType="done"
+            accessibilityLabel={addPlaceholder}
           />
-        </Section>
-
-        <Section
-          testID="section-history-allergies"
-          icon="folder"
-          title="Diagnosis History & Allergies"
-          open={open.includes('historyAllergies')}
-          onToggle={() => toggle('historyAllergies')}
-        >
-          <View style={s.historyBox}>
-            <TextInput
-              testID="history-allergies"
-              style={[typeStyles.input, s.historyInput]}
-              value={historyAllergies}
-              onChangeText={(t) => setHistoryAllergies(t.slice(0, 1000))}
-              multiline
-              placeholder="Past diagnoses, ongoing conditions and known allergies…"
-              placeholderTextColor={colors.inkFaint}
-            />
-          </View>
-        </Section>
-
-        <Pressable
-          testID="load-template"
-          onPress={onLoadTemplate}
-          style={({ pressed }) => [s.template, pressed && s.templatePressed]}
-          accessibilityRole="button"
-          accessibilityLabel="Load from template"
-        >
-          <Icon name="notes" size={16} color={colors.surfie} />
-          <Text style={[typeStyles.body, s.templateText]}>Load from Template</Text>
-          <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-        </Pressable>
-
-        {/* DR-15-06: self-help belongs with the advice, so it is picked here
-            rather than being a destination the doctor goes looking for. */}
-        <Pressable
-          testID="recommend-resources"
-          onPress={onRecommendResources}
-          style={({ pressed }) => [s.template, pressed && s.templatePressed]}
-          accessibilityRole="button"
-          accessibilityLabel="Recommend Care Hub resources"
-        >
-          <Icon name="sparkle" size={16} color={colors.surfie} />
-          <Text style={[typeStyles.body, s.templateText]}>Recommend Resources</Text>
-          {recommendedCount > 0 && (
-            <View style={s.countPill}>
-              <Text style={[typeStyles.body, s.countPillText]}>{recommendedCount}</Text>
-            </View>
-          )}
-          <Icon name="chevronRight" size={16} color={colors.inkFaint} />
-        </Pressable>
-
-        {/* ------------------------------ medication ------------------------------- */}
-        {prescriber ? (
-          <>
-            <View style={s.sectionHead}>
-              <Text style={[typeStyles.body, s.sectionTitle]}>Medications</Text>
-              <Pressable
-                testID="add-medicine"
-                hitSlop={8}
-                style={s.addBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Add medicine"
-              >
-                <Icon name="plus" size={14} color={colors.surfie} />
-                <Text style={[typeStyles.body, s.addText]}>Add Medicine</Text>
-              </Pressable>
-            </View>
-
-            {medicines.length === 0 ? (
-              <Notice tone="warn" icon="alertCircle">
-                No medicines added. A prescription needs at least one entry, or complete an advice
-                plan instead.
-              </Notice>
-            ) : (
-              medicines.map((m, i) => (
-                <MedicineCard
-                  key={m.id}
-                  medicine={m}
-                  index={i}
-                  onEdit={() => undefined}
-                  onDelete={(id) => setMedicines((list) => list.filter((x) => x.id !== id))}
-                />
-              ))
-            )}
-          </>
-        ) : (
-          <Notice testID="no-prescribe" icon="lock">
-            Your professional type is {PROFESSIONAL_LABEL[professionalType]}, which does not include
-            prescribing. Complete the advice and therapy plan below — it becomes the patient
-            document for this consultation.
-          </Notice>
-        )}
-
-        {/* ------------------------------- sections -------------------------------- */}
-        {/* No `required` prop — the badge is gone from every section. */}
-        <Section
-          testID="section-advice"
-          icon="heart"
-          title="Advice & Lifestyle Instructions"
-          open={open.includes('advice')}
-          onToggle={() => toggle('advice')}
-        >
-          <Bullets items={adviceItems} />
-        </Section>
-
-        <Section
-          testID="section-warnings"
-          icon="alertTriangle"
-          title="Don'ts"
-          open={open.includes('warnings')}
-          onToggle={() => toggle('warnings')}
-        >
-          <Text style={[typeStyles.body, s.warnLead]}>Seek urgent help if any of the following occur:</Text>
-          <Bullets items={doNots} />
-        </Section>
-
-        <View style={s.preview}>
-          <View style={s.previewIcon}>
-            <Icon name="document" size={15} color={colors.surfie} />
-          </View>
-          <View style={s.flex}>
-            <Text style={[typeStyles.body, s.previewTitle]}>Patient PDF Preview</Text>
-            <Text style={[typeStyles.body, s.previewSub]}>
-              Preview how the prescription will appear
-            </Text>
-          </View>
-          {/* An explicit button rather than a chevron — the action is named. */}
           <Pressable
-            testID="preview-pdf"
-            onPress={onPreviewPdf}
-            style={({ pressed }) => [s.previewBtn, pressed && s.templatePressed]}
+            testID={`${testID}-add`}
+            onPress={add}
+            disabled={!draft.trim()}
+            style={[s.addBtnSmall, !draft.trim() && s.off]}
             accessibilityRole="button"
-            accessibilityLabel="Preview patient PDF"
+            accessibilityLabel="Add line"
           >
-            <Text style={[typeStyles.body, s.previewBtnText]}>Preview PDF</Text>
+            <Icon name="plus" size={16} color={colors.white} />
           </Pressable>
         </View>
-      </Screen>
-
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-        <Pressable
-          testID="finalise"
-          onPress={onFinalise}
-          style={s.cta}
-          accessibilityRole="button"
-          onLayout={(e) => {
-            const { width, height } = e.nativeEvent.layout;
-            setCtaSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
-          }}
-        >
-          {/* Surfie → Paris gradient. React Native has no gradient background,
-              so it is painted as an SVG rect behind the label. */}
-          {ctaSize.w > 0 && (
-            <Svg style={StyleSheet.absoluteFill} width={ctaSize.w} height={ctaSize.h}>
-              <Defs>
-                <LinearGradient id="finaliseGrad" x1="0" y1="0" x2="1" y2="0">
-                  <Stop offset="0" stopColor={colors.surfie} />
-                  <Stop offset="0.8" stopColor={colors.paris} />
-                  <Stop offset="1" stopColor={colors.paris} />
-                </LinearGradient>
-              </Defs>
-              <Rect x={0} y={0} width={ctaSize.w} height={ctaSize.h} fill="url(#finaliseGrad)" />
-            </Svg>
-          )}
-          {/* Padding lives on the inner row: an absolutely-positioned child is
-              laid out inside the parent's padding, which would inset the fill. */}
-          <View style={s.ctaContent}>
-            <Text style={[typeStyles.body, s.ctaText]}>
-              Finalise {outputLabel(professionalType)}
-            </Text>
-            <View style={s.ctaLock}>
-              <Icon name="lock" size={18} color={colors.surfie} />
-            </View>
-          </View>
-        </Pressable>
-      </View>
+      )}
     </View>
   );
 };
 
+/* --------------------------------- screen --------------------------------- */
+
+export const EPrescriptionScreen = ({
+  appointment,
+  onBack,
+  professionalType: typeProp,
+  onFinalised,
+  onLoadTemplate,
+  onPreview,
+  onRecommendResources,
+  onOpenNotes,
+}: {
+  appointment: Appointment;
+  onBack: () => void;
+  professionalType?: ProfessionalType;
+  /** After finalising: the next step, the case summary. */
+  onFinalised: () => void;
+  onLoadTemplate: () => void;
+  onPreview: () => void;
+  /** Opens the Care Hub picker for this consultation (DR-15-06). */
+  onRecommendResources: () => void;
+  onOpenNotes: () => void;
+}) => {
+  const a = appointment;
+  const d = detailFor(a);
+  const doctor = useStore(selectDoctor);
+  const professionalType = typeProp ?? doctor.professionalType;
+  const record = useStore((st) => selectRecord(st, a.id));
+  const prescriber = canPrescribe(professionalType);
+  const locked = record.rxStatus === 'finalised';
+
+  const [sheet, setSheet] = useState<{ open: boolean; editing?: Medicine }>({ open: false });
+  const [menuFor, setMenuFor] = useState<Medicine | null>(null);
+  const [closed, setClosed] = useState<string[]>([]);
+  const toggle = (k: string) => setClosed((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...c, k]));
+  const open = (k: string) => !closed.includes(k);
+  const [ctaSize, setCtaSize] = useState({ w: 0, h: 0 });
+
+  const medicines = prescriber ? record.medicines : [];
+  const hasContent = medicines.length > 0 || record.advice.length > 0;
+  const docLabel = outputLabel(professionalType);
+
+  const finalise = () => {
+    if (!hasContent) {
+      toast.show(prescriber ? 'Add a medicine or an advice item first' : 'Add at least one advice item first', 'error');
+      return;
+    }
+    confirm({
+      title: `Finalise ${docLabel.toLowerCase()}?`,
+      message: `${medicines.length ? `${medicines.length} medicine${medicines.length > 1 ? 's' : ''}, ` : ''}${record.advice.length} advice item${record.advice.length === 1 ? '' : 's'}. Once finalised it is locked and shared with ${a.name} as a PDF.`,
+      confirmLabel: 'Finalise',
+      onConfirm: () => {
+        finaliseRx(a.id);
+        toast.show(`${docLabel} finalised`);
+        onFinalised();
+      },
+    });
+  };
+
+  const removeMed = (m: Medicine) =>
+    confirm({
+      title: `Remove ${m.name}?`,
+      message: 'It will be taken off this prescription.',
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: () => {
+        removeMedicine(a.id, m.id);
+        toast.show(`${m.name} removed`, 'info');
+      },
+    });
+
+  const savedLine = locked
+    ? `Finalised ${record.rxFinalisedAt ?? ''}`.trim()
+    : record.rxSavedAt
+      ? `Draft saved ${record.rxSavedAt}`
+      : 'Not saved yet';
+
+  return (
+    <Screen
+      testID="prescription"
+      header={
+        <ScreenHeader
+          onBack={onBack}
+          inline
+          title={prescriber ? 'E-Prescription' : 'Therapy Plan'}
+          subtitle={savedLine}
+          right={
+            locked ? undefined : (
+              <HeaderTextAction
+                testID="save-draft"
+                label="Save Draft"
+                icon="document"
+                onPress={() => {
+                  saveRxDraft(a.id);
+                  toast.show('Draft saved');
+                }}
+              />
+            )
+          }
+        />
+      }
+      footer={
+        locked ? (
+          <Pressable
+            testID="view-finalised"
+            onPress={onPreview}
+            style={({ pressed }) => [s.lockedCta, pressed && s.pressed]}
+            accessibilityRole="button"
+          >
+            <Icon name="lock" size={16} color={colors.surfie} />
+            <Text style={s.lockedCtaText}>Finalised · View patient PDF</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            testID="finalise"
+            onPress={finalise}
+            style={({ pressed }) => [s.cta, !hasContent && s.ctaOff, pressed && s.pressed]}
+            accessibilityRole="button"
+            accessibilityHint={hasContent ? undefined : 'Add a medicine or advice item first'}
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setCtaSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
+            }}
+          >
+            {/* Surfie → Paris: both brand greens, painted as SVG since RN has no gradient fill */}
+            {ctaSize.w > 0 && (
+              <Svg style={StyleSheet.absoluteFill} width={ctaSize.w} height={ctaSize.h}>
+                <Defs>
+                  <LinearGradient id="finaliseGrad" x1="0" y1="0" x2="1" y2="0">
+                    <Stop offset="0" stopColor={colors.surfie} />
+                    <Stop offset="0.8" stopColor={colors.paris} />
+                    <Stop offset="1" stopColor={colors.paris} />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width={ctaSize.w} height={ctaSize.h} fill="url(#finaliseGrad)" />
+              </Svg>
+            )}
+            <View style={s.ctaContent}>
+              <Text style={s.ctaText}>Finalise {docLabel}</Text>
+              <View style={s.ctaLock}>
+                <Icon name="lock" size={18} color={colors.surfie} />
+              </View>
+            </View>
+          </Pressable>
+        )
+      }
+    >
+      <PatientStrip
+        initials={a.initials}
+        name={a.name}
+        meta={`${a.gender} · ${a.age} years`}
+        ids={[`Consultation ID: ${d.consultationId}`]}
+      />
+
+      {locked && (
+        <Notice icon="lock" testID="rx-locked">
+          Finalised {record.rxFinalisedAt}. This version is locked; the patient has the PDF.
+        </Notice>
+      )}
+
+      <Section
+        testID="section-complaint"
+        icon="message"
+        title="Presenting Complaint"
+        open={open('complaint')}
+        onToggle={() => toggle('complaint')}
+      >
+        <Text style={s.readText}>{record.notes.complaint || 'Not written yet.'}</Text>
+        <Pressable testID="edit-in-notes" onPress={onOpenNotes} hitSlop={8} style={s.inlineLink} accessibilityRole="button">
+          <Text style={s.inlineLinkText}>From clinical notes · Edit</Text>
+          <Icon name="chevronRight" size={13} color={colors.surfie} />
+        </Pressable>
+      </Section>
+
+      <Section
+        testID="section-history-allergies"
+        icon="folder"
+        title="Diagnosis History & Allergies"
+        open={open('history')}
+        onToggle={() => toggle('history')}
+      >
+        <NoteInput
+          testID="history-allergies"
+          value={record.allergies}
+          onChangeText={(v) => setAllergies(a.id, v)}
+          placeholder="Past diagnoses, ongoing conditions and known allergies…"
+          max={HISTORY_MAX}
+          minHeight={64}
+          editable={!locked}
+          accessibilityLabel="Diagnosis history and allergies"
+        />
+      </Section>
+
+      {!locked && (
+        <>
+          <Pressable
+            testID="load-template"
+            onPress={onLoadTemplate}
+            style={({ pressed }) => [s.rowBtn, pressed && s.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Load from template"
+          >
+            <Icon name="notes" size={16} color={colors.surfie} />
+            <Text style={s.rowBtnText}>Load from Template</Text>
+            <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+          </Pressable>
+          <Pressable
+            testID="recommend-resources"
+            onPress={onRecommendResources}
+            style={({ pressed }) => [s.rowBtn, pressed && s.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Recommend Care Hub resources"
+          >
+            <Icon name="sparkle" size={16} color={colors.surfie} />
+            <Text style={s.rowBtnText}>Recommend Resources</Text>
+            {record.recommendations.ids.length > 0 && (
+              <View style={s.countPill}>
+                <Text style={s.countPillText}>{record.recommendations.ids.length}</Text>
+              </View>
+            )}
+            <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+          </Pressable>
+        </>
+      )}
+
+      {/* ------------------------------ medication ------------------------------- */}
+      {prescriber ? (
+        <>
+          <View style={s.sectionHead}>
+            <Text style={s.sectionTitle}>Medications</Text>
+            {!locked && (
+              <Pressable
+                testID="add-medicine"
+                onPress={() => setSheet({ open: true })}
+                hitSlop={8}
+                style={({ pressed }) => [s.addBtn, pressed && s.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Add medicine"
+              >
+                <Icon name="plus" size={15} color={colors.surfie} />
+                <Text style={s.addText}>Add Medicine</Text>
+              </Pressable>
+            )}
+          </View>
+
+          {medicines.length === 0 ? (
+            <Notice tone="warn" icon="alertCircle" testID="no-medicines">
+              No medicines added. Add at least one medicine or an advice item before finalising.
+            </Notice>
+          ) : (
+            medicines.map((m, i) => (
+              <MedicineCard key={m.id} medicine={m} index={i} locked={locked} onMenu={() => setMenuFor(m)} />
+            ))
+          )}
+        </>
+      ) : (
+        <Notice testID="no-prescribe" icon="lock">
+          Your professional type is {PROFESSIONAL_LABEL[professionalType]}, which does not include prescribing.
+          Complete the advice and therapy plan below — it becomes the patient document for this consultation.
+        </Notice>
+      )}
+
+      <Section
+        testID="section-advice"
+        icon="heart"
+        title="Advice & Lifestyle Instructions"
+        open={open('advice')}
+        onToggle={() => toggle('advice')}
+      >
+        <EditableList
+          testID="advice"
+          items={record.advice}
+          onChange={(next) => setAdvice(a.id, next)}
+          addPlaceholder="Add advice for the patient"
+          locked={locked}
+        />
+      </Section>
+
+      <Section
+        testID="section-warnings"
+        icon="alertTriangle"
+        title="Don'ts"
+        open={open('warnings')}
+        onToggle={() => toggle('warnings')}
+      >
+        <Text style={s.warnLead}>Seek urgent help if any of the following occur:</Text>
+        <EditableList
+          testID="donts"
+          items={record.donts}
+          onChange={(next) => setDonts(a.id, next)}
+          addPlaceholder="Add a warning for the patient"
+          locked={locked}
+        />
+      </Section>
+
+      <View style={s.preview}>
+        <View style={s.previewIcon}>
+          <Icon name="document" size={15} color={colors.surfie} />
+        </View>
+        <View style={s.flex}>
+          <Text style={s.previewTitle}>Patient PDF Preview</Text>
+          <Text style={s.previewSub}>How the {docLabel.toLowerCase()} will read for the patient</Text>
+        </View>
+        <Pressable
+          testID="preview-pdf"
+          onPress={onPreview}
+          style={({ pressed }) => [s.previewBtn, pressed && s.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Preview patient PDF"
+        >
+          <Text style={s.previewBtnText}>Preview</Text>
+        </Pressable>
+      </View>
+
+      <MedicineSheet
+        visible={sheet.open}
+        initial={sheet.editing}
+        onClose={() => setSheet({ open: false })}
+        onSave={(m) => {
+          if (sheet.editing) {
+            updateMedicine(a.id, { ...m, id: sheet.editing.id });
+            toast.show(`${m.name} updated`);
+          } else {
+            addMedicine(a.id, m);
+            toast.show(`${m.name} added`);
+          }
+          setSheet({ open: false });
+        }}
+      />
+
+      <ActionSheet
+        visible={!!menuFor}
+        title={menuFor?.name}
+        onClose={() => setMenuFor(null)}
+        testID="medicine-menu"
+        actions={
+          menuFor
+            ? [
+                { key: 'edit', label: 'Edit medicine', icon: 'pencil', onPress: () => setSheet({ open: true, editing: menuFor }) },
+                { key: 'remove', label: 'Remove from prescription', icon: 'trash', destructive: true, onPress: () => removeMed(menuFor) },
+              ]
+            : []
+        }
+      />
+    </Screen>
+  );
+};
+
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface.page },
-  flex: { flex: 1 },
-  // The footer is a sibling below the scroll view, so it needs no reserved
-  // space here — 112 was leaving a dead band above the Finalise button.
-  content: { paddingBottom: spacing.lg },
+  flex: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.75 },
+  off: { opacity: 0.4 },
 
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
-  },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: { ...typeStyles.pageTitle, flex: 1, color: colors.ink },
-  draftBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
-  draftText: { ...typeStyles.caption, color: colors.surfie, flexShrink: 0 },
+  readText: { ...typeStyles.body, color: colors.ink },
+  inlineLink: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: spacing.sm, minHeight: 32 },
+  inlineLinkText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  // Full-width card row: icon, label, chevron.
-  template: {
+  rowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: 14,
+    minHeight: 52,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
-  templatePressed: { opacity: 0.7 },
+  rowBtnText: { ...typeStyles.body, flex: 1, color: colors.surfie },
   countPill: {
-    minWidth: 20,
+    minWidth: 22,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radius.pill,
     backgroundColor: colors.surface.selected,
     alignItems: 'center',
   },
-  countPillText: { ...typeStyles.caption, fontSize: 10, color: colors.surfie },
-  templateText: { ...typeStyles.body, flex: 1, color: colors.surfie },
+  countPillText: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },
 
   sectionHead: {
     flexDirection: 'row',
@@ -456,27 +593,25 @@ const s = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
-  sectionTitle: { ...typeStyles.sectionTitle, fontSize: 14, lineHeight: 18, color: colors.ink },
-  // Outlined button rather than a bare icon + label.
+  sectionTitle: { ...typeStyles.sectionTitle, fontSize: 16, lineHeight: 22, color: colors.ink },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.surfie,
   },
   addText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  /* medicine card */
   med: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
     padding: spacing.md,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
@@ -490,17 +625,12 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  medNumText: { ...typeStyles.body, fontSize: 15, color: colors.surfie },
+  medNumText: { ...typeStyles.number, fontSize: 15, color: colors.surfie },
   medName: { ...typeStyles.name, color: colors.ink },
   medGeneric: { ...typeStyles.caption, color: colors.inkFaint },
-
-  /**
-   * MED_INDENT aligns the detail block with the medicine name rather than the
-   * number: the 32px badge plus the 8px head gap.
-   */
-  medGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, marginLeft: 32 + spacing.sm },
+  menuBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -spacing.sm },
+  medGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   medGridSecond: { marginTop: spacing.sm },
-  // Bordered tile per value — outline, not a fill.
   medCell: {
     flex: 1,
     minWidth: 0,
@@ -510,34 +640,37 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 7,
   },
+  medInstruction: { marginTop: spacing.sm, flex: 0 },
   medCellHead: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  medCellLabel: { ...typeStyles.label, color: colors.inkFaint, flexShrink: 1 },
-  medCellValue: { ...typeStyles.body, color: colors.ink, marginTop: 2 },
-  medFoot: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    marginLeft: 32 + spacing.sm,
+  medCellLabel: { ...typeStyles.caption, fontSize: 11, color: colors.inkFaint, flexShrink: 1 },
+  medCellValue: { ...typeStyles.bodySmall, color: colors.ink, marginTop: 2 },
+
+  list: { gap: spacing.sm },
+  listEmpty: { ...typeStyles.caption, color: colors.inkMuted },
+  listRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  bulletDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.paris, marginTop: 9 },
+  listText: { ...typeStyles.bodySmall, flex: 1, color: colors.ink },
+  listRemove: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
+  addInput: {
+    ...typeStyles.inputSingle,
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.surface.inputBorder,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    color: colors.ink,
   },
-  medDelete: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: colors.dangerSoft,
+  addBtnSmall: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: colors.surfie,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   warnLead: { ...typeStyles.caption, color: colors.danger, marginBottom: spacing.sm },
-
-  historyBox: {
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    borderRadius: 10,
-    padding: spacing.md,
-  },
-  historyInput: { color: colors.ink, minHeight: 60, padding: 0, textAlignVertical: 'top' },
 
   preview: {
     flexDirection: 'row',
@@ -547,13 +680,13 @@ const s = StyleSheet.create({
     marginTop: spacing.md,
     padding: spacing.md,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
   previewIcon: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: 10,
     backgroundColor: colors.successSoft,
     alignItems: 'center',
@@ -563,46 +696,40 @@ const s = StyleSheet.create({
   previewTitle: { ...typeStyles.cardTitle, color: colors.ink },
   previewSub: { ...typeStyles.caption, color: colors.inkMuted },
   previewBtn: {
+    minHeight: 40,
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
     borderRadius: radius.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.surfie,
     flexShrink: 0,
   },
   previewBtnText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.line,
-  },
-  cta: {
-    height: 60,
-    // Clips the gradient rect to the radius; solid surfie is the fallback fill.
-    overflow: 'hidden',
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfie,
-  },
-  ctaContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: spacing.lg,
-    paddingRight: 6,
-  },
+  cta: { height: 60, overflow: 'hidden', borderRadius: radius.pill, backgroundColor: colors.surfie },
+  ctaOff: { opacity: 0.55 },
+  ctaContent: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.lg, paddingRight: 6 },
   ctaLock: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   ctaText: { ...typeStyles.button, flex: 1, textAlign: 'center', color: colors.white },
+  lockedCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 54,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.surfie,
+  },
+  lockedCtaText: { ...typeStyles.button, color: colors.surfie },
 });
 
 export default EPrescriptionScreen;

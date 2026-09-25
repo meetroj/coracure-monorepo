@@ -1,19 +1,17 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, useWindowDimensions } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
-import { Screen, AppHeader, IconButton, PageTitle, StatusPill, Button, Avatar, EmptyState } from '../../components/ui';
+import { Screen, PageTitle, Avatar, EmptyState } from '../../components/ui';
+import { TabHeader } from '../navigation/TabHeader';
 import { useResource } from '../../data/useResource';
 import { fetchAppointments, KEYS } from '../../data/api';
 import { SkeletonAppointmentList, SectionError, RefreshBar } from '../../components/skeletons';
-import {
-  modeIcon,
-  modeLabel,
-  type Appointment,
-  type AppointmentState,
-} from '../../data/doctor';
+import { useStore } from '../../state/store';
+import { joinStateFor, selectAppointments } from '../../state/selectors';
+import { modeIcon, modeLabel, type Appointment, type AppointmentState } from '../../data/doctor';
 
 type Bucket = 'today' | 'upcoming' | 'past';
 type Filter = 'all' | 'completed' | 'cancelled' | 'noShow';
@@ -23,42 +21,39 @@ const stateMeta: Record<AppointmentState, { label: string; fg: string; bg: strin
   upcoming: { label: 'Upcoming', fg: colors.surfie, bg: colors.surface.selected },
   completed: { label: 'Completed', fg: colors.inkMuted, bg: '#EFF3F1' },
   cancelled: { label: 'Cancelled', fg: colors.danger, bg: colors.dangerSoft },
-  noShow: { label: 'No-show', fg: colors.inkMuted, bg: '#EFF3F1' },
+  noShow: { label: 'No-show', fg: colors.warn, bg: colors.warnSoft },
 };
 
 const paymentLabel = { paid: 'Paid', refunded: 'Refunded', notPaid: 'Not paid' } as const;
 
-/* filter chip config */
-/**
- * `icon` is optional: "All" is not a state, so it carries no ring at all.
- * The rest use a bare glyph — the chip draws the ring, so an already-circled
- * icon like `checkCircle` would render a circle inside a circle.
- */
-const filterConfig: { key: Filter; label: string; icon?: IconName; activeColor: string; iconColor: string }[] = [
-  { key: 'all',       label: 'All',                            activeColor: colors.surfie,   iconColor: colors.surfie },
-  { key: 'completed', label: 'Completed', icon: 'check',       activeColor: colors.surfie,   iconColor: colors.surfie },
-  { key: 'cancelled', label: 'Cancelled', icon: 'close',       activeColor: colors.danger,   iconColor: colors.danger },
+/** "All" is not a state, so it carries no glyph. */
+const FILTERS: { key: Filter; label: string; icon?: IconName; tint: string }[] = [
+  { key: 'all', label: 'All', tint: colors.surfie },
+  { key: 'completed', label: 'Completed', icon: 'check', tint: colors.surfie },
+  { key: 'cancelled', label: 'Cancelled', icon: 'close', tint: colors.danger },
+  { key: 'noShow', label: 'No-show', icon: 'alertCircle', tint: colors.warn },
 ];
 
 export const AppointmentsScreen = ({
   onOpenDetails,
   onJoin,
 }: {
-  onOpenDetails: (a: Appointment) => void;
-  onJoin: (a: Appointment) => void;
+  onOpenDetails: (appointmentId: string) => void;
+  onJoin: (appointmentId: string) => void;
 }) => {
   const { width } = useWindowDimensions();
   const narrow = width < 360;
   const [bucket, setBucket] = useState<Bucket>('today');
   const [filter, setFilter] = useState<Filter>('all');
+  const live = useStore(selectAppointments);
 
-  // Each bucket is its own cache entry, so switching tabs loads independently
-  // and a bucket already seen comes back instantly.
-  const { data, error, showSkeleton, isRefreshing, retry } = useResource(
-    KEYS.appointments(bucket),
-    () => fetchAppointments(bucket)
+  // Each bucket is its own cache entry, so switching loads independently and a
+  // bucket already seen comes back instantly.
+  const { data, error, showSkeleton, isRefreshing, retry } = useResource(KEYS.appointments(bucket), () =>
+    fetchAppointments(bucket)
   );
-  const inBucket = useMemo(() => data ?? [], [data]);
+  // the fetched list, with any state this session has changed (an ended call)
+  const inBucket = useMemo(() => (data ?? []).map((a) => live.find((x) => x.id === a.id) ?? a), [data, live]);
 
   const counts = useMemo(
     () => ({
@@ -70,28 +65,33 @@ export const AppointmentsScreen = ({
     [inBucket]
   );
 
-  const list = useMemo(() => {
-    if (filter === 'all') return inBucket;
-    return inBucket.filter((a) => a.state === filter);
-  }, [inBucket, filter]);
+  const list = useMemo(
+    () => (filter === 'all' ? inBucket : inBucket.filter((a) => a.state === filter)),
+    [inBucket, filter]
+  );
+  // offer only the state filters this bucket can actually contain
+  const filters = FILTERS.filter((f) => f.key === 'all' || counts[f.key] > 0 || f.key === filter);
 
-  const countFor = (k: Filter) => (k === 'all' ? counts.all : counts[k as keyof typeof counts]);
+  const canJoin = (a: Appointment) => joinStateFor(a).kind === 'open';
 
   return (
-    <Screen scroll={false}>
-      {/* ── sticky white header card ── */}
+    <Screen scroll={false} testID="appointments" topColor={colors.white}>
       <View style={s.headerCard}>
-        <AppHeader right={<IconButton name="bell" badge label="Notifications" />} />
+        <TabHeader />
         <PageTitle title="Appointments" subtitle="Manage your patient consultations" />
 
-        {/* pill-style bucket tabs */}
         <View style={s.bucketRow}>
           {(['today', 'upcoming', 'past'] as Bucket[]).map((b) => (
             <Pressable
               key={b}
               testID={`bucket-${b}`}
-              onPress={() => { setBucket(b); setFilter('all'); }}
+              onPress={() => {
+                setBucket(b);
+                setFilter('all');
+              }}
               style={[s.bucketTab, bucket === b && s.bucketTabActive]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: bucket === b }}
             >
               <Text style={[s.bucketText, bucket === b && s.bucketTextActive]}>
                 {b === 'today' ? 'Today' : b === 'upcoming' ? 'Upcoming' : 'Past'}
@@ -100,49 +100,42 @@ export const AppointmentsScreen = ({
           ))}
         </View>
 
-        {/* icon filter chips — three, so they share the row evenly rather than
-            hugging the left with dead space to the right. */}
-        <View style={s.filterRow}>
-          {filterConfig.map(({ key, label, icon, activeColor, iconColor }) => {
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
+          {filters.map(({ key, label, icon, tint }) => {
             const active = filter === key;
             return (
               <Pressable
                 key={key}
+                testID={`filter-${key}`}
                 onPress={() => setFilter(key)}
-                style={[s.filterChip, active && { borderColor: activeColor, backgroundColor: activeColor + '18' }]}
+                style={[s.filterChip, active && { borderColor: tint, backgroundColor: `${tint}18` }]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${label}, ${counts[key]}`}
               >
-                {icon && (
-                  <View style={[s.filterIconWrap, { borderColor: iconColor }]}>
-                    <Icon name={icon} size={11} color={iconColor} />
-                  </View>
-                )}
-                <Text style={[s.filterChipText, active && { color: activeColor, fontWeight: '700' }]}>
-                  {label}
+                {icon && <Icon name={icon} size={12} color={tint} />}
+                <Text style={[s.filterChipText, active && { color: tint, fontWeight: fontWeight.semibold }]}>
+                  {label} · {counts[key]}
                 </Text>
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       </View>
 
-      {/* ── scrollable list ── */}
       {showSkeleton ? (
         <ScrollView style={s.listScroll} contentContainerStyle={s.listContent} showsVerticalScrollIndicator={false}>
           <SkeletonAppointmentList rows={5} />
         </ScrollView>
       ) : error ? (
-        <SectionError
-          testID="appointments-error"
-          message="Could not load your appointments."
-          onRetry={retry}
-        />
+        <SectionError testID="appointments-error" message="Could not load your appointments." onRetry={retry} />
       ) : list.length === 0 ? (
         <EmptyState
           icon="calendar"
-          title="Nothing here"
-          body="No appointments match this filter."
-          actionLabel="Clear filter"
-          onAction={() => setFilter('all')}
+          title={filter === 'all' ? 'No appointments' : 'Nothing here'}
+          body={filter === 'all' ? 'Nothing is booked for this period.' : 'No appointments match this filter.'}
+          actionLabel={filter === 'all' ? undefined : 'Show all'}
+          onAction={filter === 'all' ? undefined : () => setFilter('all')}
         />
       ) : (
         <ScrollView style={s.listScroll} contentContainerStyle={s.listContent} showsVerticalScrollIndicator={false}>
@@ -150,58 +143,70 @@ export const AppointmentsScreen = ({
           <View style={s.list}>
             {list.map((a, i) => {
               const meta = stateMeta[a.state];
-              const joinable = a.state === 'confirmed';
+              const join = canJoin(a);
+              const [clock, meridiem] = a.time.split(' ');
               return (
                 <Pressable
                   key={a.id}
                   testID={`appt-${a.id}`}
-                  onPress={() => onOpenDetails(a)}
-                  style={[s.row, i < list.length - 1 && s.rowBorder]}
+                  onPress={() => onOpenDetails(a.id)}
+                  style={({ pressed }) => [s.row, i < list.length - 1 && s.rowBorder, pressed && s.pressed]}
                   accessibilityRole="button"
-                  accessibilityLabel={`${a.name}, ${a.time}`}
+                  accessibilityLabel={`${a.name}, ${bucket === 'today' ? '' : `${a.dayLabel}, `}${a.time}, ${meta.label}`}
                 >
                   <View style={s.timeCol}>
-                    <Text style={[typeStyles.body, s.timeText]}>{a.time.split(' ')[0]}</Text>
-                    <Text style={[typeStyles.body, s.timeMeridiem]}>{a.time.split(' ')[1]}</Text>
+                    {bucket !== 'today' && (
+                      <Text style={s.dayText} numberOfLines={2}>
+                        {a.dayLabel}
+                      </Text>
+                    )}
+                    <Text style={s.timeText}>{clock}</Text>
+                    <Text style={s.timeMeridiem}>{meridiem}</Text>
                   </View>
 
                   <View style={s.rowRule} />
-
-                  <Avatar initials={a.initials} size={34} />
+                  <Avatar initials={a.initials} size={36} />
 
                   <View style={s.rowBody}>
                     <View style={[s.line, narrow && s.lineStacked]}>
-                      <Text style={[typeStyles.body, s.name]}>{a.name}</Text>
+                      <Text style={s.name} numberOfLines={1}>
+                        {a.name}
+                      </Text>
                       <View style={[s.badge, { backgroundColor: meta.bg }, narrow && s.badgeStacked]}>
                         <View style={[s.badgeDot, { backgroundColor: meta.fg }]} />
-                        <Text style={[typeStyles.body, s.badgeText, { color: meta.fg }]}>{meta.label}</Text>
+                        <Text style={[s.badgeText, { color: meta.fg }]}>{meta.label}</Text>
                       </View>
                     </View>
 
                     <View style={s.line}>
-                      <Text style={[typeStyles.body, s.meta]}>{a.gender} • {a.age}</Text>
-                      <Text style={[typeStyles.body, s.payment,
-                        a.payment === 'refunded' && { color: colors.inkFaint },
-                        a.payment === 'notPaid' && { color: colors.danger },
-                      ]}>
+                      <Text style={s.meta}>
+                        {a.gender} · {a.age}
+                      </Text>
+                      <Text
+                        style={[
+                          s.payment,
+                          a.payment === 'refunded' && { color: colors.inkFaint },
+                          a.payment === 'notPaid' && { color: colors.danger },
+                        ]}
+                      >
                         {paymentLabel[a.payment]}
                       </Text>
                     </View>
 
                     <View style={s.lineLast}>
                       <Icon name={modeIcon[a.mode]} size={16} color={colors.surfie} />
-                      <Text style={[typeStyles.body, s.modeText]}>{modeLabel[a.mode]}</Text>
+                      <Text style={s.modeText} numberOfLines={1}>
+                        {modeLabel[a.mode]}
+                      </Text>
                       <Pressable
                         testID={`action-${a.id}`}
-                        onPress={() => (joinable ? onJoin(a) : onOpenDetails(a))}
-                        hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                        style={[s.action, joinable ? s.actionJoin : s.actionDetails]}
+                        onPress={() => (join ? onJoin(a.id) : onOpenDetails(a.id))}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        style={({ pressed }) => [s.action, join ? s.actionJoin : s.actionDetails, pressed && s.pressed]}
                         accessibilityRole="button"
-                        accessibilityLabel={`${joinable ? 'Join' : 'Details'} — ${a.name}`}
+                        accessibilityLabel={`${join ? 'Join' : 'Details'} — ${a.name}`}
                       >
-                        <Text style={[typeStyles.body, joinable ? s.actionJoinText : s.actionDetailsText]}>
-                          {joinable ? 'Join' : 'Details'}
-                        </Text>
+                        <Text style={join ? s.actionJoinText : s.actionDetailsText}>{join ? 'Join' : 'Details'}</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -216,14 +221,9 @@ export const AppointmentsScreen = ({
 };
 
 const s = StyleSheet.create({
-  /* sticky white header */
-  headerCard: {
-    backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface.line,
-  },
+  pressed: { opacity: 0.75 },
+  headerCard: { backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.surface.line },
 
-  /* pill bucket tabs */
   bucketRow: {
     flexDirection: 'row',
     marginHorizontal: spacing.lg,
@@ -233,39 +233,26 @@ const s = StyleSheet.create({
     padding: 3,
     gap: 2,
   },
-  bucketTab: {
-    flex: 1, alignItems: 'center',
-    paddingVertical: spacing.sm + 1,
-    borderRadius: radius.pill,
-  },
+  bucketTab: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 40, borderRadius: radius.pill },
   bucketTabActive: { backgroundColor: colors.surfie },
-  bucketText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm, fontWeight: '600', color: colors.inkMuted,
-  },
+  bucketText: { ...typeStyles.label, fontWeight: fontWeight.semibold, color: colors.inkMuted },
   bucketTextActive: { color: colors.white },
 
-  /* icon filter chips */
   filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   filterChip: {
-    flex: 1,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
-    paddingHorizontal: spacing.sm + 2, paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: colors.surface.line,
+    borderWidth: 1.5,
+    borderColor: colors.surface.line,
     backgroundColor: colors.white,
   },
-  filterIconWrap: {
-    width: 18, height: 18, borderRadius: 9,
-    borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  filterChipText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted,
-  },
+  filterChipText: { ...typeStyles.caption, color: colors.inkMuted },
 
-  /* list */
   listScroll: { flex: 1 },
   listContent: { paddingBottom: spacing.xxxl },
   list: {
@@ -277,14 +264,18 @@ const s = StyleSheet.create({
     borderColor: colors.surface.line,
     paddingHorizontal: spacing.md,
   },
-  row: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    gap: spacing.sm, paddingVertical: spacing.md,
-    minHeight: 86,
-  },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, minHeight: 86 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
-  timeCol: { width: 46, paddingTop: 2 },
-  timeText: { ...typeStyles.caption, color: colors.ink },
+  timeCol: { width: 52, paddingTop: 2 },
+  dayText: {
+    ...typeStyles.caption,
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.surfie,
+    fontWeight: fontWeight.semibold,
+    marginBottom: 2,
+  },
+  timeText: { ...typeStyles.caption, color: colors.ink, fontWeight: fontWeight.semibold },
   timeMeridiem: { ...typeStyles.caption, color: colors.inkFaint },
   rowRule: { width: 1, alignSelf: 'stretch', backgroundColor: colors.surface.line, marginRight: 2 },
 
@@ -295,12 +286,16 @@ const s = StyleSheet.create({
 
   name: { ...typeStyles.name, flexShrink: 1, color: colors.ink },
   badge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     marginLeft: 'auto',
   },
   badgeStacked: { marginLeft: 0 },
-  badgeDot: { width: 5, height: 5, borderRadius: 3 },
+  badgeDot: { width: 6, height: 6, borderRadius: 3 },
   badgeText: { ...typeStyles.status },
 
   meta: { ...typeStyles.caption, color: colors.inkMuted },
@@ -308,14 +303,17 @@ const s = StyleSheet.create({
   modeText: { ...typeStyles.status, flex: 1, minWidth: 0, color: colors.inkMuted },
 
   action: {
-    minWidth: 68, height: 30, borderRadius: radius.md,
-    alignItems: 'center', justifyContent: 'center',
+    minWidth: 72,
+    minHeight: 36,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
   actionJoin: { backgroundColor: colors.surfie },
-  actionJoinText: { ...typeStyles.caption, color: colors.white },
+  actionJoinText: { ...typeStyles.buttonSmall, color: colors.white },
   actionDetails: { borderWidth: 1.5, borderColor: colors.surfie, backgroundColor: colors.white },
-  actionDetailsText: { ...typeStyles.caption, color: colors.surfie },
+  actionDetailsText: { ...typeStyles.buttonSmall, color: colors.surfie },
 });
 
 export default AppointmentsScreen;

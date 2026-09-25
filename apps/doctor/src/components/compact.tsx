@@ -1,16 +1,18 @@
-import { typeStyles, fontWeight } from '../../../../libs/typography/src';
 import React, { type ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radius } from '../theme/brand';
+import { colors } from '../theme/brand';
+import { typeStyles, fontWeight } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
+import { Checkbox } from './Checkbox';
+import { BackButton } from './ScreenHeader';
 
 /**
  * Compact primitives for the clarification and document flows.
  *
- * These screens run at a denser type scale than the tab screens, so the sizes
- * are literal rather than drawn from `typography.size` — the shared scale
- * bottoms out around 10px and these need 8–9px captions.
+ * These screens run a denser layout than the tab screens, but never a smaller
+ * type size: every text role here comes from the shared scale, which bottoms
+ * out at 11pt.
  */
 export const C = {
   mint: '#E8F8F2',
@@ -23,6 +25,7 @@ export const C = {
 
 /* --------------------------------- header --------------------------------- */
 
+/** The compact bar: the shared back button, a centred title, the screen's actions. */
 export const SlimHeader = ({
   title,
   onBack,
@@ -30,25 +33,24 @@ export const SlimHeader = ({
   center,
 }: {
   title?: string;
-  onBack?: () => void;
+  onBack: () => void;
   right?: ReactNode;
   center?: ReactNode;
 }) => (
   <View style={s.header}>
-    <Pressable testID="back" onPress={onBack} hitSlop={10} accessibilityLabel="Back" style={s.headerSide}>
-      <Icon name="arrowLeft" size={20} color={C.ink} />
-    </Pressable>
+    <View style={s.headerSide}>
+      <BackButton onPress={onBack} />
+    </View>
     <View style={s.headerCenter}>
-      {center ?? (!!title && <Text style={[typeStyles.body, s.headerTitle]}>{title}</Text>)}
+      {center ??
+        (!!title && (
+          <Text style={s.headerTitle} numberOfLines={1} accessibilityRole="header">
+            {title}
+          </Text>
+        ))}
     </View>
     <View style={[s.headerSide, s.headerRight]}>{right}</View>
   </View>
-);
-
-export const OverflowButton = ({ onPress }: { onPress?: () => void }) => (
-  <Pressable onPress={onPress} hitSlop={10} accessibilityLabel="More options">
-    <Icon name="more" size={18} color={C.ink} />
-  </Pressable>
 );
 
 /* --------------------------------- stepper -------------------------------- */
@@ -61,7 +63,7 @@ export const Stepper = ({
   /** zero-based */
   current: number;
 }) => (
-  <View style={s.stepper}>
+  <View style={s.stepper} accessible accessibilityLabel={`Step ${current + 1} of ${steps.length}: ${steps[current]}`}>
     {steps.map((label, i) => {
       const done = i < current;
       const active = i === current;
@@ -71,14 +73,12 @@ export const Stepper = ({
           <View style={s.stepItem}>
             <View style={[s.stepDot, done && s.stepDotDone, active && s.stepDotActive]}>
               {done ? (
-                <Icon name="checkCircle" size={11} color={colors.white} filled />
+                <Icon name="check" size={12} weight={3} color={colors.white} />
               ) : (
-                <Text style={[typeStyles.body, [s.stepNum, active && s.stepNumActive]]}>{i + 1}</Text>
+                <Text style={[s.stepNum, active && s.stepNumActive]}>{i + 1}</Text>
               )}
             </View>
-            <Text style={[typeStyles.body, [s.stepLabel, (active || done) && s.stepLabelOn]]}>
-              {label}
-            </Text>
+            <Text style={[s.stepLabel, (active || done) && s.stepLabelOn]}>{label}</Text>
           </View>
         </React.Fragment>
       );
@@ -87,28 +87,16 @@ export const Stepper = ({
 );
 
 /** Progress tracker for a case's lifecycle — done / active / todo. */
-export const Tracker = ({
-  steps,
-}: {
-  steps: { label: string; state: 'done' | 'active' | 'todo' }[];
-}) => (
+export const Tracker = ({ steps }: { steps: { label: string; state: 'done' | 'active' | 'todo' }[] }) => (
   <View style={s.tracker}>
     {steps.map((st, i) => (
       <React.Fragment key={st.label}>
         {i > 0 && <View style={[s.trackLine, steps[i - 1].state === 'done' && s.trackLineDone]} />}
         <View style={s.trackItem}>
-          <View
-            style={[
-              s.trackDot,
-              st.state === 'done' && s.trackDotDone,
-              st.state === 'active' && s.trackDotActive,
-            ]}
-          >
-            {st.state === 'done' && <Icon name="checkCircle" size={12} color={colors.white} filled />}
+          <View style={[s.trackDot, st.state === 'done' && s.trackDotDone, st.state === 'active' && s.trackDotActive]}>
+            {st.state === 'done' && <Icon name="check" size={12} weight={3} color={colors.white} />}
           </View>
-          <Text style={[typeStyles.body, [s.trackLabel, st.state === 'active' && s.trackLabelActive]]}>
-            {st.label}
-          </Text>
+          <Text style={[s.trackLabel, st.state === 'active' && s.trackLabelActive]}>{st.label}</Text>
         </View>
       </React.Fragment>
     ))}
@@ -117,8 +105,9 @@ export const Tracker = ({
 
 /* --------------------------------- fields --------------------------------- */
 
-export const Label = ({ children }: { children: ReactNode }) => <Text style={[typeStyles.body, s.label]}>{children}</Text>;
+export const Label = ({ children }: { children: ReactNode }) => <Text style={s.label}>{children}</Text>;
 
+/** A real text input in the compact frame, with an optional live counter. */
 export const Field = ({
   value,
   onChangeText,
@@ -127,47 +116,65 @@ export const Field = ({
   multiline,
   height,
   max,
+  accessibilityLabel,
+  editable = true,
 }: {
   value: string;
-  onChangeText?: (t: string) => void;
+  onChangeText: (t: string) => void;
   placeholder?: string;
   testID?: string;
   multiline?: boolean;
   height?: number;
   max?: number;
+  accessibilityLabel?: string;
+  editable?: boolean;
 }) => (
-  <View style={[s.field, multiline && { minHeight: height ?? 88, paddingVertical: 8 }]}>
+  <View style={[s.field, multiline && { minHeight: height ?? 88, paddingVertical: 10 }, !editable && s.fieldReadOnly]}>
     <TextInput
       testID={testID}
-      style={[typeStyles.input, [s.input, multiline && s.inputMulti]]}
+      style={[multiline ? s.inputMulti : s.input]}
       value={value}
-      onChangeText={(t) => onChangeText?.(max ? t.slice(0, max) : t)}
+      onChangeText={(t) => onChangeText(max ? t.slice(0, max) : t)}
       placeholder={placeholder}
       placeholderTextColor={C.muted}
-      multiline scrollEnabled={false}
+      multiline={multiline}
+      scrollEnabled={false}
+      editable={editable}
+      accessibilityLabel={accessibilityLabel ?? placeholder}
     />
     {!!max && (
-      <Text style={[typeStyles.body, s.counter]}>
+      <Text style={s.counter}>
         {value.length}/{max}
       </Text>
     )}
   </View>
 );
 
+/** A dropdown trigger. Always opens something — there is no inert variant. */
 export const SelectRow = ({
   value,
+  placeholder = 'Select',
   testID,
   onPress,
+  accessibilityLabel,
 }: {
   value: string;
+  placeholder?: string;
   testID?: string;
-  onPress?: () => void;
+  onPress: () => void;
+  accessibilityLabel?: string;
 }) => (
-  <Pressable testID={testID} onPress={onPress} style={s.select}>
-    <Text style={[typeStyles.body, s.selectText]}>
-      {value}
+  <Pressable
+    testID={testID}
+    onPress={onPress}
+    style={({ pressed }) => [s.select, pressed && s.pressed]}
+    accessibilityRole="button"
+    accessibilityLabel={accessibilityLabel ?? value ?? placeholder}
+  >
+    <Text style={[s.selectText, !value && s.placeholder]} numberOfLines={2}>
+      {value || placeholder}
     </Text>
-    <Icon name="chevronDown" size={14} color={C.muted} />
+    <Icon name="chevronDown" size={15} color={C.muted} />
   </Pressable>
 );
 
@@ -195,7 +202,7 @@ export const Segmented = <T extends string>({
           accessibilityState={{ selected: on }}
         >
           <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
-          <Text style={[typeStyles.body, [s.segText, on && s.segTextOn]]}>
+          <Text style={[s.segText, on && s.segTextOn]} numberOfLines={1}>
             {o.label}
           </Text>
         </Pressable>
@@ -204,6 +211,7 @@ export const Segmented = <T extends string>({
   </View>
 );
 
+/** Kept for existing call sites; it is the shared Checkbox. */
 export const CheckRow = ({
   checked,
   onToggle,
@@ -215,18 +223,9 @@ export const CheckRow = ({
   children: ReactNode;
   testID?: string;
 }) => (
-  <Pressable
-    testID={testID}
-    onPress={onToggle}
-    style={s.checkRow}
-    accessibilityRole="checkbox"
-    accessibilityState={{ checked }}
-  >
-    <View style={[s.checkbox, checked && s.checkboxOn]}>
-      {checked && <Icon name="checkCircle" size={12} color={colors.white} filled />}
-    </View>
-    <Text style={[typeStyles.body, s.checkText]}>{children}</Text>
-  </Pressable>
+  <Checkbox testID={testID} checked={checked} onToggle={onToggle}>
+    {children}
+  </Checkbox>
 );
 
 /* --------------------------------- notices -------------------------------- */
@@ -245,32 +244,34 @@ export const ShieldNote = ({
   <View style={[s.note, tone === 'grey' && s.noteGrey]}>
     <Icon name={icon} size={15} color={tone === 'grey' ? C.muted : colors.surfie} />
     <View style={s.flex}>
-      <Text style={[typeStyles.body, [s.noteText, tone === 'grey' && { color: C.muted }]]}>{children}</Text>
-      {!!sub && <Text style={[typeStyles.body, s.noteSub]}>{sub}</Text>}
+      <Text style={[s.noteText, tone === 'grey' && { color: C.muted }]}>{children}</Text>
+      {!!sub && <Text style={s.noteSub}>{sub}</Text>}
     </View>
   </View>
 );
 
 export const ScanLine = ({ clean = true, label }: { clean?: boolean; label?: string }) => (
   <View style={s.scanRow}>
-    <Icon name={clean ? 'shieldCheck' : 'alertTriangle'} size={13} color={clean ? colors.surfie : C.amber} />
-    <Text style={[typeStyles.body, [s.scanText, !clean && { color: C.amber }]]}>
+    <Icon name={clean ? 'shieldCheck' : 'alertTriangle'} size={14} color={clean ? colors.surfie : C.amber} />
+    <Text style={[s.scanText, !clean && { color: C.amber }]}>
       {label ?? (clean ? 'No direct identifiers detected' : 'Possible identifier found — please review')}
     </Text>
   </View>
 );
 
-export const Caption = ({ children }: { children: ReactNode }) => <Text style={[typeStyles.body, s.caption]}>{children}</Text>;
+export const Caption = ({ children }: { children: ReactNode }) => <Text style={s.caption}>{children}</Text>;
 
 export const SectionTitle = ({ children }: { children: ReactNode }) => (
-  <Text style={[typeStyles.body, s.section]}>{children}</Text>
+  <Text style={s.section} accessibilityRole="header">
+    {children}
+  </Text>
 );
 
 /** Two-column summary row used by the review and shared-context blocks. */
 export const SummaryRow = ({ label, value, last }: { label: string; value: string; last?: boolean }) => (
   <View style={[s.sumRow, !last && s.sumBorder]}>
-    <Text style={[typeStyles.body, s.sumLabel]}>{label}</Text>
-    <Text style={[typeStyles.body, s.sumValue]}>{value}</Text>
+    <Text style={s.sumLabel}>{label}</Text>
+    <Text style={s.sumValue}>{value}</Text>
   </View>
 );
 
@@ -285,8 +286,8 @@ export const StickyFooter = ({
   note?: string;
   bottomInset: number;
 }) => (
-  <View style={[s.footer, { paddingBottom: bottomInset + 10 }]}>
-    {!!note && <Text style={[typeStyles.body, s.footNote]}>{note}</Text>}
+  <View style={[s.footer, { paddingBottom: Math.max(bottomInset, 8) + 8 }]}>
+    {!!note && <Text style={s.footNote}>{note}</Text>}
     <View style={s.footRow}>{children}</View>
   </View>
 );
@@ -296,14 +297,23 @@ export const GhostButton = ({
   onPress,
   testID,
   style,
+  disabled,
 }: {
   label: string;
-  onPress?: () => void;
+  onPress: () => void;
   testID?: string;
   style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
 }) => (
-  <Pressable testID={testID} onPress={onPress} style={[s.ghost, style]} accessibilityRole="button">
-    <Text style={[typeStyles.body, s.ghostText]}>{label}</Text>
+  <Pressable
+    testID={testID}
+    onPress={onPress}
+    disabled={disabled}
+    style={({ pressed }) => [s.ghost, disabled && s.solidOff, pressed && s.pressed, style]}
+    accessibilityRole="button"
+    accessibilityState={{ disabled: !!disabled }}
+  >
+    <Text style={s.ghostText}>{label}</Text>
   </Pressable>
 );
 
@@ -315,7 +325,7 @@ export const SolidButton = ({
   style,
 }: {
   label: string;
-  onPress?: () => void;
+  onPress: () => void;
   testID?: string;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -324,20 +334,23 @@ export const SolidButton = ({
     testID={testID}
     onPress={onPress}
     disabled={disabled}
-    style={[s.solid, disabled && s.solidOff, style]}
+    style={({ pressed }) => [s.solid, disabled && s.solidOff, pressed && !disabled && s.pressed, style]}
     accessibilityRole="button"
+    accessibilityState={{ disabled: !!disabled }}
   >
-    <Text style={[typeStyles.body, s.solidText]}>{label}</Text>
+    <Text style={s.solidText}>{label}</Text>
   </Pressable>
 );
 
 const s = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.75 },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 48, paddingVertical: 6,
+    minHeight: 56,
+    paddingVertical: 8,
     paddingHorizontal: 16,
   },
   headerSide: { width: 56, justifyContent: 'center' },
@@ -345,14 +358,14 @@ const s = StyleSheet.create({
      fit rather than wrapping "Save Draft" onto a second line */
   headerRight: { width: 'auto', minWidth: 56, flexShrink: 0, alignItems: 'flex-end' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { ...typeStyles.pageTitle, color: C.ink },
+  headerTitle: { ...typeStyles.cardTitle, color: C.ink },
 
   stepper: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
-  stepItem: { alignItems: 'center', gap: 3 },
+  stepItem: { alignItems: 'center', gap: 4 },
   stepDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: C.line,
     alignItems: 'center',
@@ -360,15 +373,15 @@ const s = StyleSheet.create({
   },
   stepDotActive: { backgroundColor: colors.surfie, borderColor: colors.surfie },
   stepDotDone: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  stepNum: { ...typeStyles.number, color: C.muted },
+  stepNum: { ...typeStyles.number, fontSize: 12, lineHeight: 16, color: C.muted },
   stepNumActive: { color: colors.white },
-  stepLabel: { ...typeStyles.label, color: C.muted },
+  stepLabel: { ...typeStyles.caption, color: C.muted },
   stepLabelOn: { color: C.ink, fontWeight: fontWeight.semibold },
-  stepLine: { flex: 1, height: 1.5, backgroundColor: C.line, marginHorizontal: 4, marginBottom: 12 },
+  stepLine: { flex: 1, height: 1.5, backgroundColor: C.line, marginHorizontal: 4, marginBottom: 18 },
   stepLineDone: { backgroundColor: colors.paris },
 
   tracker: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16 },
-  trackItem: { alignItems: 'center', gap: 4, width: 84 },
+  trackItem: { alignItems: 'center', gap: 4, width: 88 },
   trackDot: {
     width: 22,
     height: 22,
@@ -380,52 +393,58 @@ const s = StyleSheet.create({
   },
   trackDotDone: { backgroundColor: colors.surfie, borderColor: colors.surfie },
   trackDotActive: { borderColor: C.amber, backgroundColor: C.amberSoft, borderWidth: 4 },
-  trackLabel: { ...typeStyles.label, color: C.muted, textAlign: 'center' },
+  trackLabel: { ...typeStyles.caption, color: C.muted, textAlign: 'center' },
   trackLabelActive: { color: C.amber, fontWeight: fontWeight.semibold },
   trackLine: { flex: 1, height: 2, backgroundColor: C.line, marginTop: 10 },
   trackLineDone: { backgroundColor: colors.paris },
 
   label: { ...typeStyles.label, color: C.muted, marginBottom: 4 },
-  section: { ...typeStyles.sectionTitle, color: C.ink, marginTop: 14, marginBottom: 6 },
+  section: { ...typeStyles.cardTitle, color: C.ink, marginTop: 16, marginBottom: 6 },
   field: {
     borderWidth: 1,
     borderColor: C.line,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    minHeight: 44,
+    paddingHorizontal: 12,
+    minHeight: 48,
     justifyContent: 'center',
+    backgroundColor: colors.white,
   },
-  input: { ...typeStyles.input, color: C.ink, padding: 0 },
-  inputMulti: { minHeight: 62, textAlignVertical: 'top' },
-  counter: { ...typeStyles.number, color: C.muted, textAlign: 'right', marginTop: 2 },
+  fieldReadOnly: { backgroundColor: '#F7FAF9' },
+  input: { ...typeStyles.inputSingle, color: C.ink, height: 46 },
+  inputMulti: { ...typeStyles.input, color: C.ink, minHeight: 62, padding: 0, textAlignVertical: 'top' },
+  counter: { ...typeStyles.caption, color: C.muted, textAlign: 'right', marginTop: 2 },
 
   select: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     borderWidth: 1,
     borderColor: C.line,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    minHeight: 44, paddingVertical: 8,
+    paddingHorizontal: 12,
+    minHeight: 48,
+    paddingVertical: 8,
+    backgroundColor: colors.white,
   },
   selectText: { ...typeStyles.bodySmall, flex: 1, color: C.ink },
+  placeholder: { color: C.muted },
 
   segRow: { flexDirection: 'row', gap: 6 },
   segItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     borderWidth: 1,
     borderColor: C.line,
     borderRadius: 10,
     paddingHorizontal: 8,
-    paddingVertical: 9,
+    minHeight: 44,
   },
   segItemOn: { borderColor: colors.surfie, backgroundColor: '#F4FBF8' },
   radio: {
-    width: 15,
-    height: 15,
+    width: 16,
+    height: 16,
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: '#D3E2DC',
@@ -433,22 +452,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   radioOn: { borderColor: colors.surfie },
-  radioDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.surfie },
+  radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.surfie },
   segText: { ...typeStyles.status, flex: 1, color: C.muted },
   segTextOn: { color: C.ink, fontWeight: fontWeight.semibold },
-
-  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#C9D8D2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  checkText: { ...typeStyles.caption, flex: 1, color: C.ink },
 
   note: {
     flexDirection: 'row',
@@ -456,7 +462,7 @@ const s = StyleSheet.create({
     gap: 8,
     backgroundColor: C.mint,
     borderRadius: 10,
-    padding: 9,
+    padding: 10,
   },
   noteGrey: { backgroundColor: '#F2F5F4' },
   noteText: { ...typeStyles.caption, color: C.ink },
@@ -467,14 +473,14 @@ const s = StyleSheet.create({
 
   caption: { ...typeStyles.caption, color: C.muted },
 
-  sumRow: { flexDirection: 'row', gap: 10, paddingVertical: 7 },
+  sumRow: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
   sumBorder: { borderBottomWidth: 1, borderBottomColor: C.line },
-  sumLabel: { ...typeStyles.label, width: 104, color: C.muted },
+  sumLabel: { ...typeStyles.caption, width: 110, color: C.muted, fontWeight: fontWeight.medium },
   sumValue: { ...typeStyles.caption, flex: 1, color: C.ink },
 
   footer: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: C.line,
     backgroundColor: colors.white,
@@ -484,7 +490,8 @@ const s = StyleSheet.create({
   footRow: { flexDirection: 'row', gap: 8 },
   ghost: {
     flex: 1,
-    minHeight: 44, paddingVertical: 8,
+    minHeight: 48,
+    paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: colors.surfie,
@@ -494,7 +501,8 @@ const s = StyleSheet.create({
   ghostText: { ...typeStyles.button, textAlign: 'center', flexShrink: 1, color: colors.surfie },
   solid: {
     flex: 1,
-    minHeight: 44, paddingVertical: 8,
+    minHeight: 48,
+    paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: colors.surfie,
     alignItems: 'center',

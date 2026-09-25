@@ -1,162 +1,106 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
 import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
-import { Screen, AppHeader } from '../../components/ui';
-import {
-  clinicalTaskList,
-  TASK_CATEGORY_LABEL,
-  type ClinicalTask,
-  type TaskCategory,
-} from '../../data/doctor';
+import { Screen, EmptyState } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { useStore } from '../../state/store';
+import { TASK_CATEGORY_LABEL, selectTasks, type ClinicalTask, type TaskCategory } from '../../state/selectors';
 
 /**
- * Pending Tasks Worklist — opened from the Dashboard tasks card.
+ * Pending Tasks Worklist — what the doctor still owes, oldest first.
  *
- * A worklist, not the Cases tab, and deliberately not a navigation tab: it
- * lists what the doctor still owes, oldest debt first, so the longest-waiting
- * patient record surfaces without hunting. Documentation debt gates instant
- * consultation requests, which is why the footer says so.
- *
- * Every count is derived from `clinicalTaskList`.
+ * Every task is derived from a real record: a consultation whose notes,
+ * prescription or summary is unfinished, or a check-in response not yet read.
+ * Opening one goes straight to the step that clears it, for that patient, and
+ * the task disappears once the step is done.
  */
 
-type CategoryMeta = { icon: IconName; accent: string };
+type CategoryMeta = { icon: IconName; accent: string; action: string };
 
-/** Follow-ups are a patient reply, not documentation, so they read blue. */
 const CATEGORY: Record<TaskCategory, CategoryMeta> = {
-  summary: { icon: 'notes', accent: colors.paris },
-  prescription: { icon: 'prescription', accent: colors.paris },
-  note: { icon: 'document', accent: colors.paris },
-  followUp: { icon: 'message', accent: '#57A7E3' },
+  summary: { icon: 'notes', accent: colors.paris, action: 'Write summary' },
+  prescription: { icon: 'prescription', accent: colors.paris, action: 'Finish prescription' },
+  note: { icon: 'document', accent: colors.paris, action: 'Complete notes' },
+  followUp: { icon: 'message', accent: '#57A7E3', action: 'Review check-in' },
 };
 
 const CATEGORIES: TaskCategory[] = ['summary', 'prescription', 'note', 'followUp'];
 
 type ChipKey = 'all' | TaskCategory;
 
-/* -------------------------------- task card ------------------------------- */
-
-const TaskCard = ({ task, onAction }: { task: ClinicalTask; onAction: (id: string) => void }) => {
+const TaskCard = ({ task, onOpen }: { task: ClinicalTask; onOpen: () => void }) => {
   const meta = CATEGORY[task.category];
-
   return (
-    <View style={s.card}>
+    <Pressable
+      testID={`task-${task.id}`}
+      onPress={onOpen}
+      style={({ pressed }) => [s.card, pressed && s.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`${task.title} for ${task.patient}, waiting ${task.pendingFor}. ${meta.action}`}
+    >
       <View style={[s.accent, { backgroundColor: meta.accent }]} />
-
       <View style={s.cardBody}>
         <View style={s.tile}>
-          <Icon name={meta.icon} size={16} color={colors.surfie} />
+          <Icon name={meta.icon} size={17} color={colors.surfie} />
         </View>
-
         <View style={s.flex}>
-          <Text style={[typeStyles.body, s.title]} numberOfLines={1}>
+          <Text style={s.title} numberOfLines={1}>
             {task.title}
           </Text>
-          <Text style={[typeStyles.body, s.patient]} numberOfLines={1}>
+          <Text style={s.patient} numberOfLines={1}>
             {task.patient}
           </Text>
-          <Text style={[typeStyles.body, s.caseId]} numberOfLines={1}>
-            Case ID: {task.caseId}
+          <Text style={s.caseId} numberOfLines={1}>
+            Case ID: {task.caseId} · {task.specialty}
           </Text>
-          <View style={s.specChip}>
-            <Icon name="stethoscope" size={10} color={colors.inkMuted} />
-            <Text style={[typeStyles.body, s.specText]} numberOfLines={1}>
-              {task.specialty}
-            </Text>
+          <View style={s.ageRow}>
+            <Icon name="clock" size={12} color={colors.warn} />
+            <Text style={s.ageText}>Waiting {task.pendingFor}</Text>
+            <Text style={s.opened}>· Opened {task.openedOn}</Text>
           </View>
         </View>
-
-        <View style={s.right}>
-          {/* the age sits on the title line, with the menu at the far edge */}
-          <View style={s.ageRow}>
-            <Icon name="clock" size={11} color={colors.warn} />
-            <Text style={[typeStyles.body, s.ageText]}>{task.pendingFor}</Text>
-            <Pressable
-              testID={`task-more-${task.id}`}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`More options for ${task.title}, ${task.patient}`}
-            >
-              <Icon name="moreVertical" size={15} color={colors.inkFaint} />
-            </Pressable>
-          </View>
-          <Text style={[typeStyles.body, s.opened]} numberOfLines={1}>
-            Opened on {task.openedOn}
-          </Text>
-
-          <Pressable
-            testID={`task-action-${task.id}`}
-            onPress={() => onAction(task.id)}
-            style={s.openBtn}
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${task.title} for ${task.patient}`}
-          >
-            <Text style={[typeStyles.body, s.openText]}>Open</Text>
-            <Icon name="chevronRight" size={12} color={colors.surfie} />
-          </Pressable>
+        <View testID={`task-action-${task.id}`} style={s.openBtn}>
+          <Text style={s.openText}>Open</Text>
+          <Icon name="chevronRight" size={13} color={colors.surfie} />
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 };
 
-/* --------------------------------- screen --------------------------------- */
-
 export const PendingTasksScreen = ({
   onBack,
-  onAction = () => undefined,
-  onNotifications = () => undefined,
+  onOpenTask,
 }: {
   onBack: () => void;
-  onAction?: (id: string) => void;
-  onNotifications?: () => void;
+  onOpenTask: (task: ClinicalTask) => void;
 }) => {
+  const tasks = useStore(selectTasks);
   const [chip, setChip] = useState<ChipKey>('all');
   const [oldestFirst, setOldestFirst] = useState(true);
 
-  const countFor = (c: TaskCategory) => clinicalTaskList.filter((t) => t.category === c).length;
+  const countFor = (c: TaskCategory) => tasks.filter((t) => t.category === c).length;
 
   const visible = useMemo(() => {
-    const list = chip === 'all' ? clinicalTaskList : clinicalTaskList.filter((t) => t.category === chip);
-    // the fixture is authored oldest first, so newest is simply the reverse
+    const list = chip === 'all' ? tasks : tasks.filter((t) => t.category === chip);
+    // the derived list is oldest first, so newest is the reverse
     return oldestFirst ? list : list.slice().reverse();
-  }, [chip, oldestFirst]);
+  }, [tasks, chip, oldestFirst]);
 
   return (
-    <Screen contentStyle={s.content}>
-      {/* the shared header carries the wordmark; back and bell sit beside it */}
-      <AppHeader
-        onBack={onBack}
-        right={
-          <Pressable
-            onPress={onNotifications}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <Icon name="bell" size={21} color={colors.ink} />
-            <View style={s.bellDot} />
-          </Pressable>
-        }
-      />
-
-      <View style={s.titleBlock}>
-        <Text style={[typeStyles.body, s.screenTitle]}>Pending Tasks Worklist</Text>
-        <Text style={[typeStyles.body, s.screenSub]}>Stay on top of your unfinished clinical work.</Text>
-      </View>
-
-      {/* ------------------------------- category chips -------------------------- */}
-      <ScrollView
-        horizontal
-        style={s.chipScroll}
-        contentContainerStyle={s.chipRow}
-        showsHorizontalScrollIndicator={false}
-      >
+    <Screen
+      testID="pending-tasks"
+      header={
+        <ScreenHeader onBack={onBack} title="Pending Tasks Worklist" subtitle="Stay on top of your unfinished clinical work." />
+      }
+    >
+      <ScrollView horizontal style={s.chipScroll} contentContainerStyle={s.chipRow} showsHorizontalScrollIndicator={false}>
         {(['all', ...CATEGORIES] as ChipKey[]).map((k) => {
           const on = chip === k;
+          const count = k === 'all' ? tasks.length : countFor(k);
           return (
             <Pressable
               key={k}
@@ -165,51 +109,43 @@ export const PendingTasksScreen = ({
               style={[s.chip, on && s.chipOn]}
               accessibilityRole="button"
               accessibilityState={{ selected: on }}
+              accessibilityLabel={`${k === 'all' ? 'All' : TASK_CATEGORY_LABEL[k]}, ${count}`}
             >
-              {k !== 'all' && (
-                <Icon name={CATEGORY[k].icon} size={14} color={on ? colors.white : colors.ink} />
-              )}
-              <Text style={[typeStyles.body, s.chipText, on && s.chipTextOn]}>
-                {k === 'all' ? 'All' : TASK_CATEGORY_LABEL[k]}
+              {k !== 'all' && <Icon name={CATEGORY[k].icon} size={14} color={on ? colors.white : colors.ink} />}
+              <Text style={[s.chipText, on && s.chipTextOn]}>
+                {k === 'all' ? 'All' : TASK_CATEGORY_LABEL[k]} · {count}
               </Text>
             </Pressable>
           );
         })}
       </ScrollView>
 
-      {/* -------------------------------- summary -------------------------------- */}
       <View style={s.summary}>
-        {/* one row: the disc and the total on the left, the four categories
-            beside them. Type is sized so every label prints in full. */}
         <View style={s.summaryLead}>
           <View style={s.summaryDisc}>
             <Icon name="checklist" size={20} color={colors.surfie} />
           </View>
-          <View style={s.summaryText}>
-            <Text style={[typeStyles.body, s.summaryLabel]} numberOfLines={1}>
-              Total Pending Tasks
+          <View>
+            <Text testID="task-total" style={s.summaryValue}>
+              {tasks.length}
             </Text>
-            <Text style={[typeStyles.body, s.summaryValue]}>{clinicalTaskList.length}</Text>
-            <Text style={[typeStyles.body, s.summaryHint]} numberOfLines={1}>
-              Across all categories
-            </Text>
+            <Text style={s.summaryLabel}>Total pending</Text>
           </View>
         </View>
-
         <View style={s.breakdown}>
           {CATEGORIES.map((c) => (
             <View key={c} style={s.breakItem}>
-              <View style={s.breakTile}>
-                <Icon name={CATEGORY[c].icon} size={12} color={colors.surfie} />
-              </View>
-              <Text style={[typeStyles.body, s.breakValue]}>{countFor(c)}</Text>
-              <Text style={[typeStyles.body, s.breakLabel]}>{TASK_CATEGORY_LABEL[c]}</Text>
+              <Text testID={`task-count-${c}`} style={s.breakValue}>
+                {countFor(c)}
+              </Text>
+              <Text style={s.breakLabel} numberOfLines={1}>
+                {TASK_CATEGORY_LABEL[c]}
+              </Text>
             </View>
           ))}
         </View>
       </View>
 
-      {/* ------------------------------- sort + stamp ---------------------------- */}
       <View style={s.toolRow}>
         <Pressable
           testID="sort-toggle"
@@ -217,134 +153,86 @@ export const PendingTasksScreen = ({
           hitSlop={8}
           style={s.tool}
           accessibilityRole="button"
-          accessibilityLabel={oldestFirst ? 'Oldest pending first' : 'Newest pending first'}
+          accessibilityLabel={oldestFirst ? 'Showing oldest first. Show newest first' : 'Showing newest first. Show oldest first'}
         >
-          <Icon name="sort" size={14} color={colors.inkMuted} />
-          <Text style={[typeStyles.body, s.toolText]}>
-            {oldestFirst ? 'Oldest pending first' : 'Newest pending first'}
-          </Text>
+          <Icon name="sort" size={15} color={colors.inkMuted} />
+          <Text style={s.toolText}>{oldestFirst ? 'Oldest pending first' : 'Newest pending first'}</Text>
         </Pressable>
-
-        <View style={s.tool}>
-          <Text style={[typeStyles.body, s.toolText]}>Last updated: 7:30 AM</Text>
-          <Icon name="refresh" size={14} color={colors.inkMuted} />
-        </View>
       </View>
 
-      {/* -------------------------------- worklist ------------------------------- */}
       {visible.length === 0 ? (
-        <View style={s.empty}>
-          <Text style={[typeStyles.body, s.emptyText]}>Nothing outstanding here.</Text>
-        </View>
+        <EmptyState
+          icon="checkCircle"
+          title="Nothing outstanding"
+          body={chip === 'all' ? 'Every consultation is written up.' : 'No tasks in this category.'}
+        />
       ) : (
-        visible.map((t) => <TaskCard key={t.id} task={t} onAction={onAction} />)
+        visible.map((t) => <TaskCard key={t.id} task={t} onOpen={() => onOpenTask(t)} />)
       )}
 
-      {/* -------------------------------- notice --------------------------------- */}
-      <View style={s.notice}>
-        <Icon name="lock" size={14} color={colors.warn} />
-        <Text style={[typeStyles.body, s.noticeText]}>
-          New instant requests resume after required documentation is completed.
-        </Text>
-      </View>
+      {tasks.length > 0 && (
+        <View style={s.notice}>
+          <Icon name="lock" size={14} color={colors.warn} />
+          <Text style={s.noticeText}>Instant requests pause while a consultation you just finished is still being written up.</Text>
+        </View>
+      )}
     </Screen>
   );
 };
 
 const s = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  content: { paddingBottom: spacing.lg },
+  pressed: { opacity: 0.8 },
 
-  bellDot: {
-    position: 'absolute',
-    top: 1,
-    right: 1,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.paris,
-    borderWidth: 1.5,
-    borderColor: colors.surface.page,
-  },
-
-  /* title */
-  titleBlock: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
-  screenTitle: { ...typeStyles.pageTitle, color: colors.ink },
-  screenSub: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 3 },
-
-  /* chips — one line, scrolled sideways rather than wrapped */
   chipScroll: { flexGrow: 0 },
   chipRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 40,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.surface.line,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
-    paddingVertical: 9,
   },
   chipOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
   chipText: { ...typeStyles.status, color: colors.ink },
   chipTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
 
-  /* summary card */
   summary: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
-    /* a hint of mint, not a filled panel */
     backgroundColor: '#F4FAF8',
     borderWidth: 1,
     borderColor: colors.surface.line,
-    borderRadius: radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    gap: 6,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  summaryLead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  summaryLead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   summaryDisc: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.surface.selected,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  summaryText: { alignItems: 'flex-start' },
-  summaryLabel: { ...typeStyles.label, fontSize: 8.5, fontWeight: fontWeight.regular, color: colors.inkMuted },
-  summaryValue: { ...typeStyles.name, fontSize: 19, fontWeight: fontWeight.semibold, color: colors.ink },
-  summaryHint: { ...typeStyles.label, fontSize: 7.5, fontWeight: fontWeight.regular, color: colors.inkFaint },
-
-  /* four equal columns sharing whatever the total block leaves */
+  summaryValue: { ...typeStyles.metricSmall, fontWeight: fontWeight.bold, color: colors.ink },
+  summaryLabel: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.inkMuted },
   breakdown: { flexDirection: 'row', flex: 1, minWidth: 0 },
-  breakItem: { flex: 1, alignItems: 'center', gap: 1, minWidth: 0 },
-  breakTile: {
-    width: 21,
-    height: 21,
-    borderRadius: 7,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  breakValue: { ...typeStyles.name, fontSize: 12.5, fontWeight: fontWeight.semibold, color: colors.ink },
-  breakLabel: { ...typeStyles.label, fontSize: 7.5, fontWeight: fontWeight.regular, color: colors.inkMuted },
+  breakItem: { flex: 1, alignItems: 'center', minWidth: 0 },
+  breakValue: { ...typeStyles.number, fontSize: 16, fontWeight: fontWeight.bold, color: colors.ink },
+  breakLabel: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.inkMuted },
 
-  /* sort + stamp */
-  toolRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  tool: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  toolText: { ...typeStyles.caption, fontSize: 11, fontWeight: fontWeight.regular, color: colors.inkMuted },
+  toolRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginTop: spacing.sm },
+  tool: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 40 },
+  toolText: { ...typeStyles.caption, color: colors.inkMuted },
 
-  /* task card */
   card: {
     flexDirection: 'row',
     backgroundColor: colors.surface.card,
@@ -352,75 +240,53 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surface.line,
     marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     overflow: 'hidden',
   },
   accent: { width: 4 },
-  cardBody: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 10, paddingVertical: 10 },
+  cardBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md },
   tile: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 11,
     backgroundColor: colors.surface.selected,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  title: { ...typeStyles.cardTitle, fontSize: 12.5, color: colors.ink },
-  patient: { ...typeStyles.name, fontSize: 11, fontWeight: fontWeight.regular, color: colors.inkMuted, marginTop: 1 },
-  caseId: { ...typeStyles.label, fontSize: 9.5, fontWeight: fontWeight.regular, color: colors.inkFaint, marginTop: 1 },
-  specChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
     alignSelf: 'flex-start',
-    backgroundColor: colors.surface.page,
-    borderRadius: radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 5,
-    maxWidth: '100%',
   },
-  specText: { ...typeStyles.label, fontSize: 9, fontWeight: fontWeight.regular, color: colors.inkMuted, flexShrink: 1 },
-
-  /* right rail: age + menu, opened stamp, the action */
-  right: { alignItems: 'flex-end', gap: 2, width: 106 },
-  ageRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  ageText: { ...typeStyles.label, fontSize: 10, color: colors.warn },
-  opened: { ...typeStyles.label, fontSize: 9, fontWeight: fontWeight.regular, color: colors.inkFaint },
+  title: { ...typeStyles.cardTitle, fontSize: 14, color: colors.ink },
+  patient: { ...typeStyles.bodySmall, color: colors.ink, marginTop: 1 },
+  caseId: { ...typeStyles.caption, fontSize: 11, color: colors.inkFaint, marginTop: 1 },
+  ageRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' },
+  ageText: { ...typeStyles.caption, fontSize: 11, color: colors.warn, fontWeight: fontWeight.semibold },
+  opened: { ...typeStyles.caption, fontSize: 11, color: colors.inkFaint },
   openBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    alignSelf: 'stretch',
-    marginTop: 7,
-    paddingVertical: 6,
+    gap: 2,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.surfie,
     backgroundColor: colors.white,
   },
-  openText: { ...typeStyles.button, fontSize: 11.5, color: colors.surfie },
+  openText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  /* notice */
   notice: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.warn,
     backgroundColor: colors.warnSoft,
   },
   noticeText: { ...typeStyles.caption, flex: 1, color: colors.warn },
-
-  /* empty */
-  empty: { paddingHorizontal: spacing.lg, paddingVertical: spacing.xxxl, alignItems: 'center' },
-  emptyText: { ...typeStyles.body, color: colors.inkMuted },
 });
 
 export default PendingTasksScreen;

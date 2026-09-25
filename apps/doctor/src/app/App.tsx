@@ -1,50 +1,44 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import DoctorLoginScreen from './screens/DoctorLoginScreen';
 import OnboardingFlow from './screens/onboarding/OnboardingFlow';
 import AppShell from './AppShell';
 import ErrorBoundary from './ErrorBoundary';
+import { PortalProvider } from '../components/Portal';
+import { ToastHost } from '../components/Toast';
+import { useStore } from '../state/store';
+import { leaveOnboarding, signIn, submitRegistration } from '../state/actions';
 
 /**
  * Doctor app root.
  *
- * Auth gate — doctors are created and approved by an administrator, so there
- * is no self-registration path.
+ * Doctors are created by an administrator, so there is no self-registration.
+ * Sign-in is a mobile number and a one-time code. A doctor whose details are
+ * already on file (the demo account, 98765 43210) lands on the Dashboard; a
+ * new account first completes onboarding — basic details, identity,
+ * qualifications and experience — and then reaches the app with its account
+ * under review on the Profile tab.
  *
- * After OTP the doctor completes onboarding: basic details, proof of identity,
- * qualifications and experience, all with their supporting documents, then a
- * review and submission for verification. Only after submitting do they reach
- * the five-tab shell, where Profile carries the account state — landing on a
- * dashboard of clinical work they are not yet verified for would be
- * misleading.
- *
- * Back out of the first onboarding step returns to sign-in, because there is
- * no account to return to until the submission is made.
- *
- * The boundary wraps the shell rather than sitting inside it, so a throw while
- * a screen mounts shows the error instead of leaving a white screen — in a
- * release build there is no other way to see what failed.
+ * The stage lives in the store, so signing out and back in as the same doctor
+ * keeps what they did this session. The error boundary sits outside
+ * everything: a throw while a screen mounts shows the error instead of a
+ * white screen, which in a release build is the only way to see what failed.
+ * Sheets, menus and toasts render in one host above the navigator.
  */
-
-type Stage = 'login' | 'onboarding' | 'shell';
-
 export const App = () => {
-  const [stage, setStage] = useState<Stage>('login');
+  const stage = useStore((s) => s.session.stage);
+  const mobile = useStore((s) => s.session.mobile);
 
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        {stage === 'login' && (
-          <DoctorLoginScreen onAuthenticated={() => setStage('onboarding')} />
-        )}
-        {stage === 'onboarding' && (
-          <OnboardingFlow
-            onSubmitted={() => setStage('shell')}
-            onExit={() => setStage('login')}
-          />
-        )}
-        {stage === 'shell' && <AppShell onLogout={() => setStage('login')} />}
+        <PortalProvider>
+          {stage === 'login' && <DoctorLoginScreen onAuthenticated={signIn} />}
+          {stage === 'onboarding' && <OnboardingFlow mobile={mobile} onSubmitted={submitRegistration} onExit={leaveOnboarding} />}
+          {stage === 'shell' && <AppShell />}
+          <ToastHost />
+        </PortalProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
   );

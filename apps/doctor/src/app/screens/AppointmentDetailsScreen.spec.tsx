@@ -1,118 +1,82 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, screen } from '@testing-library/react-native';
 
-import AppShell from '../AppShell';
 import AppointmentDetailsScreen from './AppointmentDetailsScreen';
-import { appointments, detailFor } from '../../data/doctor';
+import { getState } from '../../state/store';
+import { selectAppointment, selectRecord } from '../../state/selectors';
 
-const noop = () => undefined;
-const rahul = appointments.find((a) => a.id === 'a1')!;
-const cancelled = appointments.find((a) => a.state === 'cancelled')!;
+const setup = (id: string) => {
+  const props = {
+    appointment: selectAppointment(getState(), id)!,
+    onBack: jest.fn(),
+    onJoin: jest.fn(),
+    onMessage: jest.fn(),
+    onOpenDoc: jest.fn(),
+    onViewAllDocs: jest.fn(),
+    onRequestDoc: jest.fn(),
+    onOpenCase: jest.fn(),
+  };
+  return { props, ...render(<AppointmentDetailsScreen {...props} />) };
+};
 
-test('tapping an appointment row opens details full-screen', () => {
-  const { getByTestId, getByText, queryByTestId } = render(<AppShell onLogout={noop} initialAcknowledged />);
+/* the demo clock reads 11:45 AM; joining opens 15 minutes before the start */
 
-  fireEvent.press(getByTestId('tab-appointments'));
-  fireEvent.press(getByTestId('appt-a1'));
-
-  expect(getByText('Presenting Complaint')).toBeTruthy();
-  expect(getByText('Intake Summary')).toBeTruthy();
-  // no bottom navigation on this screen
-  expect(queryByTestId('tab-appointments')).toBeNull();
+test('an appointment inside its joining window can be joined', () => {
+  const { props } = setup('a1');
+  expect(screen.getByText('Join Consultation')).toBeTruthy();
+  expect(screen.getByText(/Starts in 15 min/)).toBeTruthy();
+  fireEvent.press(screen.getByTestId('join-consultation'));
+  expect(props.onJoin).toHaveBeenCalledWith('a1');
 });
 
-test('back returns to the appointments list', () => {
-  const { getByTestId, getByLabelText, getByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByTestId('tab-appointments'));
-  fireEvent.press(getByTestId('appt-a1'));
-  fireEvent.press(getByLabelText('Back'));
-
-  expect(getByText('Manage your patient consultations')).toBeTruthy();
-  expect(getByTestId('tab-appointments')).toBeTruthy();
+test('a later appointment says when joining opens, and cannot be joined yet', () => {
+  const { props } = setup('a6');
+  expect(screen.getByText('Opens at 5:15 PM')).toBeTruthy();
+  expect(screen.getByTestId('join-consultation')).toBeDisabled();
+  fireEvent.press(screen.getByTestId('join-consultation'));
+  expect(props.onJoin).not.toHaveBeenCalled();
 });
 
-test('the header carries the patient and both identifiers', () => {
-  const { getByText } = render(<AppointmentDetailsScreen appointment={rahul} onBack={noop} />);
-  const d = detailFor(rahul);
-
-  expect(getByText(rahul.name)).toBeTruthy();
-  expect(getByText(`${rahul.age} years · ${rahul.gender}`)).toBeTruthy();
-  // Rendered bare, without a "Patient ID" label — the green marks what it is.
-  expect(getByText(d.patientId)).toBeTruthy();
-  expect(getByText(d.appointmentId)).toBeTruthy();
-  expect(getByText('Confirmed')).toBeTruthy();
-  expect(getByText('15 May 2024')).toBeTruthy();
+test('an appointment on a later day shows the day, not a join button', () => {
+  setup('a7');
+  expect(screen.getByText('Starts Tomorrow')).toBeTruthy();
+  expect(screen.getByTestId('join-consultation')).toBeDisabled();
 });
 
-test('intake, documents and consent all render', () => {
-  const { getByText } = render(<AppointmentDetailsScreen appointment={rahul} onBack={noop} />);
-
-  ['Duration', 'Severity', 'Medication', 'Allergies', 'Other'].forEach((l) =>
-    expect(getByText(l)).toBeTruthy()
-  );
-  expect(getByText('2 weeks')).toBeTruthy();
-  expect(getByText('None known')).toBeTruthy();
-
-  expect(getByText('View all 3')).toBeTruthy();
-  expect(getByText('Previous Prescription')).toBeTruthy();
-  expect(getByText('Sleep Report')).toBeTruthy();
-  expect(getByText('Symptoms Journal')).toBeTruthy();
-
-  // What was consented to, then when it was accepted, then the status.
-  expect(getByText(/Consent for Video Consultation/)).toBeTruthy();
-  expect(getByText(/^Accepted on /)).toBeTruthy();
-  expect(getByText('Accepted')).toBeTruthy();
-  expect(getByText('Video follow-up')).toBeTruthy();
+test('a cancelled appointment says so', () => {
+  setup('a4');
+  expect(screen.getByText('Appointment cancelled')).toBeTruthy();
+  expect(screen.getByTestId('join-consultation')).toBeDisabled();
 });
 
-test('join is offered for a confirmed appointment only', () => {
-  const onJoin = jest.fn();
-  const ok = render(<AppointmentDetailsScreen appointment={rahul} onBack={noop} onJoin={onJoin} />);
-  expect(ok.getByText('Join Consultation')).toBeTruthy();
-  expect(ok.getByText('Starts in 15 min')).toBeTruthy();
-  fireEvent.press(ok.getByTestId('join-consultation'));
-  expect(onJoin).toHaveBeenCalledWith(rahul);
-
-  const off = render(<AppointmentDetailsScreen appointment={cancelled} onBack={noop} onJoin={onJoin} />);
-  expect(off.getByText('Consultation closed')).toBeTruthy();
-  fireEvent.press(off.getByTestId('join-consultation'));
-  // still one call: the disabled CTA does not fire
-  expect(onJoin).toHaveBeenCalledTimes(1);
+test('a held appointment opens its consultation record', () => {
+  const { props } = setup('a2');
+  fireEvent.press(screen.getByTestId('join-consultation'));
+  expect(props.onOpenCase).toHaveBeenCalledWith('a2');
 });
 
-test('an appointment with no authored detail still opens usably', () => {
-  const d = detailFor(cancelled);
-  expect(d.patientId).toMatch(/^PT-/);
-  expect(d.appointmentId).toMatch(/^APT-/);
-  expect(d.intake).toHaveLength(5);
-  // the fallback surfaces the presenting concern rather than leaving a blank
-  expect(d.intake[4].value).toBe(cancelled.concern);
-
-  const { getByText } = render(<AppointmentDetailsScreen appointment={cancelled} onBack={noop} />);
-  expect(getByText('Cancelled')).toBeTruthy();
-  expect(getByText('Intake Summary')).toBeTruthy();
+test('the patient’s own documents are listed and open by id', () => {
+  const { props } = setup('a2');
+  expect(screen.getByTestId('doc-d6')).toBeTruthy();
+  expect(screen.queryByTestId('doc-d1')).toBeNull();
+  fireEvent.press(screen.getByTestId('doc-d6'));
+  expect(props.onOpenDoc).toHaveBeenCalledWith('d6');
+  fireEvent.press(screen.getByTestId('view-all-docs'));
+  expect(props.onViewAllDocs).toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId('request-document'));
+  expect(props.onRequestDoc).toHaveBeenCalled();
 });
 
-// DOC-DOC-02: the doctor asks, the patient supplies. The option has to be
-// present when nothing has been uploaded — that is when it is most needed.
-test('uploaded documents offers a request option, whether or not any exist', () => {
-  const onRequestDoc = jest.fn();
-  const { getByTestId, getByText } = render(
-    <AppointmentDetailsScreen appointment={rahul} onBack={noop} onRequestDoc={onRequestDoc} />
-  );
-
-  expect(getByText('Uploaded Documents')).toBeTruthy();
-  fireEvent.press(getByTestId('request-document'));
-  expect(onRequestDoc).toHaveBeenCalled();
+test('the message button opens this patient’s conversation', () => {
+  const { props } = setup('a2');
+  fireEvent.press(screen.getByTestId('message-patient'));
+  expect(props.onMessage).toHaveBeenCalledTimes(1);
 });
 
-test('requesting a document from an appointment opens Request a Report', () => {
-  const { getByTestId, getByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByTestId('tab-appointments'));
-  fireEvent.press(getByTestId('appt-a1'));
-  fireEvent.press(getByTestId('request-document'));
-
-  expect(getByText('Request a Report')).toBeTruthy();
+test('medical history is a real field bound to this consultation’s record', () => {
+  setup('a1');
+  fireEvent.changeText(screen.getByTestId('medical-history'), 'No known drug allergies.');
+  expect(selectRecord(getState(), 'a1').allergies).toBe('No known drug allergies.');
+  // and never leaks into another patient's record
+  expect(selectRecord(getState(), 'a2').allergies).not.toBe('No known drug allergies.');
 });

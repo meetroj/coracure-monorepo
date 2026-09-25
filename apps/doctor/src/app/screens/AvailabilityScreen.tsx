@@ -1,1025 +1,895 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Switch, TextInput, Keyboard, type ScrollView } from 'react-native';
+
+import { colors, radius, spacing, shadow } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
+import { Icon, type IconName } from '../../components/Icon';
+import { Screen, Button, EmptyState, Note } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { BottomSheet, SheetActions } from '../../components/BottomSheet';
+import { CalendarSheet } from '../../components/form';
+import { confirm } from '../../components/confirm';
+import { toast } from '../../components/Toast';
+import { useStore, type AvailabilityState } from '../../state/store';
+import { saveAvailability } from '../../state/actions';
 import {
-  View, Text, StyleSheet, Pressable, Switch,
-  ScrollView, Modal, TextInput, ActivityIndicator,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { colors, radius, spacing, typography, shadow } from '../../theme/brand';
-import { Icon } from '../../components/Icon';
-import LogoWide from '../../assets/brand/logo-wide.svg';
-import { initialSchedule, leaves, type DaySchedule } from '../../data/doctor';
+  TODAY,
+  MONTHS_SHORT,
+  WEEKDAYS_SHORT,
+  isValidISODate,
+  daysFromToday,
+  fromISODate,
+  toISODate,
+  minutesToClock,
+} from '../../data/calendar';
+import type { DaySchedule, Leave, ScheduleOverride } from '../../data/doctor';
 
-const toMins = (v: string) => {
-  const m = v.trim().match(/^(0?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)$/i);
-  return m ? (Number(m[1]) % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0)) * 60 + Number(m[2]) : NaN;
+type Draft = Omit<AvailabilityState, 'savedAt'>;
+type Tab = 'schedule' | 'timeoff';
+
+const DURATIONS = [15, 20, 30, 45, 60];
+const BUFFERS = [0, 5, 10, 15, 20, 30];
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+/* --------------------------------- clock ---------------------------------- */
+
+/**
+ * Lenient clock parsing: "9:00 am", "09:00AM", "9 am", "0930 pm" and 24-hour
+ * "21:30" all read. Anything else is NaN.
+ */
+export const parseClock = (raw: string) => {
+  const v = raw.trim().toUpperCase().replace(/\./g, '');
+  let m = v.match(/^(\d{1,2})(?::?(\d{2}))?\s*(AM|PM)$/);
+  if (m) {
+    const h = Number(m[1]);
+    const min = m[2] ? Number(m[2]) : 0;
+    if (h < 1 || h > 12 || min > 59) return NaN;
+    return ((h % 12) + (m[3] === 'PM' ? 12 : 0)) * 60 + min;
+  }
+  m = v.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) {
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h > 23 || min > 59) return NaN;
+    return h * 60 + min;
+  }
+  return NaN;
 };
 
-const DAYS_SHORT: Record<string, string> = {
-  Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
-  Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun',
+/** A parsed clock in the one written form the schedule uses: "09:30 AM". */
+const normaliseClock = (raw: string) => {
+  const mins = parseClock(raw);
+  return Number.isNaN(mins) ? raw : minutesToClock(mins);
 };
 
-const OVERRIDE_DATA = [
-  { id: 'o1', date: 'Fri, 24 May', time: '09:00 AM – 02:00 PM' },
-  { id: 'o2', date: 'Tue, 28 May', time: '04:00 PM – 08:00 PM' },
-  { id: 'o3', date: 'Thu, 30 May', time: '09:00 AM – 01:00 PM' },
-];
+/** "10:00 AM - 01:00 PM" (hyphen, en dash or "to") → a range, or null. */
+const parseRange = (raw: string) => {
+  const parts = raw.split(/\s*(?:-|–|—|\bto\b)\s*/i).filter(Boolean);
+  if (parts.length !== 2) return null;
+  const from = parseClock(parts[0]);
+  const to = parseClock(parts[1]);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return { from, to };
+};
 
-const DURATION_OPTIONS = ['15 min', '20 min', '30 min', '45 min', '60 min'];
-const BUFFER_OPTIONS   = ['0 min', '5 min', '10 min', '15 min', '20 min', '30 min'];
-const HOURS   = ['12','01','02','03','04','05','06','07','08','09','10','11'];
-const MINUTES = ['00','15','30','45'];
-const PERIODS = ['AM','PM'];
+const rangeLabel = (from: string, to: string) => `${from} - ${to}`;
 
-/* ─── SectionHead ─────────────────────────────────────────────────────────── */
+const dayMonth = (iso: string) => {
+  const d = fromISODate(iso);
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+};
+const weekday = (iso: string) => WEEKDAYS_SHORT[fromISODate(iso).getDay()];
+
+const byDate = <T extends { date: string }>(list: T[]) => [...list].sort((a, b) => a.date.localeCompare(b.date));
+
+const clone = (a: Draft): Draft => ({
+  schedule: a.schedule.map((d) => ({ ...d, ranges: d.ranges.map((r) => ({ ...r })), modes: [...d.modes] })),
+  overrides: a.overrides.map((o) => ({ ...o })),
+  leave: a.leave.map((l) => ({ ...l })),
+  durationMin: a.durationMin,
+  bufferMin: a.bufferMin,
+});
+
+const same = (a: Draft, b: Draft) => JSON.stringify(clone(a)) === JSON.stringify(clone(b));
+
+/* ------------------------------- validation ------------------------------- */
+
+type DayCheck = { message?: string; badRanges: number[] };
+
+/** One message per day, naming the day, so the doctor knows where to look. */
+const checkDay = (d: DaySchedule, durationMin: number): DayCheck => {
+  if (!d.enabled) return { badRanges: [] };
+  if (d.ranges.length === 0) return { message: `Check ${d.day}: add hours, or turn the day off.`, badRanges: [] };
+  const parsed = d.ranges.map((r) => ({ from: parseClock(r.from), to: parseClock(r.to) }));
+  for (let i = 0; i < parsed.length; i++) {
+    const p = parsed[i];
+    if (Number.isNaN(p.from) || Number.isNaN(p.to))
+      return { message: `Check ${d.day}: enter range ${i + 1} as a time like 09:00 AM.`, badRanges: [i] };
+    if (p.from >= p.to) return { message: `Check ${d.day}: range ${i + 1} must end after it starts.`, badRanges: [i] };
+    if (p.to - p.from < durationMin)
+      return { message: `Check ${d.day}: range ${i + 1} is shorter than one ${durationMin}-minute consultation.`, badRanges: [i] };
+  }
+  const order = parsed.map((p, i) => ({ ...p, i })).sort((a, b) => a.from - b.from);
+  for (let k = 1; k < order.length; k++) {
+    if (order[k].from < order[k - 1].to)
+      return { message: `Check ${d.day}: ranges ${order[k - 1].i + 1} and ${order[k].i + 1} overlap.`, badRanges: [order[k - 1].i, order[k].i] };
+  }
+  return { badRanges: [] };
+};
+
+/* ------------------------------ small pieces ------------------------------ */
 
 const SectionHead = ({
-  icon, title, actionLabel, onAction,
+  icon,
+  title,
+  subtitle,
+  onAdd,
+  addTestID,
+  addLabel,
 }: {
-  icon: React.ReactNode;
+  icon: IconName;
   title: string;
-  actionLabel?: string;
-  onAction?: () => void;
+  subtitle?: string;
+  onAdd?: () => void;
+  addTestID?: string;
+  addLabel?: string;
 }) => (
-  <View style={s.sectionHeadRow}>
-    <View style={s.sectionHeadLeft}>
-      <View style={s.sectionHeadIcon}>{icon}</View>
-      <Text style={s.sectionTitle}>{title}</Text>
+  <View style={s.sectionHead}>
+    <View style={s.sectionIcon}>
+      <Icon name={icon} size={17} color={colors.surfie} />
     </View>
-    {!!actionLabel && (
-      <Pressable onPress={onAction} hitSlop={8} style={s.actionBtn}>
-        <Icon name="plus" size={13} color={colors.surfie} />
-        <Text style={s.actionBtnText}>{actionLabel}</Text>
+    <View style={s.flex}>
+      <Text style={s.sectionTitle} accessibilityRole="header">
+        {title}
+      </Text>
+      {!!subtitle && <Text style={s.sectionSub}>{subtitle}</Text>}
+    </View>
+    {!!onAdd && (
+      <Pressable
+        testID={addTestID}
+        onPress={onAdd}
+        hitSlop={8}
+        style={({ pressed }) => [s.addBtn, pressed && s.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={addLabel}
+      >
+        <Icon name="plus" size={14} color={colors.surfie} />
+        <Text style={s.addBtnText}>Add</Text>
       </Pressable>
     )}
   </View>
 );
 
-/* ─── TimeSelector ────────────────────────────────────────────────────────── */
+const TimeInput = ({
+  label,
+  value,
+  onChange,
+  invalid,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  invalid?: boolean;
+}) => {
+  const [focused, setFocused] = useState(false);
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        const n = normaliseClock(value);
+        if (n !== value) onChange(n);
+      }}
+      placeholder="09:00 AM"
+      placeholderTextColor={colors.inkFaint}
+      autoCapitalize="characters"
+      autoCorrect={false}
+      maxLength={9}
+      returnKeyType="done"
+      accessibilityLabel={label}
+      style={[s.time, focused && s.timeFocused, invalid && s.timeInvalid]}
+    />
+  );
+};
 
-const TimeSelector = ({ value, onPress, error }: {
-  value: string; onPress: () => void; error?: boolean;
+/* -------------------------------- editor ---------------------------------- */
+
+type Editor = { kind: 'exception' | 'leave'; id?: string; date: string; details: string; error?: string };
+
+const EntryEditor = ({
+  editor,
+  onChange,
+  onApply,
+  onClose,
+}: {
+  editor: Editor | null;
+  onChange: (patch: Partial<Editor>) => void;
+  onApply: () => void;
+  onClose: () => void;
+}) => {
+  const [calendar, setCalendar] = useState(false);
+  const exception = editor?.kind === 'exception';
+  const picked = editor && isValidISODate(editor.date) ? fromISODate(editor.date) : null;
+
+  return (
+    <>
+      <BottomSheet
+        visible={!!editor}
+        title={`${editor?.id ? 'Edit' : 'Add'} ${exception ? 'date exception' : 'time off'}`}
+        subtitle={exception ? 'Custom hours that replace the weekly pattern on this date.' : 'Patients cannot book you on this date.'}
+        onClose={onClose}
+        testID="entry-editor"
+        footer={<SheetActions testID="entry" onCancel={onClose} confirmLabel="Apply" onConfirm={onApply} />}
+      >
+        <Text style={s.editorLabel}>Date</Text>
+        <View style={[s.editorInput, !!editor?.error && s.editorInputInvalid]}>
+          <TextInput
+            value={editor?.date ?? ''}
+            onChangeText={(v) => onChange({ date: v.replace(/[^\d-]/g, '').slice(0, 10), error: undefined })}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.inkFaint}
+            keyboardType="numbers-and-punctuation"
+            autoCorrect={false}
+            accessibilityLabel="Entry date"
+            accessibilityHint="Year, month and day, for example 2026-10-12"
+            style={s.editorText}
+          />
+          <Pressable
+            testID="entry-calendar"
+            onPress={() => {
+              Keyboard.dismiss();
+              setCalendar(true);
+            }}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Pick date from calendar"
+          >
+            <Icon name="calendar" size={18} color={colors.surfie} />
+          </Pressable>
+        </View>
+
+        <Text style={[s.editorLabel, s.editorGap]}>{exception ? 'Hours' : 'Reason'}</Text>
+        <View style={s.editorInput}>
+          <TextInput
+            value={editor?.details ?? ''}
+            onChangeText={(v) => onChange({ details: v, error: undefined })}
+            placeholder={exception ? '09:00 AM - 01:00 PM' : 'e.g. Personal leave'}
+            placeholderTextColor={colors.inkFaint}
+            autoCapitalize={exception ? 'characters' : 'sentences'}
+            autoCorrect={!exception}
+            maxLength={60}
+            accessibilityLabel="Entry details"
+            accessibilityHint={exception ? 'Hours, for example 09:00 AM - 01:00 PM' : 'Reason for the time off'}
+            style={s.editorText}
+          />
+        </View>
+        {!!editor?.error && <Text style={s.editorError}>{editor.error}</Text>}
+      </BottomSheet>
+
+      <CalendarSheet
+        visible={calendar}
+        title="Select date"
+        selected={picked ? { day: picked.getDate(), month: picked.getMonth(), year: picked.getFullYear() } : null}
+        initialView={picked ? { month: picked.getMonth(), year: picked.getFullYear() } : { month: TODAY.getMonth(), year: TODAY.getFullYear() }}
+        isDisabled={(d) => new Date(d.year, d.month, d.day) < TODAY}
+        onPick={(d) => {
+          onChange({ date: toISODate(new Date(d.year, d.month, d.day)), error: undefined });
+          setCalendar(false);
+        }}
+        onClose={() => setCalendar(false)}
+        testID="entry"
+      />
+    </>
+  );
+};
+
+/* ---------------------------------- rows ---------------------------------- */
+
+const DateRow = ({
+  iso,
+  primary,
+  onPress,
+  onRemove,
+  removeLabel,
+  testID,
+  last,
+}: {
+  iso: string;
+  primary: string;
+  onPress: () => void;
+  onRemove: () => void;
+  removeLabel: string;
+  testID: string;
+  last: boolean;
 }) => (
   <Pressable
+    testID={testID}
     onPress={onPress}
-    style={[s.timeSelector, error && s.timeSelectorError]}
+    style={({ pressed }) => [s.dateRow, !last && s.rule, pressed && s.pressed]}
     accessibilityRole="button"
-    accessibilityLabel={value || 'Select time'}
+    accessibilityHint="Edit this entry"
   >
-    <Text style={[s.timeSelectorText, !value && s.timeSelectorPlaceholder]} numberOfLines={1}>
-      {value || '--:-- --'}
-    </Text>
-    <Icon name="chevronDown" size={12} color={colors.inkFaint} />
+    <View style={s.dateBlock}>
+      <Text style={s.dateWeekday}>{weekday(iso)}</Text>
+      <Text style={s.dateDay}>{dayMonth(iso)}</Text>
+    </View>
+    <View style={s.flex}>
+      <Text style={s.datePrimary}>{primary}</Text>
+      <Text style={s.dateIso}>{iso}</Text>
+    </View>
+    <Pressable onPress={onRemove} hitSlop={8} style={s.removeBtn} accessibilityRole="button" accessibilityLabel={removeLabel}>
+      <Icon name="close" size={16} color={colors.inkMuted} />
+    </Pressable>
   </Pressable>
 );
 
-/* ─── TimePicker ──────────────────────────────────────────────────────────── */
+/* --------------------------------- screen --------------------------------- */
 
-const TimePicker = ({ visible, initial, onConfirm, onClose }: {
-  visible: boolean; initial: string;
-  onConfirm: (v: string) => void; onClose: () => void;
+/**
+ * Availability — the doctor's weekly hours, date exceptions, time off and
+ * consultation settings.
+ *
+ * Everything edits a local draft; Save validates it and writes it to the
+ * store, where the dashboard's "today's hours" and the status sheet read it.
+ * Leaving with unsaved changes asks first (the route guards removal via
+ * `onDirtyChange`).
+ */
+export const AvailabilityScreen = ({
+  onBack,
+  onSaved,
+  onDirtyChange,
+}: {
+  onBack?: () => void;
+  onSaved?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const parsed = initial.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  const [hour,   setHour]   = useState(parsed ? parsed[1].padStart(2,'0') : '09');
-  const [minute, setMinute] = useState(parsed ? parsed[2] : '00');
-  const [period, setPeriod] = useState<'AM'|'PM'>(parsed ? (parsed[3].toUpperCase() as 'AM'|'PM') : 'AM');
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.backdrop} onPress={onClose}>
-        <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={s.sheetHandle} />
-          <Text style={s.sheetTitle}>Select Time</Text>
-          <View style={s.pickerRow}>
-            <View style={s.pickerCol}>
-              <Text style={s.pickerColLabel}>Hour</Text>
-              <ScrollView style={s.pickerScroll} showsVerticalScrollIndicator={false}>
-                {HOURS.map((h) => (
-                  <Pressable key={h} onPress={() => setHour(h)}
-                    style={[s.pickerItem, hour === h && s.pickerItemActive]}>
-                    <Text style={[s.pickerItemText, hour === h && s.pickerItemTextActive]}>{h}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-            <Text style={s.pickerColon}>:</Text>
-            <View style={s.pickerCol}>
-              <Text style={s.pickerColLabel}>Min</Text>
-              <ScrollView style={s.pickerScroll} showsVerticalScrollIndicator={false}>
-                {MINUTES.map((m) => (
-                  <Pressable key={m} onPress={() => setMinute(m)}
-                    style={[s.pickerItem, minute === m && s.pickerItemActive]}>
-                    <Text style={[s.pickerItemText, minute === m && s.pickerItemTextActive]}>{m}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-            <View style={s.pickerCol}>
-              <Text style={s.pickerColLabel}>Period</Text>
-              {PERIODS.map((p) => (
-                <Pressable key={p} onPress={() => setPeriod(p as 'AM'|'PM')}
-                  style={[s.pickerItem, period === p && s.pickerItemActive]}>
-                  <Text style={[s.pickerItemText, period === p && s.pickerItemTextActive]}>{p}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-          <Pressable style={s.sheetConfirm}
-            onPress={() => { onConfirm(`${hour}:${minute} ${period}`); onClose(); }}>
-            <Text style={s.sheetConfirmText}>Confirm</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
+  const saved = useStore((st) => st.availability);
+  const [draft, setDraft] = useState<Draft>(() => clone(saved));
+  const [tab, setTab] = useState<Tab>('schedule');
+  const [active, setActive] = useState<string | null>(null);
+  const [showErrors, setShowErrors] = useState(false);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [setting, setSetting] = useState<'duration' | 'buffer' | null>(null);
+
+  // where each day row sits in the scroll content, to bring a failing day into view
+  const scrollRef = useRef<ScrollView | null>(null);
+  const bodyY = useRef(0);
+  const cardY = useRef(0);
+  const dayY = useRef<Record<string, number>>({});
+
+  const dirty = !same(draft, saved);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  const checks = useMemo(
+    () => Object.fromEntries(draft.schedule.map((d) => [d.day, checkDay(d, draft.durationMin)])) as Record<string, DayCheck>,
+    [draft.schedule, draft.durationMin]
   );
-};
 
-/* ─── OverflowMenu ────────────────────────────────────────────────────────── */
-
-const OverflowMenu = ({ visible, onClose, onAddSlot, onCopy, onClear }: {
-  visible: boolean; onClose: () => void;
-  onAddSlot: () => void; onCopy: () => void; onClear: () => void;
-}) => {
-  if (!visible) return null;
-  const items = [
-    { label: 'Add another slot',   icon: 'plus'  as const, action: onAddSlot },
-    { label: 'Copy to other days', icon: 'copy'  as const, action: onCopy },
-    { label: 'Clear day',          icon: 'trash' as const, action: onClear, danger: true },
-  ];
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={s.menuBackdrop} onPress={onClose}>
-        <View style={s.menuCard}>
-          {items.map((item, i) => (
-            <Pressable key={item.label}
-              onPress={() => { item.action(); onClose(); }}
-              style={[s.menuItem, i < items.length - 1 && s.menuItemBorder]}>
-              <Icon name={item.icon} size={16} color={item.danger ? colors.danger : colors.ink} />
-              <Text style={[s.menuItemText, item.danger && s.menuItemDanger]}>{item.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </Pressable>
-    </Modal>
-  );
-};
-
-/* ─── BottomSheetSelector ─────────────────────────────────────────────────── */
-
-const BottomSheetSelector = ({ visible, title, options, selected, onSelect, onClose }: {
-  visible: boolean; title: string; options: string[];
-  selected: string; onSelect: (v: string) => void; onClose: () => void;
-}) => (
-  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-    <Pressable style={s.backdrop} onPress={onClose}>
-      <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
-        <View style={s.sheetHandle} />
-        <Text style={s.sheetTitle}>{title}</Text>
-        {options.map((opt) => (
-          <Pressable key={opt} onPress={() => { onSelect(opt); onClose(); }}
-            style={[s.sheetOption, opt === selected && s.sheetOptionActive]}>
-            <Text style={[s.sheetOptionText, opt === selected && s.sheetOptionTextActive]}>{opt}</Text>
-            {opt === selected && <Icon name="checkCircle" size={18} color={colors.surfie} />}
-          </Pressable>
-        ))}
-      </Pressable>
-    </Pressable>
-  </Modal>
-);
-
-/* ─── DayRow ──────────────────────────────────────────────────────────────── */
-
-const DayRow = ({ day, onToggle, onTimePress, onMenuPress, onAddSlot, errors }: {
-  day: DaySchedule; onToggle: () => void;
-  onTimePress: (rangeIdx: number, field: 'from'|'to') => void;
-  onMenuPress: () => void; onAddSlot: () => void;
-  errors: Record<string, string>;
-}) => {
-  const short = DAYS_SHORT[day.day] ?? day.day.slice(0, 3);
-  const dayErrors = Object.entries(errors).filter(([k]) => k.startsWith(day.day));
-  return (
-    <View style={s.dayRow}>
-      <View style={s.dayRowMain}>
-        <View style={s.dayLeft}>
-          <Text style={s.dayName}>{short}</Text>
-          <Switch
-            value={day.enabled}
-            onValueChange={onToggle}
-            trackColor={{ false: colors.surface.line, true: colors.paris }}
-            thumbColor={colors.white}
-            style={s.daySwitch}
-          />
-        </View>
-        <View style={s.dayCenter}>
-          {day.enabled ? (
-            <>
-              {day.ranges.map((r, i) => (
-                <View key={i} style={s.slotRow}>
-                  <TimeSelector value={r.from} onPress={() => onTimePress(i, 'from')}
-                    error={!!errors[`${day.day}-${i}-from`]} />
-                  <Text style={s.slotDash}>–</Text>
-                  <TimeSelector value={r.to} onPress={() => onTimePress(i, 'to')}
-                    error={!!errors[`${day.day}-${i}-to`]} />
-                </View>
-              ))}
-              <Pressable onPress={onAddSlot} hitSlop={8} style={s.addSlotBtn}>
-                <Icon name="plus" size={12} color={colors.surfie} />
-                <Text style={s.addSlotText}>Add slot</Text>
-              </Pressable>
-            </>
-          ) : (
-            <View style={s.notAvailBox}>
-              <Text style={s.notAvailText}>Not available</Text>
-            </View>
-          )}
-        </View>
-        <Pressable onPress={onMenuPress} hitSlop={12} style={s.moreBtn}
-          accessibilityLabel={`Options for ${day.day}`}>
-          <Icon name="moreVertical" size={18} color={colors.inkFaint} />
-        </Pressable>
-      </View>
-      {dayErrors.map(([k, msg]) => (
-        <Text key={k} style={s.inlineError}>{msg}</Text>
-      ))}
-    </View>
-  );
-};
-
-/* ─── AvailabilityScreen ──────────────────────────────────────────────────── */
-
-export const AvailabilityScreen = ({ onSaved }: { onSaved?: () => void }) => {
-  const insets = useSafeAreaInsets();
-
-  const [schedule,  setSchedule]  = useState<DaySchedule[]>(initialSchedule);
-  const [overrides, setOverrides] = useState(OVERRIDE_DATA);
-  const [leaveList, setLeaveList] = useState(leaves);
-  const [duration,  setDuration]  = useState('30 min');
-  const [buffer,    setBuffer]    = useState('15 min');
-  const [errors,    setErrors]    = useState<Record<string, string>>({});
-  const [saveState, setSaveState] = useState<'idle'|'loading'|'saved'>('idle');
-  /**
-   * Measured size of the Save button. Percentage width on the gradient <Rect>
-   * left a sliver of the button uncovered on the right, so the solid fallback
-   * showed through as a dark band past the arrow. Exact pixels avoid that.
-   */
-  const [saveBtnSize, setSaveBtnSize] = useState({ w: 0, h: 0 });
-  /** Tapped override card, highlighted in mint. Tap again to clear. */
-  const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
-
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [pickerTarget,  setPickerTarget]  = useState<{ day: string; rangeIdx: number; field: 'from'|'to' }|null>(null);
-  const [pickerInitial, setPickerInitial] = useState('');
-  const [menuDay,       setMenuDay]       = useState<string|null>(null);
-  const [durationSheet, setDurationSheet] = useState(false);
-  const [bufferSheet,   setBufferSheet]   = useState(false);
-  const [leaveModal,    setLeaveModal]    = useState(false);
-  const [leaveDate,     setLeaveDate]     = useState('');
-  const [leaveReason,   setLeaveReason]   = useState('');
-  const [leaveError,    setLeaveError]    = useState('');
-  const [overrideModal, setOverrideModal] = useState(false);
-  const [overrideDate,  setOverrideDate]  = useState('');
-  const [overrideTime,  setOverrideTime]  = useState('');
-  const [overrideError, setOverrideError] = useState('');
-
-  const markChanged = () => { setHasChanges(true); setSaveState('idle'); };
-
-  const toggleDay = (day: string) => {
-    setSchedule((prev) => prev.map((d) => d.day === day ? { ...d, enabled: !d.enabled } : d));
-    markChanged();
+  /* ---- weekly hours ---- */
+  const patchDay = (day: string, patch: (d: DaySchedule) => DaySchedule) => {
+    setActive(day);
+    setDraft((dr) => ({ ...dr, schedule: dr.schedule.map((d) => (d.day === day ? patch(d) : d)) }));
   };
+  const setRange = (day: string, i: number, field: 'from' | 'to', value: string) =>
+    patchDay(day, (d) => ({ ...d, ranges: d.ranges.map((r, k) => (k === i ? { ...r, [field]: value } : r)) }));
+  const addRange = (day: string) => patchDay(day, (d) => ({ ...d, enabled: true, ranges: [...d.ranges, { from: '', to: '' }] }));
+  const removeRange = (day: string, i: number) => patchDay(day, (d) => ({ ...d, ranges: d.ranges.filter((_, k) => k !== i) }));
+  const toggleDay = (day: string, on: boolean) =>
+    patchDay(day, (d) => ({
+      ...d,
+      enabled: on,
+      // a day switched on with nothing in it starts from a sensible block
+      ranges: on && d.ranges.length === 0 ? [{ from: '09:00 AM', to: '01:00 PM' }] : d.ranges,
+    }));
+  const copyToWeekdays = (src: DaySchedule) =>
+    confirm({
+      title: `Copy ${src.day}’s hours?`,
+      message: `Monday to Friday will use ${src.ranges.map((r) => rangeLabel(r.from, r.to)).join(', ')}.`,
+      confirmLabel: 'Copy',
+      onConfirm: () =>
+        setDraft((dr) => ({
+          ...dr,
+          schedule: dr.schedule.map((d) =>
+            WEEKDAYS.includes(d.day) && d.day !== src.day ? { ...d, enabled: true, ranges: src.ranges.map((r) => ({ ...r })) } : d
+          ),
+        })),
+    });
 
-  const openTimePicker = (day: string, rangeIdx: number, field: 'from'|'to') => {
-    const d = schedule.find((x) => x.day === day);
-    setPickerTarget({ day, rangeIdx, field });
-    setPickerInitial(d?.ranges[rangeIdx]?.[field] ?? '');
-    setPickerVisible(true);
-  };
+  /* ---- exceptions + time off ---- */
+  const openEditor = (e: Editor) => setEditor(e);
+  const applyEditor = () => {
+    if (!editor) return;
+    const date = editor.date.trim();
+    const fail = (error: string) => setEditor({ ...editor, error });
+    if (!isValidISODate(date)) return fail('Enter a valid date as YYYY-MM-DD.');
+    if (daysFromToday(date) < 0) return fail('Choose today or a later date.');
 
-  const applyTime = (value: string) => {
-    if (!pickerTarget) return;
-    const { day, rangeIdx, field } = pickerTarget;
-    setSchedule((prev) =>
-      prev.map((d) =>
-        d.day === day
-          ? { ...d, ranges: d.ranges.map((r, i) => i === rangeIdx ? { ...r, [field]: value } : r) }
-          : d
-      )
-    );
-    const d = schedule.find((x) => x.day === day);
-    if (d) {
-      const range = { ...d.ranges[rangeIdx], [field]: value };
-      const fromM = toMins(range.from);
-      const toM   = toMins(range.to);
-      const key   = `${day}-${rangeIdx}`;
-      if (range.from && range.to && !isNaN(fromM) && !isNaN(toM) && fromM >= toM) {
-        setErrors((e) => ({ ...e, [`${key}-to`]: 'End must be after start' }));
-      } else {
-        setErrors((e) => { const n = { ...e }; delete n[`${key}-from`]; delete n[`${key}-to`]; return n; });
-      }
+    if (editor.kind === 'exception') {
+      const range = parseRange(editor.details);
+      if (!range) return fail('Enter the hours as 09:00 AM - 01:00 PM.');
+      if (range.from >= range.to) return fail('The hours must end after they start.');
+      if (draft.overrides.some((o) => o.date === date && o.id !== editor.id))
+        return fail('This date already has an exception. Edit that one instead.');
+      const entry: ScheduleOverride = {
+        id: editor.id ?? `o-${Date.now().toString(36)}`,
+        date,
+        from: minutesToClock(range.from),
+        to: minutesToClock(range.to),
+      };
+      setDraft((dr) => ({
+        ...dr,
+        overrides: byDate(editor.id ? dr.overrides.map((o) => (o.id === editor.id ? entry : o)) : [...dr.overrides, entry]),
+      }));
+    } else {
+      const reason = editor.details.trim();
+      if (reason.length < 2) return fail('Add a reason, for example Personal leave.');
+      if (draft.leave.some((l) => l.date === date && l.id !== editor.id)) return fail('This date is already marked as time off.');
+      const entry: Leave = { id: editor.id ?? `l-${Date.now().toString(36)}`, date, reason };
+      setDraft((dr) => ({
+        ...dr,
+        leave: byDate(editor.id ? dr.leave.map((l) => (l.id === editor.id ? entry : l)) : [...dr.leave, entry]),
+      }));
     }
-    markChanged();
+    setEditor(null);
   };
+  const closeEditor = () => setEditor(null);
 
-  const addSlot = (day: string) => {
-    setSchedule((prev) =>
-      prev.map((d) => d.day === day ? { ...d, ranges: [...d.ranges, { from: '', to: '' }] } : d)
-    );
-    markChanged();
-  };
+  const removeException = (o: ScheduleOverride) =>
+    confirm({
+      title: 'Remove this exception?',
+      message: `${weekday(o.date)}, ${dayMonth(o.date)} goes back to your weekly hours.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: () => setDraft((dr) => ({ ...dr, overrides: dr.overrides.filter((x) => x.id !== o.id) })),
+    });
+  const removeLeave = (l: Leave) =>
+    confirm({
+      title: 'Remove this time off?',
+      message: `Patients will be able to book you on ${weekday(l.date)}, ${dayMonth(l.date)} again.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: () => setDraft((dr) => ({ ...dr, leave: dr.leave.filter((x) => x.id !== l.id) })),
+    });
 
-  const clearDay = (day: string) => {
-    setSchedule((prev) => prev.map((d) => d.day === day ? { ...d, ranges: [] } : d));
-    markChanged();
-  };
-
-  const copyToAll = (day: string) => {
-    const src = schedule.find((d) => d.day === day);
-    if (!src) return;
-    setSchedule((prev) =>
-      prev.map((d) =>
-        d.day !== day && d.day !== 'Saturday' && d.day !== 'Sunday'
-          ? { ...d, enabled: true, ranges: src.ranges.map((r) => ({ ...r })) }
-          : d
-      )
-    );
-    markChanged();
-  };
-
-  const copyLastWeek = () => {
-    const mon = schedule.find((d) => d.day === 'Monday');
-    if (!mon) return;
-    setSchedule((prev) =>
-      prev.map((d) =>
-        d.day !== 'Saturday' && d.day !== 'Sunday'
-          ? { ...d, enabled: true, ranges: mon.ranges.map((r) => ({ ...r })) }
-          : d
-      )
-    );
-    markChanged();
-  };
-
-  const validate = () => {
-    const errs: Record<string, string> = {};
-    for (const d of schedule.filter((x) => x.enabled)) {
-      if (!d.ranges.length) { errs[`${d.day}-empty`] = 'Add at least one time slot'; continue; }
-      const sorted = d.ranges
-        .map((r, i) => ({ ...r, i, fromM: toMins(r.from), toM: toMins(r.to) }))
-        .sort((a, b) => a.fromM - b.fromM);
-      for (const r of sorted) {
-        if (isNaN(r.fromM)) errs[`${d.day}-${r.i}-from`] = 'Invalid time';
-        if (isNaN(r.toM))   errs[`${d.day}-${r.i}-to`]   = 'Invalid time';
-        if (!isNaN(r.fromM) && !isNaN(r.toM) && r.fromM >= r.toM)
-          errs[`${d.day}-${r.i}-to`] = 'End must be after start';
-      }
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i].fromM < sorted[i - 1].toM)
-          errs[`${d.day}-${sorted[i].i}-from`] = 'Slots overlap';
-      }
-    }
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
+  /* ---- save ---- */
   const save = () => {
-    if (!validate()) return;
-    setSaveState('loading');
-    setTimeout(() => { setSaveState('saved'); setHasChanges(false); onSaved?.(); }, 1200);
+    const failing = draft.schedule.find((d) => checks[d.day]?.message);
+    if (failing) {
+      setShowErrors(true);
+      setActive(failing.day);
+      setTab('schedule');
+      toast.show('Fix the highlighted hours before saving', 'error');
+      const y = bodyY.current + cardY.current + (dayY.current[failing.day] ?? 0);
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.lg), animated: true }));
+      return;
+    }
+    // a day switched off keeps its hours, so switching it back on restores them
+    const next = clone(draft);
+    saveAvailability(next);
+    setDraft(next);
+    setShowErrors(false);
+    toast.show('Availability saved');
+    onSaved?.();
   };
 
-  const submitLeave = () => {
-    if (!leaveDate.trim())   { setLeaveError('Enter a date');   return; }
-    if (!leaveReason.trim()) { setLeaveError('Enter a reason'); return; }
-    setLeaveList((prev) => [...prev, { id: `l-${Date.now()}`, dateLabel: leaveDate.trim(), reason: leaveReason.trim() }]);
-    setLeaveDate(''); setLeaveReason(''); setLeaveError(''); setLeaveModal(false); markChanged();
-  };
-
-  const submitOverride = () => {
-    if (!overrideDate.trim()) { setOverrideError('Enter a date');       return; }
-    if (!overrideTime.trim()) { setOverrideError('Enter a time range'); return; }
-    setOverrides((prev) => [...prev, { id: `o-${Date.now()}`, date: overrideDate.trim(), time: overrideTime.trim() }]);
-    setOverrideDate(''); setOverrideTime(''); setOverrideError(''); setOverrideModal(false); markChanged();
-  };
+  const upcoming = (list: { date: string }[]) => list.filter((x) => daysFromToday(x.date) >= 0).length;
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
-
-      {/* header */}
-      <View style={s.header}>
-        <Pressable hitSlop={10} style={s.headerBtn} accessibilityRole="button" accessibilityLabel="Back">
-          <Icon name="arrowLeft" size={20} color={colors.ink} />
-        </Pressable>
-        <LogoWide width={120} height={30} />
-        <Pressable hitSlop={10} style={s.headerBtn} accessibilityRole="button" accessibilityLabel="Notifications">
-          <Icon name="bell" size={20} color={colors.ink} />
-          <View style={s.notifDot} />
-        </Pressable>
+    <Screen
+      testID="availability"
+      scrollRef={scrollRef}
+      header={
+        <ScreenHeader
+          onBack={onBack}
+          title="Availability"
+          subtitle="Your weekly hours, date exceptions and time off."
+          badge={
+            dirty ? (
+              <View style={s.unsaved}>
+                <View style={s.unsavedDot} />
+                <Text style={s.unsavedText}>Unsaved</Text>
+              </View>
+            ) : undefined
+          }
+        />
+      }
+      footer={
+        <View>
+          <Button testID="save-schedule" label="Save changes" onPress={save} disabled={!dirty} />
+          <Text style={s.savedAt}>{saved.savedAt ? `Last saved at ${saved.savedAt}` : 'Changes apply to new bookings once saved.'}</Text>
+        </View>
+      }
+    >
+      {/* tabs */}
+      <View style={s.tabs} accessibilityRole="tablist">
+        {(
+          [
+            ['schedule', 'Schedule'],
+            ['timeoff', `Time off (${upcoming(draft.leave)})`],
+          ] as const
+        ).map(([key, label]) => {
+          const on = tab === key;
+          return (
+            <Pressable
+              key={key}
+              testID={`tab-${key}`}
+              onPress={() => setTab(key)}
+              style={[s.tab, on && s.tabOn]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+            >
+              <Text style={[s.tabText, on && s.tabTextOn]}>{label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      <ScrollView
-        style={s.scroll}
-        // The tab bar below already absorbs `insets.bottom`; adding it here too
-        // double-padded and left a dead gap under the Save button.
-        contentContainerStyle={s.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* page title */}
-        <View style={s.pageTitleWrap}>
-          <Text style={s.pageTitle}>Availability Schedule</Text>
-          <Text style={s.pageSubtitle}>Manage your weekly availability and appointment settings.</Text>
-          {hasChanges && (
-            <View style={s.unsavedBadge}>
-              <View style={s.unsavedDot} />
-              <Text style={s.unsavedText}>Unsaved changes</Text>
+      {tab === 'schedule' ? (
+        <View style={s.body} onLayout={(e) => (bodyY.current = e.nativeEvent.layout.y)}>
+          {/* weekly hours */}
+          <SectionHead icon="calendar" title="Weekly hours" subtitle="Tap a day to add hours or copy them." />
+          <View style={s.card} onLayout={(e) => (cardY.current = e.nativeEvent.layout.y)}>
+            {draft.schedule.map((d, idx) => {
+              const on = active === d.day;
+              const check = checks[d.day];
+              const err = showErrors ? check?.message : undefined;
+              return (
+                <View
+                  key={d.day}
+                  testID={`day-${d.short}`}
+                  style={[s.day, idx < draft.schedule.length - 1 && s.rule, on && s.dayOn]}
+                  onLayout={(e) => (dayY.current[d.day] = e.nativeEvent.layout.y)}
+                >
+                  <View style={s.dayHead}>
+                    <Pressable
+                      onPress={() => setActive(on ? null : d.day)}
+                      style={s.dayNameBtn}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: on }}
+                      accessibilityLabel={`${d.day}, ${d.enabled ? d.ranges.map((r) => rangeLabel(r.from, r.to)).join(', ') : 'unavailable'}`}
+                    >
+                      <Text style={[s.dayName, !d.enabled && s.dayNameOff]}>{d.day}</Text>
+                      {!d.enabled && <Text style={s.dayOff}>Unavailable</Text>}
+                    </Pressable>
+                    <Switch
+                      value={d.enabled}
+                      onValueChange={(v) => toggleDay(d.day, v)}
+                      trackColor={{ false: colors.surface.inputBorder, true: colors.paris }}
+                      thumbColor={colors.white}
+                      ios_backgroundColor={colors.surface.inputBorder}
+                      accessibilityLabel={`Available on ${d.day}`}
+                    />
+                  </View>
+
+                  {d.enabled &&
+                    d.ranges.map((r, i) => {
+                      const bad = showErrors && !!check?.badRanges.includes(i);
+                      return (
+                        <View key={i} style={s.rangeRow}>
+                          <TimeInput
+                            label={`Start time ${d.day} ${i + 1}`}
+                            value={r.from}
+                            onChange={(v) => setRange(d.day, i, 'from', v)}
+                            invalid={bad}
+                          />
+                          <Text style={s.rangeDash}>–</Text>
+                          <TimeInput
+                            label={`End time ${d.day} ${i + 1}`}
+                            value={r.to}
+                            onChange={(v) => setRange(d.day, i, 'to', v)}
+                            invalid={bad}
+                          />
+                          {d.ranges.length > 1 ? (
+                            <Pressable
+                              onPress={() => removeRange(d.day, i)}
+                              hitSlop={8}
+                              style={s.rangeRemove}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Remove ${d.day} range ${i + 1}`}
+                            >
+                              <Icon name="close" size={15} color={colors.inkMuted} />
+                            </Pressable>
+                          ) : (
+                            <View style={s.rangeRemove} />
+                          )}
+                        </View>
+                      );
+                    })}
+
+                  {!!err && <Text style={s.dayError}>{err}</Text>}
+
+                  {on && d.enabled && (
+                    <View style={s.dayActions}>
+                      <Pressable
+                        testID={`add-hours-${d.short}`}
+                        onPress={() => addRange(d.day)}
+                        hitSlop={6}
+                        style={s.dayAction}
+                        accessibilityRole="button"
+                      >
+                        <Icon name="plus" size={14} color={colors.surfie} />
+                        <Text style={s.dayActionText}>Add hours</Text>
+                      </Pressable>
+                      {!check?.message && d.ranges.length > 0 && (
+                        <Pressable
+                          testID={`copy-hours-${d.short}`}
+                          onPress={() => copyToWeekdays(d)}
+                          hitSlop={6}
+                          style={s.dayAction}
+                          accessibilityRole="button"
+                        >
+                          <Icon name="copy" size={14} color={colors.surfie} />
+                          <Text style={s.dayActionText}>Copy to Mon–Fri</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* date exceptions */}
+          <SectionHead
+            icon="clock"
+            title="Date exceptions"
+            subtitle="Different hours on a specific date."
+            onAdd={() => openEditor({ kind: 'exception', date: '', details: '' })}
+            addTestID="add-exception"
+            addLabel="Add date exception"
+          />
+          {draft.overrides.length === 0 ? (
+            <View style={s.card}>
+              <Text style={s.empty}>No exceptions. Your weekly hours apply every week.</Text>
+            </View>
+          ) : (
+            <View style={s.card}>
+              {draft.overrides.map((o, i) => (
+                <DateRow
+                  key={o.id}
+                  testID={`exception-${o.id}`}
+                  iso={o.date}
+                  primary={rangeLabel(o.from, o.to)}
+                  onPress={() => openEditor({ kind: 'exception', id: o.id, date: o.date, details: rangeLabel(o.from, o.to) })}
+                  onRemove={() => removeException(o)}
+                  removeLabel={`Remove exception on ${o.date}`}
+                  last={i === draft.overrides.length - 1}
+                />
+              ))}
             </View>
           )}
-        </View>
 
-        {/* ── 1. Weekly Schedule ── */}
-        <SectionHead
-          icon={<Icon name="calendar" size={17} color={colors.surfie} />}
-          title="Weekly Schedule"
-          actionLabel="Copy last week"
-          onAction={copyLastWeek}
-        />
-        <View style={s.card}>
-          {schedule.map((day, idx) => (
-            <View key={day.day}>
-              <DayRow
-                day={day}
-                onToggle={() => toggleDay(day.day)}
-                onTimePress={(ri, field) => openTimePicker(day.day, ri, field)}
-                onMenuPress={() => setMenuDay(day.day)}
-                onAddSlot={() => addSlot(day.day)}
-                errors={errors}
-              />
-              {idx < schedule.length - 1 && <View style={s.rowDivider} />}
-            </View>
-          ))}
-        </View>
-
-        {/* ── 2. Date-wise Overrides ── */}
-        <SectionHead
-          icon={<Icon name="calendar" size={17} color={colors.surfie} />}
-          title="Date-wise Overrides"
-          actionLabel="Add Override"
-          onAction={() => setOverrideModal(true)}
-        />
-        {/* No outer card — the override cards below are the cards. */}
-        <View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.overrideScroll}
-          >
-            {overrides.map((o) => (
+          {/* appointment settings */}
+          <SectionHead icon="settings" title="Appointment settings" />
+          <View style={s.settings}>
+            {(
+              [
+                ['duration', 'clock', 'Consultation duration', 'Per appointment', draft.durationMin],
+                ['buffer', 'hourglass', 'Buffer time', 'Between appointments', draft.bufferMin],
+              ] as const
+            ).map(([key, icon, label, sub, value]) => (
               <Pressable
-                key={o.id}
-                onPress={() => setSelectedOverride((cur) => (cur === o.id ? null : o.id))}
+                key={key}
+                testID={`setting-${key}`}
+                onPress={() => setSetting(key)}
+                style={({ pressed }) => [s.setting, pressed && s.pressed]}
                 accessibilityRole="button"
-                accessibilityState={{ selected: selectedOverride === o.id }}
-                accessibilityLabel={`${o.date}, ${o.time}`}
-                style={({ pressed }) => [
-                  s.overrideCard,
-                  (pressed || selectedOverride === o.id) && s.overrideCardSelected,
-                ]}
+                accessibilityLabel={`${label}, ${value} minutes`}
               >
-                <Text style={s.overrideDate}>{o.date}</Text>
-                <Text style={s.overrideTime}>{o.time}</Text>
-                <View style={s.overrideTag}>
-                  <View style={s.overrideTagDot} />
-                  <Text style={s.overrideTagText}>Custom</Text>
+                <View style={s.settingIcon}>
+                  <Icon name={icon} size={17} color={colors.surfie} />
+                </View>
+                <Text style={s.settingLabel}>{label}</Text>
+                <Text style={s.settingSub}>{sub}</Text>
+                <View style={s.settingValueRow}>
+                  <Text style={s.settingValue}>{value} min</Text>
+                  <Icon name="chevronDown" size={14} color={colors.inkMuted} />
                 </View>
               </Pressable>
             ))}
-          </ScrollView>
-        </View>
-
-        {/* ── 3. Appointment Settings ── */}
-        <SectionHead
-          icon={<Icon name="settings" size={17} color={colors.surfie} />}
-          title="Appointment Settings"
-        />
-        {/* No outer card — `settingsRow` already draws its own bordered card. */}
-        <View>
-          <View style={s.settingsRow}>
-            <Pressable style={s.settingCard} onPress={() => setDurationSheet(true)}>
-              <View style={s.settingTopRow}>
-                <View style={s.settingIconWrap}>
-                  <Icon name="clock" size={17} color={colors.surfie} />
-                </View>
-                <View style={s.settingLabelWrap}>
-                  <Text style={s.settingLabel}>Consultation Duration</Text>
-                  <Text style={s.settingSubLabel}>Per appointment</Text>
-                  <View style={s.settingValueRow}>
-                    <Text style={s.settingValue}>{duration}</Text>
-                    <Icon name="chevronDown" size={14} color={colors.inkFaint} />
-                  </View>
-                </View>
-              </View>
-            </Pressable>
-            <Pressable style={s.settingCard} onPress={() => setBufferSheet(true)}>
-              <View style={s.settingTopRow}>
-                <View style={s.settingIconWrap}>
-                  <Icon name="flask" size={17} color={colors.surfie} />
-                </View>
-                <View style={s.settingLabelWrap}>
-                  <Text style={s.settingLabel}>Buffer Time</Text>
-                  <Text style={s.settingSubLabel}>Between appointments</Text>
-                  <View style={s.settingValueRow}>
-                    <Text style={s.settingValue}>{buffer}</Text>
-                    <Icon name="chevronDown" size={14} color={colors.inkFaint} />
-                  </View>
-                </View>
-              </View>
-            </Pressable>
           </View>
         </View>
-
-        {/* ── 4. Blocked Dates & Leave ── */}
-        <SectionHead
-          icon={<Icon name="banCircle" size={17} color={colors.surfie} />}
-          title="Blocked Dates & Leave"
-          actionLabel="Add Leave"
-          onAction={() => setLeaveModal(true)}
-        />
-        {/* No outer card — the leave chips below are the cards. */}
-        <View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.leaveScroll}>
-            {leaveList.map((l) => (
-              <View key={l.id} style={s.leaveChip}>
-                <View style={s.leaveChipBody}>
-                  <Text style={s.leaveChipDate}>{l.dateLabel}</Text>
-                  <Text style={s.leaveChipReason}>{l.reason}</Text>
-                </View>
-                <Pressable
-                  onPress={() => { setLeaveList((prev) => prev.filter((x) => x.id !== l.id)); markChanged(); }}
-                  hitSlop={8}
-                  accessibilityLabel={`Remove ${l.dateLabel}`}
-                >
-                  <Icon name="close" size={14} color={colors.inkFaint} />
-                </Pressable>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ── Save CTA ── */}
-        <Pressable
-          onPress={save}
-          disabled={saveState === 'loading'}
-          style={({ pressed }) => [s.saveBtn, pressed && s.saveBtnPressed]}
-          accessibilityRole="button"
-          accessibilityLabel="Save and publish schedule"
-          onLayout={(e) => {
-            const { width, height } = e.nativeEvent.layout;
-            setSaveBtnSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
-          }}
-        >
-          {/* Surfie → Paris gradient fill. Painted as an SVG rect behind the
-              label because React Native has no gradient background; both stops
-              are brand greens, so no new hue is introduced. */}
-          {saveBtnSize.w > 0 && (
-            <Svg style={StyleSheet.absoluteFill} width={saveBtnSize.w} height={saveBtnSize.h}>
-              <Defs>
-                {/* The ramp finishes at 80%, just left of the arrow circle, so
-                    the arrow and the strip beyond it sit on one flat Paris
-                    Green rather than a still-shifting mid-tone. */}
-                <LinearGradient id="saveGrad" x1="0" y1="0" x2="1" y2="0">
-                  <Stop offset="0" stopColor={colors.surfie} />
-                  <Stop offset="0.8" stopColor={colors.paris} />
-                  <Stop offset="1" stopColor={colors.paris} />
-                </LinearGradient>
-              </Defs>
-              <Rect x={0} y={0} width={saveBtnSize.w} height={saveBtnSize.h} fill="url(#saveGrad)" />
-            </Svg>
+      ) : (
+        <View style={s.body}>
+          <SectionHead
+            icon="banCircle"
+            title="Time off"
+            subtitle="Dates you are unavailable for bookings."
+            onAdd={() => openEditor({ kind: 'leave', date: '', details: '' })}
+            addTestID="add-leave"
+            addLabel="Add time off"
+          />
+          {draft.leave.length === 0 ? (
+            <EmptyState icon="calendar" title="No time off planned" body="Add a date to stop new bookings on that day." />
+          ) : (
+            <View style={s.card}>
+              {draft.leave.map((l, i) => (
+                <DateRow
+                  key={l.id}
+                  testID={`leave-${l.id}`}
+                  iso={l.date}
+                  primary={l.reason}
+                  onPress={() => openEditor({ kind: 'leave', id: l.id, date: l.date, details: l.reason })}
+                  onRemove={() => removeLeave(l)}
+                  removeLabel={`Remove leave on ${l.date}`}
+                  last={i === draft.leave.length - 1}
+                />
+              ))}
+            </View>
           )}
+          <Note icon="info" style={s.noteReset}>
+            Appointments already booked on these dates stay booked. Raise an issue from Help & Support to move them.
+          </Note>
+        </View>
+      )}
 
-          {/* Padding lives here, not on the Pressable: an absolutely-positioned
-              child is laid out inside the parent's padding, which inset the
-              gradient and exposed the fallback colour past the arrow. */}
-          <View style={s.saveBtnContent}>
-            {saveState === 'loading' ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <>
-                <Text style={s.saveBtnText}>
-                  {saveState === 'saved' ? 'Schedule Saved!' : 'Save & Publish Schedule'}
-                </Text>
-                <View style={s.saveBtnCircle}>
-                  <Icon
-                    name={saveState === 'saved' ? 'checkCircle' : 'arrowRight'}
-                    size={20}
-                    color={colors.surfie}
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </Pressable>
-      </ScrollView>
+      <EntryEditor editor={editor} onChange={(patch) => setEditor((e) => (e ? { ...e, ...patch } : e))} onApply={applyEditor} onClose={closeEditor} />
 
-      {/* modals */}
-      <TimePicker
-        visible={pickerVisible}
-        initial={pickerInitial}
-        onConfirm={applyTime}
-        onClose={() => setPickerVisible(false)}
-      />
-      <OverflowMenu
-        visible={!!menuDay}
-        onClose={() => setMenuDay(null)}
-        onAddSlot={() => menuDay && addSlot(menuDay)}
-        onCopy={() => menuDay && copyToAll(menuDay)}
-        onClear={() => menuDay && clearDay(menuDay)}
-      />
-      <BottomSheetSelector
-        visible={durationSheet}
-        title="Consultation Duration"
-        options={DURATION_OPTIONS}
-        selected={duration}
-        onSelect={(v) => { setDuration(v); markChanged(); }}
-        onClose={() => setDurationSheet(false)}
-      />
-      <BottomSheetSelector
-        visible={bufferSheet}
-        title="Buffer Time"
-        options={BUFFER_OPTIONS}
-        selected={buffer}
-        onSelect={(v) => { setBuffer(v); markChanged(); }}
-        onClose={() => setBufferSheet(false)}
-      />
-
-      {/* Add Leave modal */}
-      <Modal visible={leaveModal} transparent animationType="slide" onRequestClose={() => setLeaveModal(false)}>
-        <Pressable style={s.backdrop} onPress={() => setLeaveModal(false)}>
-          <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Add Leave</Text>
-            <Text style={s.inputLabel}>Date (e.g. 25 May 2024)</Text>
-            <TextInput style={s.textInput} value={leaveDate} onChangeText={setLeaveDate}
-              placeholder="25 May 2024" placeholderTextColor={colors.inkFaint} />
-            <Text style={s.inputLabel}>Reason</Text>
-            <TextInput style={s.textInput} value={leaveReason} onChangeText={setLeaveReason}
-              placeholder="Personal Leave" placeholderTextColor={colors.inkFaint} />
-            {!!leaveError && <Text style={s.modalError}>{leaveError}</Text>}
-            <Pressable style={s.sheetConfirm} onPress={submitLeave}>
-              <Text style={s.sheetConfirmText}>Add Leave</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Add Override modal */}
-      <Modal visible={overrideModal} transparent animationType="slide" onRequestClose={() => setOverrideModal(false)}>
-        <Pressable style={s.backdrop} onPress={() => setOverrideModal(false)}>
-          <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Add Override</Text>
-            <Text style={s.inputLabel}>Date (e.g. Fri, 24 May)</Text>
-            <TextInput style={s.textInput} value={overrideDate} onChangeText={setOverrideDate}
-              placeholder="Fri, 24 May" placeholderTextColor={colors.inkFaint} />
-            <Text style={s.inputLabel}>Time range (e.g. 09:00 AM – 02:00 PM)</Text>
-            <TextInput style={s.textInput} value={overrideTime} onChangeText={setOverrideTime}
-              placeholder="09:00 AM – 02:00 PM" placeholderTextColor={colors.inkFaint} />
-            {!!overrideError && <Text style={s.modalError}>{overrideError}</Text>}
-            <Pressable style={s.sheetConfirm} onPress={submitOverride}>
-              <Text style={s.sheetConfirmText}>Add Override</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+      <BottomSheet
+        visible={!!setting}
+        title={setting === 'duration' ? 'Consultation duration' : 'Buffer time'}
+        onClose={() => setSetting(null)}
+        testID="setting-sheet"
+      >
+        <View style={s.optionBox}>
+          {(setting === 'duration' ? DURATIONS : BUFFERS).map((m, i, list) => {
+            const current = setting === 'duration' ? draft.durationMin : draft.bufferMin;
+            const on = current === m;
+            return (
+              <Pressable
+                key={m}
+                testID={`setting-option-${m}`}
+                onPress={() => {
+                  setDraft((dr) => (setting === 'duration' ? { ...dr, durationMin: m } : { ...dr, bufferMin: m }));
+                  setSetting(null);
+                }}
+                style={[s.option, i < list.length - 1 && s.rule, on && s.optionOn]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+              >
+                <Text style={[s.optionText, on && s.optionTextOn]}>{m === 0 ? 'No buffer' : `${m} minutes`}</Text>
+                {on && <Icon name="check" size={18} weight={3} color={colors.paris} />}
+              </Pressable>
+            );
+          })}
+        </View>
+      </BottomSheet>
+    </Screen>
   );
 };
-
-/* ─── styles ──────────────────────────────────────────────────────────────── */
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface.page },
+  flex: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.8 },
+  rule: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  body: { paddingHorizontal: spacing.lg },
+  noteReset: { marginHorizontal: 0 },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.surface.page,
-    borderBottomWidth: 1, borderBottomColor: colors.surface.line,
-  },
-  headerBtn: {
-    // Matches the shared `IconButton` squircle in components/ui.tsx.
-    width: 38, height: 38, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.white,
-    borderWidth: 1, borderColor: colors.surface.line,
-  },
-  notifDot: {
-    position: 'absolute', top: 8, right: 9,
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: colors.paris,
-    borderWidth: 1.5, borderColor: colors.white,
-  },
-
-  scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.lg },
-
-  pageTitleWrap: { marginBottom: spacing.sm },
-  pageTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl, fontWeight: '700', color: colors.ink,
-  },
-  pageSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm, color: colors.inkMuted, marginTop: 3,
-  },
-  unsavedBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
+  unsaved: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.warnSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
   unsavedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.warn },
-  unsavedText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.warn, fontWeight: '600',
-  },
+  unsavedText: { ...typeStyles.caption, color: colors.warn, fontWeight: fontWeight.semibold },
+  savedAt: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'center', marginTop: 6 },
 
-  /* section heading — sits ABOVE the card */
-  sectionHeadRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: spacing.lg, marginBottom: spacing.sm, gap: spacing.sm,
-  },
-  sectionHeadLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
-  sectionHeadIcon: {
-    width: 34, height: 34, borderRadius: radius.md,
-    // White chip with a hairline, not a mint fill.
+  tabs: { flexDirection: 'row', marginHorizontal: spacing.lg, backgroundColor: colors.surface.mintSoft, borderRadius: radius.pill, padding: 4 },
+  tab: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
+  tabOn: { backgroundColor: colors.surfie },
+  tabText: { ...typeStyles.status, color: colors.inkMuted },
+  tabTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
+
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xl, marginBottom: spacing.sm },
+  sectionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.md,
     backgroundColor: colors.white,
-    borderWidth: 1, borderColor: colors.surface.line,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionHeadText: { flex: 1 },
-  sectionTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md, fontWeight: '700', color: colors.ink,
+  sectionTitle: { ...typeStyles.cardTitle, color: colors.ink },
+  sectionSub: { ...typeStyles.caption, color: colors.inkMuted },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    backgroundColor: colors.white,
   },
-  sectionSubtitle: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted, marginTop: 1,
-  },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: spacing.sm, paddingVertical: 6,
-    // Rounded rect, not a capsule — matches the squircle header buttons.
-    // Border is the same hairline the cards use, so the button reads as quiet
-    // chrome; the green is carried by the label and the `+` alone.
-    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.surface.line, flexShrink: 0,
-  },
-  actionBtnText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, fontWeight: '700', color: colors.surfie,
-  },
+  addBtnText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  /* card */
   card: {
     backgroundColor: colors.white,
-    borderRadius: radius.card, borderWidth: 1, borderColor: colors.surface.line,
-    padding: spacing.lg, ...shadow.card,
-  },
-
-  rowDivider: { height: 1, backgroundColor: colors.surface.line, marginVertical: 2 },
-
-  /* day row */
-  dayRow: { paddingVertical: spacing.sm },
-  dayRowMain: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  dayLeft: { alignItems: 'center', width: 44, paddingTop: 2 },
-  dayName: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm, fontWeight: '700', color: colors.ink, marginBottom: 4,
-  },
-  daySwitch: { transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] },
-  dayCenter: { flex: 1, gap: 5 },
-  slotRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  slotDash: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm, color: colors.inkFaint, flexShrink: 0,
-  },
-  notAvailBox: {
-    height: 38, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.surface.line, backgroundColor: colors.surface.page,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  notAvailText: {
-    fontFamily: typography.body.family, fontSize: typography.size.xs, color: colors.inkFaint,
-  },
-  addSlotBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 3 },
-  addSlotText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.surfie, fontWeight: '600',
-  },
-  moreBtn: { paddingTop: 10, paddingLeft: 4, flexShrink: 0 },
-  inlineError: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.danger,
-    marginTop: 3, marginLeft: 44 + spacing.sm,
-  },
-
-  /* time selector */
-  timeSelector: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    height: 38, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.surface.inputBorder, paddingHorizontal: spacing.sm,
-    backgroundColor: colors.white, minWidth: 0, gap: 2,
-  },
-  timeSelectorError: { borderColor: colors.danger },
-  timeSelectorText: {
-    fontFamily: typography.body.family, fontSize: 12, color: colors.ink, flex: 1,
-  },
-  timeSelectorPlaceholder: { color: colors.inkFaint },
-
-  /* overrides */
-  overrideScroll: { gap: spacing.sm, paddingRight: spacing.xs },
-  overrideCard: {
-    width: 150, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.surface.line, padding: spacing.md,
-    backgroundColor: colors.white,
-  },
-  // Selected/pressed: mint fill with a brand-green edge.
-  overrideCardSelected: {
-    backgroundColor: colors.surface.mintSoft,
-    borderColor: colors.paris,
-  },
-  overrideDate: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.sm, fontWeight: '700', color: colors.ink,
-  },
-  overrideTime: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted, marginTop: 3,
-  },
-  overrideTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm },
-  overrideTagDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.paris },
-  overrideTagText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.surfie, fontWeight: '600',
-  },
-
-  /* appointment settings */
-  // Two standalone cards side by side, not one split box.
-  settingsRow: { flexDirection: 'row', gap: spacing.sm },
-  settingCard: {
-    flex: 1, padding: spacing.md,
-    borderRadius: radius.md, borderWidth: 1, borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-  },
-  /* icon + label side by side */
-  settingTopRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
-  },
-  settingIconWrap: {
-    width: 32, height: 32, borderRadius: radius.sm,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    marginTop: 6,
-  },
-  settingLabelWrap: { flex: 1 },
-  settingLabel: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, fontWeight: '600', color: colors.ink,
-  },
-  settingSubLabel: {
-    fontFamily: typography.body.family, fontSize: 11, color: colors.inkFaint, marginTop: 1,
-  },
-  settingValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  settingValue: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg, fontWeight: '700', color: colors.ink,
-  },
-
-  /* leave chips — single horizontal swipeable row */
-  leaveScroll: { gap: spacing.sm, paddingRight: spacing.xs },
-  leaveChip: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    borderWidth: 1, borderColor: colors.surface.line, borderRadius: radius.md,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    backgroundColor: colors.white,
-  },
-  leaveChipBody: { flex: 1 },
-  leaveChipDate: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm, fontWeight: '700', color: colors.ink,
-  },
-  leaveChipReason: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted, marginTop: 1,
-  },
-
-  /* save button */
-  saveBtn: {
-    marginTop: spacing.xl, height: 56, borderRadius: radius.input,
-    // `overflow: hidden` clips the gradient rect to the radius. No padding
-    // here — see `saveBtnContent`.
-    overflow: 'hidden',
-    backgroundColor: colors.surfie,
-  },
-  saveBtnContent: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: spacing.lg, gap: spacing.sm,
-  },
-  saveBtnPressed: { opacity: 0.88 },
-  saveBtnText: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md, fontWeight: '700', color: colors.white,
-    flex: 1, textAlign: 'center',
-  },
-  saveBtnCircle: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-
-  /* bottom sheet */
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card,
-    padding: spacing.xl, paddingBottom: spacing.xxxl,
-  },
-  sheetHandle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: colors.surface.line, alignSelf: 'center', marginBottom: spacing.lg,
-  },
-  sheetTitle: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg, fontWeight: '700', color: colors.ink,
-    marginBottom: spacing.lg, textAlign: 'center',
-  },
-  sheetOption: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.surface.line, paddingHorizontal: spacing.xs,
-  },
-  sheetOptionActive: { backgroundColor: colors.surface.mintSoft },
-  sheetOptionText: {
-    fontFamily: typography.body.family, fontSize: typography.size.md, color: colors.ink,
-  },
-  sheetOptionTextActive: { color: colors.surfie, fontWeight: '700' },
-  sheetConfirm: {
-    marginTop: spacing.xl, height: 50, borderRadius: radius.input,
-    backgroundColor: colors.surfie, alignItems: 'center', justifyContent: 'center',
-  },
-  sheetConfirmText: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.md, fontWeight: '700', color: colors.white,
-  },
-
-  /* time picker columns */
-  pickerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  pickerColon: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.xl, fontWeight: '700', color: colors.ink, marginTop: spacing.xxxl,
-  },
-  pickerCol: { flex: 1, alignItems: 'center' },
-  pickerColLabel: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted, marginBottom: spacing.sm,
-  },
-  pickerScroll: { maxHeight: 160 },
-  pickerItem: {
-    paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
-    borderRadius: radius.md, width: '100%', alignItems: 'center',
-  },
-  pickerItemActive: { backgroundColor: colors.surface.selected },
-  pickerItemText: {
-    fontFamily: typography.body.family, fontSize: typography.size.md, color: colors.inkMuted,
-  },
-  pickerItemTextActive: { color: colors.surfie, fontWeight: '700' },
-
-  /* overflow menu */
-  menuBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center',
-  },
-  menuCard: {
-    backgroundColor: colors.white, borderRadius: radius.card, width: 220, overflow: 'hidden',
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    paddingHorizontal: spacing.md,
     ...shadow.card,
   },
-  menuItem: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
-  },
-  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
-  menuItemText: {
-    fontFamily: typography.body.family, fontSize: typography.size.sm, color: colors.ink,
-  },
-  menuItemDanger: { color: colors.danger },
+  empty: { ...typeStyles.bodySmall, color: colors.inkMuted, paddingVertical: spacing.lg },
 
-  /* modal inputs */
-  inputLabel: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.inkMuted, marginBottom: 4, marginTop: spacing.md,
+  day: { paddingVertical: spacing.sm + 2, gap: spacing.sm, marginHorizontal: -spacing.md, paddingHorizontal: spacing.md },
+  dayOn: { backgroundColor: colors.surface.mintSoft },
+  dayHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 36 },
+  dayNameBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 36 },
+  dayName: { ...typeStyles.cardTitle, color: colors.ink },
+  dayNameOff: { color: colors.inkMuted },
+  dayOff: { ...typeStyles.caption, color: colors.inkMuted },
+  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  rangeDash: { ...typeStyles.body, color: colors.inkMuted },
+  rangeRemove: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  time: {
+    ...typeStyles.inputSingle,
+    flex: 1,
+    height: 42,
+    borderWidth: 1,
+    borderColor: colors.surface.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    color: colors.ink,
+    backgroundColor: colors.white,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
-  textInput: {
-    borderWidth: 1, borderColor: colors.surface.inputBorder, borderRadius: radius.md,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    fontFamily: typography.body.family, fontSize: typography.size.sm, color: colors.ink,
-    minHeight: 44,
+  timeFocused: { borderColor: colors.surfie },
+  timeInvalid: { borderColor: colors.danger },
+  dayError: { ...typeStyles.helper, color: colors.danger },
+  dayActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
+  dayAction: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 36 },
+  dayActionText: { ...typeStyles.buttonSmall, color: colors.surfie },
+
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 60, paddingVertical: spacing.sm },
+  dateBlock: { width: 56, alignItems: 'center', backgroundColor: colors.surface.mintSoft, borderRadius: radius.md, paddingVertical: 6 },
+  dateWeekday: { ...typeStyles.caption, color: colors.inkMuted },
+  dateDay: { ...typeStyles.label, color: colors.ink, fontWeight: fontWeight.semibold },
+  datePrimary: { ...typeStyles.body, color: colors.ink, fontWeight: fontWeight.medium },
+  dateIso: { ...typeStyles.caption, color: colors.inkMuted, fontVariant: ['tabular-nums'] },
+  removeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+
+  settings: { flexDirection: 'row', gap: spacing.sm },
+  setting: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    backgroundColor: colors.white,
+    gap: 2,
   },
-  modalError: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs, color: colors.danger, marginTop: spacing.sm,
+  settingIcon: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.surface.selected, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  settingLabel: { ...typeStyles.label, color: colors.ink },
+  settingSub: { ...typeStyles.caption, color: colors.inkMuted },
+  settingValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  settingValue: { ...typeStyles.metricSmall, color: colors.ink },
+
+  editorLabel: { ...typeStyles.label, color: colors.ink, marginBottom: 6 },
+  editorGap: { marginTop: spacing.md },
+  editorInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: colors.surface.inputBorder,
+    borderRadius: radius.input,
+    paddingHorizontal: spacing.md,
   },
+  editorInputInvalid: { borderColor: colors.danger },
+  editorText: { ...typeStyles.inputSingle, flex: 1, height: 46, color: colors.ink },
+  editorError: { ...typeStyles.helper, color: colors.danger, marginTop: spacing.sm },
+
+  optionBox: { borderWidth: 1, borderColor: colors.surface.line, borderRadius: radius.md, overflow: 'hidden' },
+  option: { flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: spacing.md },
+  optionOn: { backgroundColor: colors.surface.mintSoft },
+  optionText: { ...typeStyles.body, color: colors.ink, flex: 1 },
+  optionTextOn: { fontWeight: fontWeight.semibold, color: colors.surfie },
 });
 
 export default AvailabilityScreen;

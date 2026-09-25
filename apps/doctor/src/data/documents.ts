@@ -5,6 +5,8 @@
  * Visibility rule: a doctor sees a file only through an assigned care
  * relationship. Notification copy never carries a diagnosis.
  */
+import { dayOffset, fmtDate, fmtDayTime } from './calendar';
+import { doctor } from './doctor';
 
 /* ------------------------------- documents -------------------------------- */
 
@@ -21,33 +23,42 @@ export const SOURCE_LABEL: Record<DocSource, string> = {
 
 export type PatientDoc = {
   id: string;
+  patientId: string;
+  /** The consultation the file was shared for; absent for general history. */
+  appointmentId?: string;
   title: string;
   kind: DocKind;
-  fileType: 'PDF';
+  fileType: 'PDF' | 'JPG';
   size: string;
+  pages: number;
   uploadedBy: 'patient' | 'coracure';
   uploadedAt: string;
   source: DocSource;
   /** Present when the file answers a specific request. */
   requestId?: string;
-  group: 'current' | 'previous' | 'history';
   /** Only files inside an assigned care relationship are listed. */
   assigned: boolean;
+  /** A short, diagnosis-free description shown in the viewer. */
+  summary: string;
 };
 
-export const docGroups: { key: PatientDoc['group']; title: string; sub?: string }[] = [
-  { key: 'current', title: 'Current consultation', sub: '15 May 2024 • Consultation CON-10482' },
-  { key: 'previous', title: 'Previous consultation', sub: '28 April 2024 • Consultation CON-10431' },
-  { key: 'history', title: 'Medical history' },
+export const patientDocs: PatientDoc[] = [
+  { id: 'd1', patientId: 'PT-10482', appointmentId: 'a1', title: 'Symptoms Journal', kind: 'journal', fileType: 'PDF', size: '1.4 MB', pages: 3, uploadedBy: 'patient', uploadedAt: fmtDayTime(0, 8 * 60 + 40), source: 'bookingAttachment', assigned: true, summary: 'Daily notes on sleep, energy and worry over the last two weeks.' },
+  { id: 'd2', patientId: 'PT-10482', appointmentId: 'a1', title: 'Sleep Tracking Report', kind: 'report', fileType: 'PDF', size: '860 KB', pages: 2, uploadedBy: 'patient', uploadedAt: fmtDayTime(0, 11 * 60 + 20), source: 'requested', requestId: 'rq1', assigned: true, summary: 'Seven nights of sleep duration and wake times from a tracking app.' },
+  { id: 'd3', patientId: 'PT-10482', appointmentId: 'a11', title: 'Previous Prescription', kind: 'prescription', fileType: 'PDF', size: '420 KB', pages: 1, uploadedBy: 'coracure', uploadedAt: fmtDayTime(-12, 11 * 60 + 45), source: 'consultationRecord', assigned: true, summary: 'Prescription issued after the previous consultation.' },
+  { id: 'd4', patientId: 'PT-10482', appointmentId: 'a11', title: 'Therapy Notes Shared by Patient', kind: 'report', fileType: 'PDF', size: '720 KB', pages: 4, uploadedBy: 'patient', uploadedAt: fmtDayTime(-13, 19 * 60), source: 'preConsult', assigned: true, summary: 'Notes from earlier counselling sessions, shared before the consultation.' },
+  { id: 'd5', patientId: 'PT-10482', title: 'Initial Medical History', kind: 'report', fileType: 'PDF', size: '540 KB', pages: 2, uploadedBy: 'patient', uploadedAt: fmtDate(dayOffset(-35)), source: 'patientRecord', assigned: true, summary: 'General medical history completed at registration.' },
+  { id: 'd6', patientId: 'PT-10459', appointmentId: 'a2', title: 'Previous Prescription', kind: 'prescription', fileType: 'PDF', size: '380 KB', pages: 1, uploadedBy: 'patient', uploadedAt: fmtDayTime(-1, 20 * 60 + 10), source: 'bookingAttachment', assigned: true, summary: 'Prescription from a previous psychiatrist.' },
+  { id: 'd7', patientId: 'PT-10459', title: 'Blood Test Report', kind: 'report', fileType: 'PDF', size: '610 KB', pages: 2, uploadedBy: 'patient', uploadedAt: fmtDate(dayOffset(-20)), source: 'patientRecord', assigned: true, summary: 'Routine blood panel from a diagnostic lab.' },
+  { id: 'd8', patientId: 'PT-10461', appointmentId: 'a12', title: 'Sleep Diary', kind: 'journal', fileType: 'PDF', size: '320 KB', pages: 2, uploadedBy: 'patient', uploadedAt: fmtDayTime(-2, 21 * 60), source: 'preConsult', assigned: true, summary: 'Two weeks of bedtimes, wake times and night-time awakenings.' },
+  { id: 'd9', patientId: 'PT-10460', appointmentId: 'a13', title: 'Thyroid Profile', kind: 'report', fileType: 'PDF', size: '290 KB', pages: 1, uploadedBy: 'patient', uploadedAt: fmtDate(dayOffset(-9)), source: 'preConsult', assigned: true, summary: 'Thyroid function test from a diagnostic lab.' },
+  { id: 'd10', patientId: 'PT-10548', appointmentId: 'a14', title: 'Mood Journal', kind: 'journal', fileType: 'JPG', size: '1.1 MB', pages: 1, uploadedBy: 'patient', uploadedAt: fmtDate(dayOffset(-8)), source: 'bookingAttachment', assigned: true, summary: 'Photo of a handwritten mood journal.' },
 ];
 
-export const patientDocs: PatientDoc[] = [
-  { id: 'd1', title: 'Symptoms Journal', kind: 'journal', fileType: 'PDF', size: '1.4 MB', uploadedBy: 'patient', uploadedAt: '15 May 2024, 8:40 AM', source: 'bookingAttachment', group: 'current', assigned: true },
-  { id: 'd2', title: 'Sleep Tracking Report', kind: 'report', fileType: 'PDF', size: '860 KB', uploadedBy: 'patient', uploadedAt: '14 May 2024, 7:15 PM', source: 'requested', requestId: 'rq1', group: 'current', assigned: true },
-  { id: 'd3', title: 'Previous Prescription', kind: 'prescription', fileType: 'PDF', size: '420 KB', uploadedBy: 'coracure', uploadedAt: '28 April 2024, 11:05 AM', source: 'consultationRecord', group: 'previous', assigned: true },
-  { id: 'd4', title: 'Therapy Notes Shared by Patient', kind: 'report', fileType: 'PDF', size: '720 KB', uploadedBy: 'patient', uploadedAt: '27 April 2024', source: 'preConsult', group: 'previous', assigned: true },
-  { id: 'd5', title: 'Initial Medical History', kind: 'report', fileType: 'PDF', size: '540 KB', uploadedBy: 'patient', uploadedAt: '10 April 2024', source: 'patientRecord', group: 'history', assigned: true },
-];
+export const docsForPatient = (patientId: string | undefined) =>
+  patientDocs.filter((d) => d.patientId === patientId);
+
+export const docById = (id: string | undefined) => patientDocs.find((d) => d.id === id);
 
 export const DOC_FILTERS: { key: 'all' | DocKind | 'requested'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -84,6 +95,8 @@ export const DOC_TYPES: { key: DocTypeKey; label: string; icon: 'document' | 'fl
 
 export type ReportRequest = {
   id: string;
+  patientId: string;
+  appointmentId: string;
   docType: DocTypeKey;
   /** What the doctor asked for, in plain words. */
   itemName: string;
@@ -100,12 +113,13 @@ export const REASON_MAX = 1000;
 
 export const newRequest = (over: Partial<ReportRequest> = {}): ReportRequest => ({
   id: 'rq-new',
+  patientId: 'PT-10482',
+  appointmentId: 'a1',
   docType: 'prescription',
-  itemName: 'Previous psychiatric prescription',
-  reason:
-    'Required to review the patient’s previous medication history before the next consultation.',
-  requestedBy: 'Dr. Arjun Mehta',
-  requestedOn: '15 May 2024',
+  itemName: '',
+  reason: '',
+  requestedBy: doctor.name,
+  requestedOn: fmtDate(dayOffset(0)),
   consultationId: 'CON-10482',
   status: 'open',
   fileIds: [],
@@ -138,6 +152,23 @@ export const applyUpload = (req: ReportRequest, file: FileRecord): ReportRequest
 export const cancelRequest = (req: ReportRequest): ReportRequest =>
   req.status === 'open' || req.status === 'draft' ? { ...req, status: 'cancelled' } : req;
 
+/** The request already fulfilled by Rahul's sleep report (d2). */
+export const seedRequests: ReportRequest[] = [
+  {
+    id: 'rq1',
+    patientId: 'PT-10482',
+    appointmentId: 'a1',
+    docType: 'other',
+    itemName: 'Sleep tracking report',
+    reason: 'To review sleep duration over the last week before the follow-up consultation.',
+    requestedBy: doctor.name,
+    requestedOn: fmtDate(dayOffset(-1)),
+    consultationId: 'CON-10482',
+    status: 'fulfilled',
+    fileIds: ['d2'],
+  },
+];
+
 /* ------------------------------ notifications ----------------------------- */
 
 export type DocNotification = {
@@ -154,8 +185,8 @@ export type DocNotification = {
  * Copy shown to the patient when a document is requested.
  * Deliberately free of any diagnosis or clinical reason.
  */
-export const patientRequestNotice = (doctor: string) =>
-  `${doctor} has requested a document for your upcoming consultation. Open CoraCure to view the request and upload the file.`;
+export const patientRequestNotice = (doctorName: string) =>
+  `${doctorName} has requested a document for your upcoming consultation. Open CoraCure to view the request and upload the file.`;
 
 /**
  * Copy shown to the doctor when a requested file arrives (DOC-DOC-03).
@@ -182,25 +213,4 @@ export const buildFulfilmentNotification = (
     receivedAgo: 'Just now',
     read: false,
   };
-};
-
-export const docNotifications: DocNotification[] = [
-  {
-    id: 'nt-d2',
-    requestId: 'rq1',
-    docId: 'd2',
-    title: 'Requested document uploaded',
-    body: fulfilmentNotice('Rahul Sharma', 'Sleep Tracking Report'),
-    receivedAgo: '14 May, 7:15 PM',
-    read: false,
-  },
-];
-
-export const docPatient = {
-  initials: 'RS',
-  name: 'Rahul Sharma',
-  gender: 'Male' as const,
-  age: 32,
-  patientId: 'PT-10482',
-  consultationId: 'CON-10482',
 };

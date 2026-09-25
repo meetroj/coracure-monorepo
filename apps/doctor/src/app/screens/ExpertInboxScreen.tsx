@@ -1,4 +1,4 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import React, { useState } from 'react';
 import {
   View,

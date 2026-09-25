@@ -1,4 +1,3 @@
-import { typeStyles, fontWeight } from '../../../../libs/typography/src';
 import React, { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View,
@@ -10,33 +9,37 @@ import {
   ScrollView,
   Dimensions,
   type KeyboardTypeOptions,
+  type TextInputProps,
 } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../theme/brand';
+import { colors, radius, spacing } from '../theme/brand';
+import { typeStyles, fontWeight } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
+import { BottomSheet } from './BottomSheet';
+import { Checkbox } from './Checkbox';
+
+export { UploadField } from './upload';
 
 /**
- * Form primitives for doctor onboarding.
+ * Form primitives.
  *
- * The app had no input components — every screen so far displayed values
- * rather than collecting them. These are deliberately plain: one label, one
- * control, one error slot, so a long registration form reads as a list rather
- * than a wall of boxes.
+ * Deliberately plain: one label, one control, one message slot, so a long
+ * registration form reads as a list rather than a wall of boxes. Every
+ * single-line input uses `typeStyles.inputSingle`, which has no line height —
+ * iOS drew single-line text below the centre of the field when one was set.
  */
 
 /* --------------------------------- label ---------------------------------- */
 
-const Label = ({ children, required }: { children: ReactNode; required?: boolean }) => (
-  <Text style={[typeStyles.body, s.label]}>
+export const FieldLabel = ({ children, required }: { children: ReactNode; required?: boolean }) => (
+  <Text style={s.label}>
     {children}
     {required && <Text style={s.star}> *</Text>}
   </Text>
 );
 
 const Helper = ({ children, error }: { children?: ReactNode; error?: boolean }) =>
-  children ? (
-    <Text style={[typeStyles.body, error ? s.error : s.helper]}>{children}</Text>
-  ) : null;
+  children ? <Text style={error ? s.error : s.helper}>{children}</Text> : null;
 
 /* -------------------------------- text field ------------------------------ */
 
@@ -46,18 +49,28 @@ export const TextField = ({
   onChangeText,
   placeholder,
   helper,
+  error,
   required,
   keyboardType,
   autoCapitalize = 'sentences',
   maxLength,
   right,
   testID,
+  onBlur,
+  onFocus,
+  returnKeyType,
+  textContentType,
+  autoComplete,
+  multiline,
+  editable = true,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
   helper?: string;
+  /** Shown instead of the helper, in red, with the field outlined. */
+  error?: string;
   required?: boolean;
   keyboardType?: KeyboardTypeOptions;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
@@ -65,29 +78,48 @@ export const TextField = ({
   /** Trailing adornment inside the box — a calendar glyph, a unit, a toggle. */
   right?: ReactNode;
   testID?: string;
+  onBlur?: () => void;
+  onFocus?: () => void;
+  returnKeyType?: TextInputProps['returnKeyType'];
+  textContentType?: TextInputProps['textContentType'];
+  autoComplete?: TextInputProps['autoComplete'];
+  multiline?: boolean;
+  editable?: boolean;
 }) => {
   const [focused, setFocused] = useState(false);
   return (
     <View style={s.field}>
-      <Label required={required}>{label}</Label>
+      <FieldLabel required={required}>{label}</FieldLabel>
       {/* the border lives on the wrapper so an adornment can sit inside it */}
-      <View style={[s.input, focused && s.inputFocused]}>
+      <View style={[s.input, multiline && s.inputMulti, focused && s.inputFocused, !!error && s.inputInvalid]}>
         <TextInput
           testID={testID}
           value={value}
           onChangeText={onChangeText}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={() => {
+            setFocused(true);
+            onFocus?.();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            onBlur?.();
+          }}
           placeholder={placeholder}
           placeholderTextColor={colors.inkFaint}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
-          style={[typeStyles.body, s.inputText, s.bare]}
+          returnKeyType={returnKeyType}
+          textContentType={textContentType}
+          autoComplete={autoComplete}
+          multiline={multiline}
+          editable={editable}
+          accessibilityLabel={label}
+          style={[multiline ? s.inputTextMulti : s.inputText, s.bare]}
         />
         {right}
       </View>
-      <Helper>{helper}</Helper>
+      <Helper error={!!error}>{error ?? helper}</Helper>
     </View>
   );
 };
@@ -95,97 +127,8 @@ export const TextField = ({
 /* ---------------------------- shared option sheet -------------------------- */
 
 /**
- * One sheet shape for every dropdown in the app: handle, title with a close
- * control, the options in a bordered list, and an Apply button that commits.
- *
- * The sheet hugs its content, so a four-option list is a short sheet rather
- * than a tall one with dead space, and its floor clears the gesture bar — no
- * control is ever drawn inside the safe area.
- */
-const OptionSheet = ({
-  visible,
-  title,
-  onClose,
-  search,
-  children,
-  applyLabel = 'Apply',
-  count,
-  onClear,
-  testID,
-}: {
-  visible: boolean;
-  title: string;
-  onClose: () => void;
-  search?: ReactNode;
-  children: ReactNode;
-  applyLabel?: string;
-  /** Shown on the Apply button once anything is picked. */
-  count?: number;
-  /** Adds a Clear all beside Apply. Only offered when there is something to clear. */
-  onClear?: () => void;
-  testID?: string;
-}) => {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.backdrop} onPress={onClose}>
-        <Pressable
-          style={[s.sheet, { paddingBottom: spacing.sm }]}
-          onPress={() => undefined}
-        >
-          <View style={s.handle} />
-          <View style={s.sheetHead}>
-            <Text style={[typeStyles.body, s.sheetTitle]}>{title}</Text>
-            <Pressable
-              testID={testID ? `${testID}-close` : undefined}
-              onPress={onClose}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <Icon name="close" size={19} color={colors.ink} />
-            </Pressable>
-          </View>
-          {search}
-          <View style={s.optionBox}>
-            <ScrollView style={s.sheetList} keyboardShouldPersistTaps="handled">
-              {children}
-            </ScrollView>
-          </View>
-          {/* Clear all only appears with something to clear, so the footer does
-              not offer a dead control on an untouched list */}
-          <View style={s.sheetFoot}>
-            {!!onClear && !!count && (
-              <Pressable
-                testID={testID ? `${testID}-clear` : undefined}
-                onPress={onClear}
-                hitSlop={8}
-                style={s.sheetClear}
-                accessibilityRole="button"
-              >
-                <Text style={[typeStyles.body, s.sheetClearText]}>Clear all</Text>
-              </Pressable>
-            )}
-            <Pressable
-              testID={testID ? `${testID}-done` : undefined}
-              onPress={onClose}
-              style={s.sheetDone}
-              accessibilityRole="button"
-            >
-              <Text style={[typeStyles.body, s.sheetDoneText]}>
-                {count ? `${applyLabel} (${count})` : applyLabel}
-              </Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-};
-
-/**
  * One option row. The selection reads as a tick on the right — the same mark
- * in the same place whether the list takes one answer or several, so scanning
- * a column of rows never means checking two different controls.
+ * in the same place whether the list takes one answer or several.
  */
 const OptionRow = ({
   label,
@@ -212,9 +155,74 @@ const OptionRow = ({
     <View style={[multi ? s.pickBox : s.radio, selected && s.pickOn]}>
       {selected && (multi ? <Icon name="check" size={12} weight={3} color={colors.white} /> : <View style={s.radioDot} />)}
     </View>
-    <Text style={[typeStyles.body, s.optionText, selected && s.optionTextOn]}>{label}</Text>
+    <Text style={[s.optionText, selected && s.optionTextOn]}>{label}</Text>
     {selected && <Icon name="check" size={20} weight={3} color={colors.paris} />}
   </Pressable>
+);
+
+/**
+ * The sheet every dropdown opens. The pick is held until Apply: closing with
+ * the X, the backdrop or back leaves the field exactly as it was.
+ */
+const OptionSheet = ({
+  visible,
+  title,
+  onClose,
+  onApply,
+  search,
+  children,
+  count,
+  onClear,
+  applyDisabled,
+  testID,
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  onApply: () => void;
+  search?: ReactNode;
+  children: ReactNode;
+  /** Shown on the Apply button once anything is picked. */
+  count?: number;
+  /** Adds a Clear all beside Apply. Only offered when there is something to clear. */
+  onClear?: () => void;
+  applyDisabled?: boolean;
+  testID?: string;
+}) => (
+  <BottomSheet
+    visible={visible}
+    title={title}
+    onClose={onClose}
+    testID={testID ? `${testID}-sheet` : undefined}
+    footer={
+      <View style={s.sheetFoot}>
+        {!!onClear && !!count && (
+          <Pressable
+            testID={testID ? `${testID}-clear` : undefined}
+            onPress={onClear}
+            hitSlop={8}
+            style={s.sheetClear}
+            accessibilityRole="button"
+          >
+            <Text style={s.sheetClearText}>Clear all</Text>
+          </Pressable>
+        )}
+        <Pressable
+          testID={testID ? `${testID}-done` : undefined}
+          onPress={onApply}
+          disabled={applyDisabled}
+          style={[s.sheetDone, applyDisabled && s.sheetDoneOff]}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !!applyDisabled }}
+        >
+          <Text style={s.sheetDoneText}>{count ? `Apply (${count})` : 'Apply'}</Text>
+        </Pressable>
+      </View>
+    }
+  >
+    {search}
+    <View style={s.optionBox}>{children}</View>
+  </BottomSheet>
 );
 
 /* --------------------------------- select --------------------------------- */
@@ -223,13 +231,8 @@ const OptionRow = ({
  * Two shapes, one control.
  *
  * `inline` anchors a compact menu under the field — right for a handful of
- * one-word options, where a full sheet is more ceremony than the choice
- * deserves. Everything else opens the shared sheet, which keeps long and
- * searchable lists readable.
- *
- * The menu is measured and drawn in a modal rather than positioned inside the
- * field: a child that overflows its parent is clipped on Android, and this one
- * has to sit over whatever follows it in the form.
+ * one-word options, and it commits on the tap. Everything else opens the
+ * shared sheet, which holds the pick until Apply.
  */
 export const SelectField = ({
   label,
@@ -240,6 +243,8 @@ export const SelectField = ({
   required,
   searchable,
   inline,
+  error,
+  helper,
   testID,
 }: {
   label: string;
@@ -251,10 +256,13 @@ export const SelectField = ({
   searchable?: boolean;
   /** Anchored menu instead of a sheet. For short, self-evident option lists. */
   inline?: boolean;
+  error?: string;
+  helper?: string;
   testID?: string;
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [draft, setDraft] = useState(value);
   const trigger = useRef<View>(null);
   const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -268,6 +276,11 @@ export const SelectField = ({
     setOpen(false);
   };
 
+  const openSheet = () => {
+    setDraft(value);
+    setOpen(true);
+  };
+
   const openMenu = () => {
     setOpen(true);
     // measurement is best-effort: without it the menu falls back to centred
@@ -278,8 +291,7 @@ export const SelectField = ({
   const menuStyle = () => {
     if (!anchor) return s.menuFallback;
     const screen = Dimensions.get('window').height;
-    const height = Math.min(list.length * 46 + 8, 260);
-    // flush against the field: the menu is part of the control, not a popover
+    const height = Math.min(list.length * 48 + 8, 280);
     const below = anchor.y + anchor.h;
     const fits = below + height < screen - 24;
     return {
@@ -290,92 +302,94 @@ export const SelectField = ({
     };
   };
 
-  const field = (
+  return (
     <View style={s.field}>
-      <Label required={required}>{label}</Label>
+      <FieldLabel required={required}>{label}</FieldLabel>
       <Pressable
         ref={trigger}
         testID={testID}
-        onPress={inline ? openMenu : () => setOpen(true)}
-        style={[s.input, open && s.inputFocused]}
+        onPress={inline ? openMenu : openSheet}
+        style={[s.input, open && s.inputFocused, !!error && s.inputInvalid]}
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${value || placeholder}`}
       >
-        <Text style={[typeStyles.body, s.inputText, !value && s.placeholder]} numberOfLines={1}>
+        <Text style={[s.selectText, !value && s.placeholder]} numberOfLines={1}>
           {value || placeholder}
         </Text>
         <Icon name={open ? 'chevronUp' : 'chevronDown'} size={16} color={colors.inkMuted} />
       </Pressable>
+      <Helper error={!!error}>{error ?? helper}</Helper>
 
-      <OptionSheet
-        visible={open && !inline}
-        title={`Select ${label.toLowerCase()}`}
-        onClose={close}
-        testID={testID}
-        search={
-          searchable ? (
-            <TextInput
-              testID={testID ? `${testID}-search` : undefined}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search"
-              placeholderTextColor={colors.inkFaint}
-              style={[typeStyles.body, s.input, s.search]}
+      {!inline && (
+        <OptionSheet
+          visible={open}
+          title={`Select ${label.toLowerCase()}`}
+          onClose={close}
+          onApply={() => {
+            if (draft) onChange(draft);
+            close();
+          }}
+          applyDisabled={!draft}
+          testID={testID}
+          search={
+            searchable ? (
+              <TextInput
+                testID={testID ? `${testID}-search` : undefined}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search"
+                placeholderTextColor={colors.inkFaint}
+                style={[s.input, s.search, s.inputText]}
+                accessibilityLabel={`Search ${label.toLowerCase()}`}
+              />
+            ) : undefined
+          }
+        >
+          {list.map((o, i) => (
+            <OptionRow
+              key={o}
+              testID={testID ? `${testID}-${o}` : undefined}
+              label={o}
+              selected={o === draft}
+              last={i === list.length - 1}
+              onPress={() => setDraft(o)}
             />
-          ) : undefined
-        }
-      >
-        {list.map((o, i) => (
-          <OptionRow
-            key={o}
-            testID={testID ? `${testID}-${o}` : undefined}
-            label={o}
-            selected={o === value}
-            last={i === list.length - 1}
-            onPress={() => onChange(o)}
-          />
-        ))}
-        {list.length === 0 && (
-          <Text style={[typeStyles.body, s.noMatch]}>No match for “{query}”.</Text>
-        )}
-      </OptionSheet>
-    </View>
-  );
+          ))}
+          {list.length === 0 && <Text style={s.noMatch}>No match for “{query}”.</Text>}
+        </OptionSheet>
+      )}
 
-  if (!inline) return field;
-
-  // the inner field already carries the spacing, so the wrapper adds none
-  return (
-    <View>
-      {field}
-      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
-        {/* a bare catcher, not a scrim: the form stays visible behind the menu */}
-        <Pressable style={s.menuCatcher} onPress={close}>
-          <Pressable style={[s.menu, menuStyle()]} onPress={() => undefined}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {list.map((o, i) => {
-                const on = o === value;
-                return (
-                  <Pressable
-                    key={o}
-                    testID={testID ? `${testID}-${o}` : undefined}
-                    onPress={() => {
-                      onChange(o);
-                      close();
-                    }}
-                    style={[s.menuRow, i < list.length - 1 && s.optionRule, on && s.optionOn]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: on }}
-                  >
-                    <Text style={[typeStyles.body, s.menuText, on && s.optionTextOn]}>{o}</Text>
-                    {on && <Icon name="check" size={20} weight={3} color={colors.paris} />}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+      {inline && (
+        <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+          {/* a bare catcher, not a scrim: the form stays visible behind the menu */}
+          <Pressable style={s.menuCatcher} onPress={close} accessibilityLabel="Close menu">
+            {/* claims the touch so a tap inside the menu does not reach the catcher */}
+            <View style={[s.menu, menuStyle()]} onStartShouldSetResponder={() => true}>
+              <ScrollView keyboardShouldPersistTaps="handled">
+                {list.map((o, i) => {
+                  const on = o === value;
+                  return (
+                    <Pressable
+                      key={o}
+                      testID={testID ? `${testID}-${o}` : undefined}
+                      onPress={() => {
+                        onChange(o);
+                        close();
+                      }}
+                      style={[s.menuRow, i < list.length - 1 && s.optionRule, on && s.optionOn]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                    >
+                      <Text style={[s.menuText, on && s.optionTextOn]}>{o}</Text>
+                      {on && <Icon name="check" size={20} weight={3} color={colors.paris} />}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -389,6 +403,9 @@ export const MultiSelectField = ({
   onChange,
   required,
   helper,
+  error,
+  addLabel = 'Add',
+  searchPlaceholder = 'Search',
   testID,
 }: {
   label: string;
@@ -397,18 +414,26 @@ export const MultiSelectField = ({
   onChange: (v: string[]) => void;
   required?: boolean;
   helper?: string;
+  error?: string;
+  /** The add control's text, e.g. "Add language". */
+  addLabel?: string;
+  searchPlaceholder?: string;
   testID?: string;
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [draft, setDraft] = useState<string[]>(values);
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
   }, [options, query]);
 
-  const toggle = (o: string) =>
-    onChange(values.includes(o) ? values.filter((v) => v !== o) : [...values, o]);
+  const toggleDraft = (o: string) => setDraft((d) => (d.includes(o) ? d.filter((v) => v !== o) : [...d, o]));
+  const close = () => {
+    setQuery('');
+    setOpen(false);
+  };
 
   /** Past three chips the row is too tight to hold the Add control as well. */
   const dropAdd = values.length > 3;
@@ -416,22 +441,22 @@ export const MultiSelectField = ({
   const add = (
     <Pressable
       testID={testID}
-      onPress={() => setOpen(true)}
+      onPress={() => {
+        setDraft(values);
+        setOpen(true);
+      }}
       style={s.addChip}
       accessibilityRole="button"
-      accessibilityLabel={`Add ${label}`}
+      accessibilityLabel={`${addLabel} — ${label}`}
     >
-      <Icon name="plus" size={12} color={colors.surfie} />
-      <Text style={[typeStyles.body, s.addChipText]}>Add language</Text>
+      <Icon name="plus" size={13} color={colors.surfie} />
+      <Text style={s.addChipText}>{addLabel}</Text>
     </Pressable>
   );
 
   return (
     <View style={s.field}>
-      <Label required={required}>{label}</Label>
-      {/* The picks stay on one line, scrolled sideways, so a long list never
-          pushes the rest of the form down. Past three the Add control drops to
-          its own row — beside them it would leave the chips almost no width. */}
+      <FieldLabel required={required}>{label}</FieldLabel>
       {(values.length > 0 || !dropAdd) && (
         <ScrollView
           horizontal
@@ -442,15 +467,15 @@ export const MultiSelectField = ({
         >
           {values.map((v) => (
             <View key={v} style={s.chip}>
-              <Text style={[typeStyles.body, s.chipText]}>{v}</Text>
+              <Text style={s.chipText}>{v}</Text>
               <Pressable
                 testID={testID ? `${testID}-remove-${v}` : undefined}
-                onPress={() => toggle(v)}
-                hitSlop={8}
+                onPress={() => onChange(values.filter((x) => x !== v))}
+                hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${v}`}
               >
-                <Icon name="close" size={12} color={colors.surfie} />
+                <Icon name="close" size={13} color={colors.surfie} />
               </Pressable>
             </View>
           ))}
@@ -458,25 +483,27 @@ export const MultiSelectField = ({
         </ScrollView>
       )}
       {dropAdd && <View style={s.addRow}>{add}</View>}
-      <Helper>{helper}</Helper>
+      <Helper error={!!error}>{error ?? helper}</Helper>
 
       <OptionSheet
         visible={open}
         title={label}
-        onClose={() => {
-          setQuery('');
-          setOpen(false);
+        onClose={close}
+        onApply={() => {
+          onChange(draft);
+          close();
         }}
         testID={testID}
-        count={values.length}
-        onClear={() => onChange([])}
+        count={draft.length}
+        onClear={() => setDraft([])}
         search={
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search languages"
+            placeholder={searchPlaceholder}
             placeholderTextColor={colors.inkFaint}
-            style={[typeStyles.body, s.input, s.search]}
+            style={[s.input, s.search, s.inputText]}
+            accessibilityLabel={searchPlaceholder}
           />
         }
       >
@@ -485,12 +512,13 @@ export const MultiSelectField = ({
             key={o}
             testID={testID ? `${testID}-option-${o}` : undefined}
             label={o}
-            selected={values.includes(o)}
+            selected={draft.includes(o)}
             last={i === list.length - 1}
             multi
-            onPress={() => toggle(o)}
+            onPress={() => toggleDraft(o)}
           />
         ))}
+        {list.length === 0 && <Text style={s.noMatch}>No match for “{query}”.</Text>}
       </OptionSheet>
     </View>
   );
@@ -519,47 +547,40 @@ export const monthMask = (v: string) => {
 };
 
 /**
- * A date field with a real calendar behind the glyph.
- *
- * Built in-app rather than pulled from a picker library: the two platforms
- * disagree on what a native date picker looks like, and a birth date needs
- * year stepping more than it needs a spinner.
+ * A calendar sheet behind a date. Built in-app rather than pulled from a
+ * picker library: the platforms disagree on what a native date picker looks
+ * like, and a birth date needs year stepping more than it needs a spinner.
+ * A day tap commits and closes.
  */
-export const DateField = ({
-  label,
-  value,
-  onChange,
-  required,
-  placeholder = 'DD / MM / YYYY',
+export const CalendarSheet = ({
+  visible,
+  title,
+  selected,
+  initialView,
+  onPick,
+  onClose,
+  isDisabled,
   testID,
 }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  required?: boolean;
-  placeholder?: string;
+  visible: boolean;
+  title: string;
+  selected: { day: number; month: number; year: number } | null;
+  initialView: { month: number; year: number };
+  onPick: (d: { day: number; month: number; year: number }) => void;
+  onClose: () => void;
+  /** Days that cannot be chosen, e.g. dates in the past. */
+  isDisabled?: (d: { day: number; month: number; year: number }) => boolean;
   testID?: string;
 }) => {
-  const [focused, setFocused] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  /** Parsed from the field when it holds a full date, else a sane start. */
-  const parsed = useMemo(() => {
-    const d = value.replace(/\D/g, '');
-    if (d.length !== 8) return null;
-    const day = Number(d.slice(0, 2));
-    const month = Number(d.slice(2, 4));
-    const year = Number(d.slice(4, 8));
-    if (!day || month < 1 || month > 12 || year < 1900) return null;
-    return { day, month: month - 1, year };
-  }, [value]);
-
-  const [view, setView] = useState({ month: 0, year: 1990 });
-
-  const openPicker = () => {
-    setView(parsed ? { month: parsed.month, year: parsed.year } : { month: 0, year: 1990 });
-    setOpen(true);
-  };
+  const [view, setView] = useState(initialView);
+  const [openedFor, setOpenedFor] = useState(false);
+  // re-initialise every time the sheet opens, never from a stale value
+  if (visible && !openedFor) {
+    setOpenedFor(true);
+    setView(initialView);
+  } else if (!visible && openedFor) {
+    setOpenedFor(false);
+  }
 
   const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
   const firstWeekday = new Date(view.year, view.month, 1).getDay();
@@ -577,124 +598,136 @@ export const DateField = ({
       return { ...v, month: m };
     });
 
-  const choose = (day: number) => {
-    onChange(`${pad2(day)} / ${pad2(view.month + 1)} / ${view.year}`);
-    setOpen(false);
-  };
+  return (
+    <BottomSheet visible={visible} title={title} onClose={onClose} testID={testID ? `${testID}-calendar-sheet` : undefined}>
+      <View style={s.calHead}>
+        <Stepper
+          testID={testID ? `${testID}-month` : undefined}
+          label={MONTHS[view.month]}
+          onBack={() => step('month', -1)}
+          onNext={() => step('month', 1)}
+        />
+        <Stepper
+          testID={testID ? `${testID}-year` : undefined}
+          label={String(view.year)}
+          onBack={() => step('year', -1)}
+          onNext={() => step('year', 1)}
+        />
+      </View>
+
+      <View style={s.calRow}>
+        {WEEKDAYS.map((d, i) => (
+          <Text key={`${d}${i}`} style={s.calWeekday}>
+            {d}
+          </Text>
+        ))}
+      </View>
+
+      <View style={s.calGrid}>
+        {cells.map((d, i) => {
+          if (d === null) return <View key={`b${i}`} style={s.calCell} />;
+          const date = { day: d, month: view.month, year: view.year };
+          const on = !!selected && selected.day === d && selected.month === view.month && selected.year === view.year;
+          const off = isDisabled?.(date) ?? false;
+          return (
+            <Pressable
+              key={d}
+              testID={testID ? `${testID}-day-${d}` : undefined}
+              onPress={() => onPick(date)}
+              disabled={off}
+              style={s.calCell}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on, disabled: off }}
+              accessibilityLabel={`${d} ${MONTHS[view.month]} ${view.year}`}
+            >
+              <View style={[s.calDay, on && s.calDayOn]}>
+                <Text style={[s.calDayText, on && s.calDayTextOn, off && s.calDayTextOff]}>{d}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </BottomSheet>
+  );
+};
+
+export const DateField = ({
+  label,
+  value,
+  onChange,
+  required,
+  placeholder = 'DD / MM / YYYY',
+  error,
+  onBlur,
+  testID,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+  placeholder?: string;
+  error?: string;
+  onBlur?: () => void;
+  testID?: string;
+}) => {
+  const [focused, setFocused] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  /** Parsed from the field when it holds a full date, else a sane start. */
+  const parsed = useMemo(() => {
+    const d = value.replace(/\D/g, '');
+    if (d.length !== 8) return null;
+    const day = Number(d.slice(0, 2));
+    const month = Number(d.slice(2, 4));
+    const year = Number(d.slice(4, 8));
+    if (!day || month < 1 || month > 12 || year < 1900) return null;
+    return { day, month: month - 1, year };
+  }, [value]);
 
   return (
     <View style={s.field}>
-      <Label required={required}>{label}</Label>
-      <View style={[s.input, focused && s.inputFocused]}>
+      <FieldLabel required={required}>{label}</FieldLabel>
+      <View style={[s.input, focused && s.inputFocused, !!error && s.inputInvalid]}>
         <TextInput
           testID={testID}
           value={value}
           onChangeText={(v) => onChange(dateMask(v))}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            setFocused(false);
+            onBlur?.();
+          }}
           placeholder={placeholder}
           placeholderTextColor={colors.inkFaint}
           keyboardType="number-pad"
           maxLength={14}
-          style={[typeStyles.body, s.inputText, s.bare]}
+          accessibilityLabel={label}
+          style={[s.inputText, s.bare]}
         />
         <Pressable
           testID={testID ? `${testID}-calendar` : undefined}
-          onPress={openPicker}
-          hitSlop={10}
+          onPress={() => setOpen(true)}
+          hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={`Pick ${label}`}
         >
           <Icon name="calendar" size={18} color={colors.surfie} />
         </Pressable>
       </View>
+      <Helper error={!!error}>{error}</Helper>
 
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-        <Pressable style={s.backdrop} onPress={() => setOpen(false)}>
-          <Pressable
-            style={[s.sheet, { paddingBottom: spacing.sm }]}
-            onPress={() => undefined}
-          >
-            <View style={s.handle} />
-            <View style={s.sheetHead}>
-              <Text style={[typeStyles.body, s.sheetTitle]}>Select {label.toLowerCase()}</Text>
-              <Pressable
-                onPress={() => setOpen(false)}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-              >
-                <Icon name="close" size={19} color={colors.ink} />
-              </Pressable>
-            </View>
-
-            <View style={s.calHead}>
-              <Stepper
-                testID={testID ? `${testID}-month` : undefined}
-                label={MONTHS[view.month]}
-                onBack={() => step('month', -1)}
-                onNext={() => step('month', 1)}
-              />
-              <Stepper
-                testID={testID ? `${testID}-year` : undefined}
-                label={String(view.year)}
-                onBack={() => step('year', -1)}
-                onNext={() => step('year', 1)}
-              />
-            </View>
-
-            <View style={s.calRow}>
-              {WEEKDAYS.map((d, i) => (
-                <Text key={`${d}${i}`} style={[typeStyles.body, s.calWeekday]}>
-                  {d}
-                </Text>
-              ))}
-            </View>
-
-            <View style={s.calGrid}>
-              {cells.map((d, i) =>
-                d === null ? (
-                  <View key={`b${i}`} style={s.calCell} />
-                ) : (
-                  <Pressable
-                    key={d}
-                    testID={testID ? `${testID}-day-${d}` : undefined}
-                    onPress={() => choose(d)}
-                    style={s.calCell}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${d} ${MONTHS[view.month]} ${view.year}`}
-                  >
-                    <View
-                      style={[
-                        s.calDay,
-                        parsed &&
-                          parsed.day === d &&
-                          parsed.month === view.month &&
-                          parsed.year === view.year &&
-                          s.calDayOn,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          typeStyles.body,
-                          s.calDayText,
-                          parsed &&
-                            parsed.day === d &&
-                            parsed.month === view.month &&
-                            parsed.year === view.year &&
-                            s.calDayTextOn,
-                        ]}
-                      >
-                        {d}
-                      </Text>
-                    </View>
-                  </Pressable>
-                )
-              )}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <CalendarSheet
+        visible={open}
+        title={`Select ${label.toLowerCase()}`}
+        selected={parsed}
+        initialView={parsed ? { month: parsed.month, year: parsed.year } : { month: 0, year: 1990 }}
+        onPick={(d) => {
+          onChange(`${pad2(d.day)} / ${pad2(d.month + 1)} / ${d.year}`);
+          setOpen(false);
+        }}
+        onClose={() => setOpen(false)}
+        testID={testID}
+      />
     </View>
   );
 };
@@ -714,17 +747,19 @@ const Stepper = ({
     <Pressable
       testID={testID ? `${testID}-back` : undefined}
       onPress={onBack}
-      hitSlop={8}
+      hitSlop={10}
+      style={s.stepperBtn}
       accessibilityRole="button"
       accessibilityLabel={`Previous ${label}`}
     >
       <Icon name="chevronLeft" size={16} color={colors.ink} />
     </Pressable>
-    <Text style={[typeStyles.body, s.stepperLabel]}>{label}</Text>
+    <Text style={s.stepperLabel}>{label}</Text>
     <Pressable
       testID={testID ? `${testID}-next` : undefined}
       onPress={onNext}
-      hitSlop={8}
+      hitSlop={10}
+      style={s.stepperBtn}
       accessibilityRole="button"
       accessibilityLabel={`Next ${label}`}
     >
@@ -733,123 +768,19 @@ const Stepper = ({
   </View>
 );
 
-/* --------------------------------- upload --------------------------------- */
-
-/**
- * There is no file picker wired yet, so `onPick` is what a real picker would
- * call. The component owns the empty / attached / replace states so the rest
- * of the flow does not have to.
- */
-export const UploadField = ({
-  label,
-  hint,
-  file,
-  onPick,
-  onRemove,
-  required,
-  note,
-  testID,
-}: {
-  label: string;
-  hint?: string;
-  file: { name: string; kind: 'pdf' | 'image'; size: string } | null;
-  onPick: () => void;
-  onRemove?: () => void;
-  required?: boolean;
-  note?: string;
-  testID?: string;
-}) => (
-  <View style={s.field}>
-    <Label required={required}>{label}</Label>
-    {file ? (
-      <View style={[s.dropzone, s.fileCard]}>
-        <View style={s.fileTop}>
-          {/* the page itself, with the kind written on it */}
-          <View style={s.fileIcon}>
-            <Icon
-              name="pageFold"
-              size={40}
-              filled
-              color={file.kind === 'pdf' ? '#E5493C' : colors.surfie}
-            />
-            <Text style={[typeStyles.body, s.fileKind]}>{file.kind === 'pdf' ? 'PDF' : 'IMG'}</Text>
-          </View>
-
-          <View style={s.flex}>
-            <Text style={[typeStyles.body, s.fileName]} numberOfLines={1}>{file.name}</Text>
-            <Text style={[typeStyles.body, s.fileMeta]}>
-              {file.kind === 'pdf' ? 'PDF' : 'Image'} · {file.size}
-            </Text>
-          </View>
-
-          {/* state and the way to change it stack on the right */}
-          <View style={s.fileRight}>
-            <View style={s.fileState}>
-              <Icon name="checkCircle" size={19} color={colors.surfie} filled />
-              <Text style={[typeStyles.body, s.fileOk]}>Uploaded</Text>
-            </View>
-            <Pressable
-              testID={testID ? `${testID}-replace` : undefined}
-              onPress={onPick}
-              style={s.replaceBtn}
-              accessibilityRole="button"
-              accessibilityLabel={`Replace ${label}`}
-            >
-              <Text style={[typeStyles.body, s.replace]}>Replace</Text>
-            </Pressable>
-          </View>
-
-          {onRemove && (
-            <Pressable
-              testID={testID ? `${testID}-remove` : undefined}
-              onPress={onRemove}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${label}`}
-            >
-              <Icon name="moreVertical" size={16} color={colors.inkFaint} />
-            </Pressable>
-          )}
-        </View>
-      </View>
-    ) : (
-      <Pressable
-        testID={testID}
-        onPress={onPick}
-        style={s.dropzone}
-        accessibilityRole="button"
-        accessibilityLabel={`Upload ${label}`}
-      >
-        <View style={s.uploadIcon}>
-          <Icon name="upload" size={17} color={colors.surfie} />
-        </View>
-        <Text style={[typeStyles.body, s.dropText]}>Upload document</Text>
-      </Pressable>
-    )}
-    {!!hint && <Text style={[typeStyles.body, s.dropHint]}>{hint}</Text>}
-    <Helper>{note}</Helper>
-  </View>
-);
-
 /* ----------------------------- verified value ----------------------------- */
 
 /** A value already confirmed at sign-in. Shown, never asked for again. */
-export const VerifiedField = ({
-  label,
-  value,
-  testID,
-}: {
-  label: string;
-  value: string;
-  testID?: string;
-}) => (
+export const VerifiedField = ({ label, value, testID }: { label: string; value: string; testID?: string }) => (
   <View style={s.field}>
-    <Label>{label}</Label>
-    <View testID={testID} style={[s.input, s.verified]}>
-      <Text style={[typeStyles.body, s.inputText]} numberOfLines={1}>{value}</Text>
+    <FieldLabel>{label}</FieldLabel>
+    <View testID={testID} style={[s.input, s.verified]} accessible accessibilityLabel={`${label}: ${value}, verified`}>
+      <Text style={s.selectText} numberOfLines={1}>
+        {value}
+      </Text>
       <View style={s.verifiedTag}>
         <Icon name="checkCircle" size={17} color={colors.paris} filled />
-        <Text style={[typeStyles.body, s.verifiedText]}>Verified</Text>
+        <Text style={s.verifiedText}>Verified</Text>
       </View>
     </View>
   </View>
@@ -857,6 +788,7 @@ export const VerifiedField = ({
 
 /* -------------------------------- checkbox -------------------------------- */
 
+/** Kept for existing call sites; it is the shared Checkbox. */
 export const CheckField = ({
   checked,
   onToggle,
@@ -868,18 +800,9 @@ export const CheckField = ({
   children: ReactNode;
   testID?: string;
 }) => (
-  <Pressable
-    testID={testID}
-    onPress={onToggle}
-    style={s.checkRow}
-    accessibilityRole="checkbox"
-    accessibilityState={{ checked }}
-  >
-    <View style={[s.box, checked && s.boxOn]}>
-      {checked && <Icon name="check" size={12} color={colors.white} />}
-    </View>
-    <Text style={[typeStyles.body, s.checkText]}>{children}</Text>
-  </Pressable>
+  <Checkbox testID={testID} checked={checked} onToggle={onToggle}>
+    {children}
+  </Checkbox>
 );
 
 /* ------------------------------ privacy note ------------------------------ */
@@ -888,20 +811,14 @@ export const CheckField = ({
 export const PrivacyNote = ({ children, icon = 'lock' }: { children: ReactNode; icon?: IconName }) => (
   <View style={s.privacy}>
     <Icon name={icon} size={14} color={colors.surfie} />
-    <Text style={[typeStyles.body, s.privacyText]}>{children}</Text>
+    <Text style={s.privacyText}>{children}</Text>
   </View>
 );
 
 /* -------------------------------- stepper --------------------------------- */
 
-export const StepProgress = ({
-  steps,
-  index,
-}: {
-  steps: { key: string; short: string }[];
-  index: number;
-}) => (
-  <View>
+export const StepProgress = ({ steps, index }: { steps: { key: string; short: string }[]; index: number }) => (
+  <View accessible accessibilityLabel={`Step ${index + 1} of ${steps.length}`}>
     {/* one bar per step: filled up to and including the current one */}
     <View style={s.stepBars}>
       {steps.map((st, i) => (
@@ -910,11 +827,7 @@ export const StepProgress = ({
     </View>
     <View style={s.stepBars}>
       {steps.map((st, i) => (
-        <Text
-          key={st.key}
-          style={[typeStyles.body, s.stepLabel, i === index && s.stepLabelOn]}
-          numberOfLines={1}
-        >
+        <Text key={st.key} style={[s.stepLabel, i === index && s.stepLabelOn]} numberOfLines={1}>
           {st.short}
         </Text>
       ))}
@@ -929,9 +842,7 @@ const s = StyleSheet.create({
   /* anchored menu */
   menuCatcher: { flex: 1 },
   menu: {
-    maxHeight: 260,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
+    maxHeight: 280,
     borderBottomLeftRadius: radius.md,
     borderBottomRightRadius: radius.md,
     borderWidth: 1,
@@ -950,7 +861,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    paddingVertical: 13,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
   },
   menuText: { ...typeStyles.body, color: colors.ink },
@@ -963,19 +874,21 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    minHeight: 48,
+    minHeight: 50,
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.surface.inputBorder,
     backgroundColor: colors.white,
-    color: colors.ink,
   },
+  inputMulti: { alignItems: 'flex-start', paddingVertical: spacing.md },
   inputFocused: { borderColor: colors.surfie },
-  inputText: { flex: 1, color: colors.ink },
+  inputInvalid: { borderColor: colors.danger },
+  inputText: { ...typeStyles.inputSingle, flex: 1, color: colors.ink, height: 48 },
+  inputTextMulti: { ...typeStyles.input, flex: 1, color: colors.ink, minHeight: 72, textAlignVertical: 'top' },
+  selectText: { ...typeStyles.body, flex: 1, color: colors.ink },
   /* the wrapper already carries the box, so the field itself draws nothing */
-  bare: { padding: 0, margin: 0 },
+  bare: { margin: 0, paddingHorizontal: 0 },
   placeholder: { color: colors.inkFaint },
 
   verified: { backgroundColor: colors.surface.page },
@@ -988,9 +901,9 @@ const s = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.surface.selected,
@@ -1001,8 +914,8 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderStyle: 'dashed',
@@ -1010,82 +923,6 @@ const s = StyleSheet.create({
   },
   addChipText: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },
   addRow: { flexDirection: 'row', marginTop: spacing.sm },
-
-  /* upload */
-  /* empty and filled share this box, so picking a file cannot resize the card */
-  dropzone: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: 132,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.surface.inputBorder,
-    backgroundColor: colors.surface.page,
-  },
-  uploadIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  dropText: { ...typeStyles.cardTitle, color: colors.surfie },
-  dropHint: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 6 },
-
-  /* the attached state keeps the dropzone box, only its contents change */
-  fileCard: {
-    justifyContent: 'center',
-    alignItems: 'stretch',
-    borderStyle: 'solid',
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-  },
-  fileTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  fileIcon: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
-  /* sits on the lower half of the page shape, where a label would be printed */
-  fileKind: {
-    ...typeStyles.label,
-    position: 'absolute',
-    bottom: 9,
-    fontSize: 8.5,
-    color: colors.white,
-    fontWeight: fontWeight.semibold,
-  },
-  fileName: { ...typeStyles.cardTitle, color: colors.ink },
-  fileMeta: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
-  fileRight: { alignItems: 'flex-end', gap: 6 },
-  fileState: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  fileOk: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },
-  replaceBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    borderColor: colors.surfie,
-    alignItems: 'center',
-  },
-  replace: { ...typeStyles.buttonSmall, color: colors.surfie },
-
-  /* checkbox */
-  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  box: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: colors.surface.inputBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginTop: 1,
-  },
-  boxOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  checkText: { ...typeStyles.bodySmall, flex: 1, color: colors.ink },
 
   /* privacy */
   privacy: {
@@ -1101,44 +938,10 @@ const s = StyleSheet.create({
   stepBars: { flexDirection: 'row', gap: 6 },
   stepBar: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.surface.line },
   stepBarOn: { backgroundColor: colors.surfie },
-  stepLabel: {
-    ...typeStyles.caption,
-    flex: 1,
-    fontSize: 10.5,
-    color: colors.inkFaint,
-    marginTop: 6,
-  },
+  stepLabel: { ...typeStyles.caption, flex: 1, fontSize: 11, color: colors.inkFaint, marginTop: 6 },
   stepLabelOn: { color: colors.ink, fontWeight: fontWeight.semibold },
 
-  /* sheet */
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: colors.surface.line, alignSelf: 'center', marginBottom: spacing.md,
-  },
-  sheetHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  sheetTitle: {
-    flex: 1,
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: fontWeight.semibold,
-    color: colors.ink,
-  },
-  /* the options read as one list, not four loose rows */
+  /* option sheet */
   optionBox: {
     borderWidth: 1,
     borderColor: colors.surface.line,
@@ -1146,13 +949,11 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   search: { marginBottom: spacing.sm },
-  /* grows with the content, so a short list is a short sheet */
-  sheetList: { flexGrow: 0, maxHeight: 340 },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: 13,
+    minHeight: 50,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.white,
   },
@@ -1178,6 +979,22 @@ const s = StyleSheet.create({
   pickOn: { borderColor: colors.surfie, backgroundColor: colors.surfie },
   radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.white },
   optionOn: { backgroundColor: colors.surface.mintSoft },
+  optionText: { ...typeStyles.body, flex: 1, color: colors.ink },
+  optionTextOn: { color: colors.surfie, fontWeight: fontWeight.semibold },
+  noMatch: { ...typeStyles.caption, color: colors.inkMuted, padding: spacing.md },
+  sheetFoot: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  sheetClear: { minHeight: 44, justifyContent: 'center', paddingRight: spacing.sm },
+  sheetClearText: { ...typeStyles.buttonSmall, color: colors.surfie },
+  sheetDone: {
+    flex: 1,
+    height: 50,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfie,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetDoneOff: { opacity: 0.45 },
+  sheetDoneText: { ...typeStyles.button, color: colors.white },
 
   /* calendar */
   calHead: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
@@ -1186,41 +1003,21 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 9,
+    paddingHorizontal: spacing.xs,
+    minHeight: 44,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
+  stepperBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   stepperLabel: { ...typeStyles.label, color: colors.ink },
   calRow: { flexDirection: 'row' },
-  calWeekday: {
-    ...typeStyles.caption,
-    flex: 1,
-    textAlign: 'center',
-    color: colors.inkFaint,
-    marginBottom: 4,
-  },
+  calWeekday: { ...typeStyles.caption, flex: 1, textAlign: 'center', color: colors.inkFaint, marginBottom: 4 },
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calCell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 3 },
-  calDay: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  calCell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 2 },
+  calDay: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   calDayOn: { backgroundColor: colors.surfie },
   calDayText: { ...typeStyles.body, color: colors.ink },
   calDayTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
-  optionText: { ...typeStyles.body, flex: 1, color: colors.ink },
-  optionTextOn: { color: colors.surfie, fontWeight: fontWeight.semibold },
-  noMatch: { ...typeStyles.caption, color: colors.inkMuted, padding: spacing.md },
-  sheetFloor: { height: spacing.sm },
-  sheetFoot: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md },
-  sheetClear: { paddingVertical: spacing.sm, paddingRight: spacing.sm },
-  sheetClearText: { ...typeStyles.buttonSmall, color: colors.surfie },
-  sheetDone: {
-    flex: 1,
-    height: 50,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfie,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetDoneText: { ...typeStyles.button, color: colors.white },
+  calDayTextOff: { color: colors.surface.inputBorder },
 });

@@ -1,321 +1,437 @@
-import { typeStyles } from '../../../../../libs/typography/src';
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, StatusBar, KeyboardAvoidingView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
-import { colors } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
+import { Screen } from '../../components/ui';
+import { ScreenHeader, HeaderTextAction } from '../../components/ScreenHeader';
+import { SelectField } from '../../components/form';
+import { FilePickerSheet, type PickedFile } from '../../components/upload';
+import { confirm, confirmDiscard } from '../../components/confirm';
 import {
   C,
-  SlimHeader,
   Stepper,
   Label,
   Field,
-  SelectRow,
   Segmented,
   CheckRow,
   ShieldNote,
   ScanLine,
   SectionTitle,
   SummaryRow,
-  StickyFooter,
   GhostButton,
   SolidButton,
 } from '../../components/compact';
+import { useStore } from '../../state/store';
+import { selectCases, selectRecord } from '../../state/selectors';
 import {
-  initialDraft,
+  GUIDANCE_AREAS,
   URGENCIES,
   HISTORY_MAX,
   QUESTION_MAX,
   hasIdentifiers,
   deIdentify,
+  type Clarification,
   type ClarificationDraft,
   type Urgency,
 } from '../../data/clarification';
-import { cases, caseDetailFor, type PatientCase } from '../../data/doctor';
+import type { ConsultationRecord } from '../../data/clinical';
+import type { PatientCase } from '../../data/doctor';
 
 const STEPS = ['Case Details', 'Clinical Doubt', 'Review & Share'];
 
-const draftFromCase = (patientCase: PatientCase): ClarificationDraft => {
-  const detail = caseDetailFor(patientCase);
-  return {
-    ...initialDraft,
-    caseId: detail.ref,
-    patientName: patientCase.name,
-    patientId: patientCase.caseId,
-    consultationId: patientCase.appointmentId.toUpperCase(),
-    title: patientCase.concern,
-    ageLabel: `${patientCase.age} years`,
-    gender: patientCase.gender,
-    history: detail.notes?.excerpt ?? patientCase.concern,
-    provisionalDiagnosis: detail.notes?.primaryDiagnosis ?? 'To be confirmed',
-    currentPlan: detail.prescription?.names.join(', ') || detail.summary || 'No current plan recorded',
-    question: '',
-    files: [],
-  };
-};
+/** Age is shared as a band, not a birthday — one less identifier. */
+export const AGE_BANDS = ['18–24 years', '25–34 years', '35–44 years', '45–54 years', '55–64 years', '65+ years'];
+const ageBand = (age: number) =>
+  age < 25 ? AGE_BANDS[0] : age < 35 ? AGE_BANDS[1] : age < 45 ? AGE_BANDS[2] : age < 55 ? AGE_BANDS[3] : age < 65 ? AGE_BANDS[4] : AGE_BANDS[5];
+const GENDERS = ['Female', 'Male'] as const;
+
+const draftFromCase = (c: PatientCase, r: ConsultationRecord): ClarificationDraft => ({
+  caseId: '',
+  appointmentId: c.appointmentId,
+  patientName: c.name,
+  patientId: c.patientId,
+  consultationId: c.caseId,
+  title: r.notes.complaint.trim() || c.concern,
+  ageLabel: ageBand(c.age),
+  gender: c.gender,
+  history: r.notes.history.trim() || c.concern,
+  provisionalDiagnosis: r.notes.diagnosis.trim(),
+  currentPlan: r.medicines.length ? r.medicines.map((m) => `${m.name} ${m.frequency.toLowerCase()}`).join(', ') : 'No medicines started',
+  question: '',
+  guidanceArea: GUIDANCE_AREAS[0],
+  urgency: 'routine',
+  speciality: 'Psychiatry',
+  files: [],
+});
+
+const draftFromClarification = (c: Clarification, pc: PatientCase | undefined): ClarificationDraft => ({
+  caseId: c.caseId,
+  appointmentId: c.appointmentId,
+  patientName: pc?.name ?? '',
+  patientId: pc?.patientId ?? '',
+  consultationId: pc?.caseId ?? '',
+  title: c.title,
+  ageLabel: c.shared.ageLabel,
+  gender: c.shared.gender,
+  history: c.shared.history,
+  provisionalDiagnosis: c.shared.provisionalDiagnosis,
+  currentPlan: c.shared.currentPlan,
+  question: c.shared.question,
+  guidanceArea: c.shared.guidanceArea,
+  urgency: c.urgency,
+  speciality: 'Psychiatry',
+  files: c.shared.files,
+});
 
 /**
  * Create Clarification — three steps, one screen each.
  *
- * The wizard exists so the form is never one long page: each step asks for one
- * kind of thing. Identifiers are checked as the doctor types rather than only
- * at submit, and the review step shows exactly what the expert will receive —
- * built by `deIdentify`, so the preview cannot drift from what is shared.
+ * Identifiers are checked as the doctor types, and the review step shows
+ * exactly what the expert will receive — built by `deIdentify`, so the preview
+ * cannot drift from what is shared. Save Draft keeps the work in the
+ * Clarifications list; Submit posts it to the expert.
  */
 export const CreateClarificationScreen = ({
+  initialAppointmentId,
+  existing,
   onCancel,
   onSubmit,
   onSaveDraft,
+  onDirtyChange,
 }: {
+  /** Raised from a consultation: the case is chosen already. */
+  initialAppointmentId?: string;
+  /** A saved draft being continued. */
+  existing?: Clarification;
   onCancel: () => void;
   onSubmit: (draft: ClarificationDraft) => void;
-  onSaveDraft?: (draft: ClarificationDraft) => void;
+  onSaveDraft: (draft: ClarificationDraft) => void;
+  /** Reports unsaved work so the route can ask before it is dropped — on Back, swipe or Android back. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const insets = useSafeAreaInsets();
+  const cases = useStore(selectCases).filter((c) => c.state !== 'noShow');
+  const records = useStore((st) => st.records);
+  const initialCase = cases.find((c) => c.appointmentId === (existing?.appointmentId ?? initialAppointmentId));
+  const start = useMemo<ClarificationDraft | null>(() => {
+    if (existing) return draftFromClarification(existing, initialCase);
+    if (initialCase) return draftFromCase(initialCase, selectRecordFor(records, initialCase.appointmentId));
+    return null;
+    // computed once: later store updates must not reset the doctor's draft
+  }, []);
+
   const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState(initialDraft);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ClarificationDraft | null>(start);
   const [confirmed, setConfirmed] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const set = <K extends keyof ClarificationDraft>(k: K, v: ClarificationDraft[K]) =>
-    setDraft((d) => ({ ...d, [k]: v }));
+    setDraft((d) => (d ? { ...d, [k]: v } : d));
 
-  // scanned live, so a pasted identifier is caught while typing
-  const dirty = useMemo(
-    () => hasIdentifiers(`${draft.history} ${draft.question} ${draft.title}`),
-    [draft.history, draft.question, draft.title]
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(start);
+  const flagged = useMemo(
+    () => !!draft && hasIdentifiers(`${draft.history} ${draft.question} ${draft.title} ${draft.provisionalDiagnosis}`),
+    [draft]
   );
+  const shared = draft ? deIdentify(draft) : null;
 
-  const shared = useMemo(() => deIdentify(draft), [draft]);
-  const selectedCase = cases.find((c) => c.id === selectedCaseId);
+  const chooseCase = (c: PatientCase) => setDraft(draftFromCase(c, selectRecordFor(records, c.appointmentId)));
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
-  const chooseCase = (patientCase: PatientCase) => {
-    setSelectedCaseId(patientCase.id);
-    setDraft(draftFromCase(patientCase));
+  const back = () => {
+    if (step > 0) return setStep((v) => v - 1);
+    // the route guards removal when it listens; on its own the screen asks itself
+    if (dirty && !onDirtyChange) return confirmDiscard(onCancel, 'this clarification');
+    onCancel();
   };
 
+  const canContinue =
+    step === 0
+      ? !!draft && !!draft.title.trim() && !!draft.history.trim() && !!draft.provisionalDiagnosis.trim()
+      : step === 1
+        ? !!draft && draft.question.trim().length >= 10
+        : false;
+
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-      <View style={{ paddingTop: insets.top }}>
-        <SlimHeader
-          onBack={() => (step === 0 ? onCancel() : setStep((v) => v - 1))}
-          center={<LogoWide width={96} height={24} />}
-          right={
-            <Pressable testID="save-draft" onPress={() => onSaveDraft?.(draft)} hitSlop={8}>
-              <Text style={[typeStyles.body, s.saveDraft]} numberOfLines={1}>
-                Save Draft
-              </Text>
-            </Pressable>
-          }
-        />
-      </View>
-
-      <View style={s.titleWrap}>
-        <Text style={[typeStyles.body, s.h1]}>{step === 2 ? 'Review & Share' : 'Create Clarification'}</Text>
-        <Text style={[typeStyles.body, s.sub]}>
-          {step === 2
-            ? 'Check the details below before sharing with an expert.'
-            : 'Prepare a de-identified case for expert guidance.'}
-        </Text>
-      </View>
-
-      <Stepper steps={STEPS} current={step} />
-
-      {/* Android no longer resizes the window for the keyboard under
-          edge-to-edge, so the last fields — diagnosis and current plan — sat
-          behind it. Lifting the scroll area and the footer together keeps the
-          focused field and Continue both reachable. */}
-      <KeyboardAvoidingView style={s.fill} behavior="padding">
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    <Screen
+      testID="create-clarification"
+      background={colors.white}
+      header={
+        <View>
+          <ScreenHeader
+            onBack={back}
+            title={step === 2 ? 'Review & Share' : 'Create Clarification'}
+            subtitle={
+              step === 2 ? 'Check the details below before sharing with an expert.' : 'Prepare a de-identified case for expert guidance.'
+            }
+            right={
+              draft ? <HeaderTextAction testID="save-draft" label="Save Draft" onPress={() => onSaveDraft(draft)} /> : undefined
+            }
+          />
+          <Stepper steps={STEPS} current={step} />
+        </View>
+      }
+      footer={
+        <View>
+          <Text style={s.footNote}>Step {step + 1} of 3</Text>
+          <View style={s.footRow}>
+            <GhostButton testID={step === 0 ? 'cancel' : 'back-step'} label={step === 0 ? 'Cancel' : 'Back'} onPress={back} />
+            {step < 2 ? (
+              <SolidButton testID="continue" label="Continue" disabled={!canContinue} onPress={() => setStep((v) => v + 1)} />
+            ) : (
+              <SolidButton
+                testID="submit"
+                label="Submit to Expert"
+                // the identifier confirmation is a hard gate, not a nudge
+                disabled={!confirmed || flagged}
+                onPress={() =>
+                  draft &&
+                  confirm({
+                    title: 'Submit to expert?',
+                    message: 'The de-identified case is shared with an expert reviewer. The patient does not see this discussion.',
+                    confirmLabel: 'Submit',
+                    onConfirm: () => onSubmit(draft),
+                  })
+                }
+              />
+            )}
+          </View>
+        </View>
+      }
+    >
+      <View style={s.body}>
         {step === 0 && (
           <>
-            {/* The picker is a means to an end: once a case is chosen the list
-                is replaced by that case's details, so the page never shows a
-                patient's details underneath a list of other patients. */}
-            {!selectedCase && (
+            {!draft && (
               <>
-            <SectionTitle>Select an existing case</SectionTitle>
-            <Text style={[typeStyles.body, s.caseHelp]}>
-              Patient and consultation details will be filled automatically.
-            </Text>
-            <View style={s.caseList}>
-              {cases.map((patientCase) => {
-                const active = selectedCaseId === patientCase.id;
-                return (
-                  <Pressable
-                    key={patientCase.id}
-                    testID={`select-case-${patientCase.id}`}
-                    onPress={() => chooseCase(patientCase)}
-                    style={[s.caseOption, active && s.caseOptionActive]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: active }}
-                  >
-                    <View style={[s.caseAvatar, active && s.caseAvatarActive]}>
-                      <Text style={[typeStyles.body, s.caseInitials]}>{patientCase.initials}</Text>
-                    </View>
-                    <View style={s.flex}>
-                      <Text style={[typeStyles.body, s.caseName]}>{patientCase.name}</Text>
-                      <Text style={[typeStyles.body, s.caseMeta]}>
-                        {patientCase.caseId} • {patientCase.age}y • {patientCase.gender}
-                      </Text>
-                    </View>
-                    <Icon name={active ? 'checkCircle' : 'chevronRight'} size={17} color={active ? colors.surfie : C.muted} />
-                  </Pressable>
-                );
-              })}
-            </View>
+                <SectionTitle>Select an existing case</SectionTitle>
+                <Text style={s.caseHelp}>Clinical details are filled in from the consultation record.</Text>
+                <View style={s.caseList}>
+                  {cases.map((c) => (
+                    <Pressable
+                      key={c.id}
+                      testID={`select-case-${c.appointmentId}`}
+                      onPress={() => chooseCase(c)}
+                      style={({ pressed }) => [s.caseOption, pressed && s.pressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${c.name}, ${c.caseId}`}
+                    >
+                      <View style={s.caseAvatar}>
+                        <Text style={s.caseInitials}>{c.initials}</Text>
+                      </View>
+                      <View style={s.flex}>
+                        <Text style={s.caseName}>{c.name}</Text>
+                        <Text style={s.caseMeta}>
+                          {c.caseId} • {c.dateLabel}
+                        </Text>
+                      </View>
+                      <Icon name="chevronRight" size={17} color={C.muted} />
+                    </Pressable>
+                  ))}
+                </View>
               </>
             )}
 
-            {selectedCase && (
+            {draft && (
               <>
-              <View style={s.sourceStrip}>
-              <View style={s.avatar}>
-                <Text style={[typeStyles.body, s.avatarText]}>{selectedCase.initials}</Text>
-              </View>
-              <View style={s.flex}>
-                <Text style={[typeStyles.body, s.sourceName]}>{draft.patientName}</Text>
-                <Text style={[typeStyles.body, s.sourceMeta]}>Consultation {draft.consultationId}</Text>
-              </View>
-              <Icon name="lock" size={13} color={C.amber} />
-              <Text style={[typeStyles.body, s.privateText]}>Private</Text>
-              {/* the only way back to the picker, now that the list is gone */}
-              <Pressable
-                testID="change-case"
-                onPress={() => setSelectedCaseId(null)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Choose a different case"
-              >
-                <Text style={[typeStyles.body, s.changeText]}>Change</Text>
-              </Pressable>
-            </View>
+                <View style={s.sourceStrip}>
+                  <View style={s.avatar}>
+                    <Icon name="user" size={18} color={colors.surfie} />
+                  </View>
+                  <View style={s.flex}>
+                    <Text style={s.sourceName}>{draft.patientName}</Text>
+                    <Text style={s.sourceMeta}>Consultation {draft.consultationId}</Text>
+                  </View>
+                  <View style={s.privateTag}>
+                    <Icon name="lock" size={12} color={C.amber} />
+                    <Text style={s.privateText}>Private</Text>
+                  </View>
+                  {!existing && (
+                    <Pressable
+                      testID="change-case"
+                      onPress={() => setDraft(null)}
+                      hitSlop={10}
+                      style={s.changeBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose a different case"
+                    >
+                      <Text style={s.changeText}>Change</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <Text style={s.privateNote}>Name and IDs above stay with you. Only the fields below are shared.</Text>
 
-            <SectionTitle>Case title</SectionTitle>
-            <Field testID="title" value={draft.title} onChangeText={(t) => set('title', t)} />
+                <SectionTitle>Case title</SectionTitle>
+                <Field testID="title" value={draft.title} onChangeText={(t) => set('title', t)} accessibilityLabel="Case title" />
 
-            <SectionTitle>Patient profile</SectionTitle>
-            <View style={s.twoCol}>
-              <View style={s.flex}>
-                <Label>Age</Label>
-                <SelectRow testID="age" value={draft.ageLabel} />
-              </View>
-              <View style={s.flex}>
-                <Label>Gender</Label>
-                <SelectRow testID="gender" value={draft.gender} />
-              </View>
-            </View>
+                <SectionTitle>Patient profile</SectionTitle>
+                <View style={s.twoCol}>
+                  <View style={s.flex}>
+                    <SelectField testID="age" label="Age" value={draft.ageLabel} options={AGE_BANDS} onChange={(v) => set('ageLabel', v)} />
+                  </View>
+                  <View style={s.flex}>
+                    <SelectField
+                      testID="gender"
+                      label="Gender"
+                      inline
+                      value={draft.gender}
+                      options={GENDERS}
+                      onChange={(v) => set('gender', v as ClarificationDraft['gender'])}
+                    />
+                  </View>
+                </View>
 
-            <SectionTitle>Brief clinical history</SectionTitle>
-            <Field
-              testID="history"
-              value={draft.history}
-              onChangeText={(t) => set('history', t)}
-              multiline
-              height={100}
-              max={HISTORY_MAX}
-            />
-            <ScanLine clean={!dirty} />
+                <SectionTitle>Brief clinical history</SectionTitle>
+                <Field
+                  testID="history"
+                  value={draft.history}
+                  onChangeText={(t) => set('history', t)}
+                  multiline
+                  height={100}
+                  max={HISTORY_MAX}
+                  accessibilityLabel="Brief clinical history"
+                />
+                <ScanLine clean={!flagged} />
 
-            <SectionTitle>Diagnosis or provisional diagnosis</SectionTitle>
-            <Field
-              testID="diagnosis"
-              value={draft.provisionalDiagnosis}
-              onChangeText={(t) => set('provisionalDiagnosis', t)}
-            />
+                <SectionTitle>Diagnosis or provisional diagnosis</SectionTitle>
+                <Field
+                  testID="diagnosis"
+                  value={draft.provisionalDiagnosis}
+                  onChangeText={(t) => set('provisionalDiagnosis', t)}
+                  placeholder="e.g. Generalised anxiety disorder, provisional"
+                  accessibilityLabel="Provisional diagnosis"
+                />
 
-            <SectionTitle>Current plan</SectionTitle>
-            <SelectRow testID="plan" value={draft.currentPlan} />
+                <SectionTitle>Current plan</SectionTitle>
+                <Field
+                  testID="plan"
+                  value={draft.currentPlan}
+                  onChangeText={(t) => set('currentPlan', t)}
+                  multiline
+                  height={64}
+                  accessibilityLabel="Current plan"
+                />
               </>
             )}
           </>
         )}
 
-        {step === 1 && (
+        {step === 1 && draft && (
           <>
             <View style={s.previewStrip}>
               <View style={s.avatarSm}>
-                <Text style={[typeStyles.body, s.avatarTextSm]}>RS</Text>
+                <Icon name="user" size={16} color={colors.white} />
               </View>
-              <Text style={[typeStyles.body, s.previewText]}>
-                Case preview • {draft.ageLabel} • {draft.gender}
+              <Text style={s.previewText} numberOfLines={1}>
+                {draft.ageLabel} • {draft.gender}
               </Text>
               <View style={s.flex} />
               <Icon name="shield" size={14} color={colors.surfie} />
-              <Text style={[typeStyles.body, s.deidText]}>De-identified</Text>
+              <Text style={s.deidText}>De-identified</Text>
             </View>
 
-            <Text style={[typeStyles.body, s.h2]}>What guidance do you need?</Text>
-
+            <SectionTitle>What guidance do you need?</SectionTitle>
             <Label>Specific clinical question</Label>
             <Field
               testID="question"
               value={draft.question}
               onChangeText={(t) => set('question', t)}
+              placeholder="Ask one clear question the expert can answer."
               multiline
-              height={92}
+              height={96}
               max={QUESTION_MAX}
+              accessibilityLabel="Specific clinical question"
             />
+            <ScanLine clean={!flagged} />
 
-            <SectionTitle>Guidance area</SectionTitle>
-            <SelectRow testID="area" value={draft.guidanceArea} />
+            <View style={s.spacer} />
+            <SelectField
+              testID="area"
+              label="Guidance area"
+              value={draft.guidanceArea}
+              options={GUIDANCE_AREAS}
+              onChange={(v) => set('guidanceArea', v)}
+            />
 
             <SectionTitle>Urgency</SectionTitle>
-            <Segmented<Urgency>
-              options={URGENCIES}
-              value={draft.urgency}
-              onChange={(v) => set('urgency', v)}
-              idPrefix="urgency"
-            />
+            <Segmented<Urgency> options={URGENCIES} value={draft.urgency} onChange={(v) => set('urgency', v)} idPrefix="urgency" />
 
             <SectionTitle>Supporting files</SectionTitle>
-            <Pressable testID="upload" style={s.upload}>
+            <Pressable
+              testID="upload"
+              onPress={() => setPicking(true)}
+              style={({ pressed }) => [s.upload, pressed && s.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Attach a supporting file"
+            >
               <View style={s.uploadIcon}>
-                <Icon name="upload" size={15} color={colors.surfie} />
+                <Icon name="upload" size={16} color={colors.surfie} />
               </View>
               <View style={s.flex}>
-                <Text style={[typeStyles.body, s.uploadTitle]}>Upload files</Text>
-                <Text style={[typeStyles.body, s.uploadMeta]}>PDF, DOC, JPG or PNG (max 10 MB)</Text>
+                <Text style={s.uploadTitle}>Attach a file</Text>
+                <Text style={s.uploadMeta}>PDF or image, up to 10 MB. Remove identifiers first.</Text>
               </View>
             </Pressable>
             {draft.files.map((f) => (
               <View key={f.id} style={s.fileChip}>
-                <Icon name="document" size={13} color={colors.surfie} />
-                <Text style={[typeStyles.body, s.fileName]}>{f.name}</Text>
+                <Icon name="document" size={14} color={colors.surfie} />
+                <Text style={s.fileName} numberOfLines={1}>
+                  {f.name} · {f.size}
+                </Text>
                 <Pressable
                   testID={`remove-${f.id}`}
-                  onPress={() => set('files', draft.files.filter((x) => x.id !== f.id))}
-                  hitSlop={6} accessibilityLabel="Remove attached file"
+                  onPress={() =>
+                    confirm({
+                      title: 'Remove this file?',
+                      message: f.name,
+                      confirmLabel: 'Remove',
+                      destructive: true,
+                      onConfirm: () => set('files', draft.files.filter((x) => x.id !== f.id)),
+                    })
+                  }
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${f.name}`}
                 >
-                  <Icon name="close" size={13} color={C.muted} />
+                  <Icon name="trash" size={15} color={colors.danger} />
                 </Pressable>
               </View>
             ))}
+            <FilePickerSheet
+              visible={picking}
+              kind="document"
+              maxMb={10}
+              testID="clarification-file"
+              onClose={() => setPicking(false)}
+              onPick={(f: PickedFile) => {
+                setPicking(false);
+                set('files', [...draft.files, { id: `f-${Date.now().toString(36)}`, name: f.name, size: f.size }]);
+              }}
+            />
           </>
         )}
 
-        {step === 2 && (
+        {step === 2 && draft && shared && (
           <>
-            <ShieldNote icon="shieldCheck">Ready to share • Direct identifiers removed</ShieldNote>
+            {flagged ? (
+              <ShieldNote icon="alertTriangle">Possible identifier found — edit the case before sharing.</ShieldNote>
+            ) : (
+              <ShieldNote icon="shieldCheck">Ready to share • Direct identifiers removed</ShieldNote>
+            )}
 
             <ReviewGroup title="Case details" onEdit={() => setStep(0)}>
               <SummaryRow label="Case title" value={shared.title} />
               <SummaryRow label="Patient" value={`${shared.ageLabel} • ${shared.gender}`} last />
             </ReviewGroup>
-
             <ReviewGroup title="Clinical overview" onEdit={() => setStep(0)}>
               <SummaryRow label="Brief history" value={shared.history} />
               <SummaryRow label="Provisional diagnosis" value={shared.provisionalDiagnosis} />
               <SummaryRow label="Current plan" value={shared.currentPlan} last />
             </ReviewGroup>
-
             <ReviewGroup title="Expert question" onEdit={() => setStep(1)}>
               <SummaryRow label="Question" value={shared.question} last />
             </ReviewGroup>
-
             <ReviewGroup title="Additional information" onEdit={() => setStep(1)}>
               <SummaryRow
                 label="Details"
@@ -328,56 +444,24 @@ export const CreateClarificationScreen = ({
               <CheckRow testID="confirm" checked={confirmed} onToggle={() => setConfirmed((v) => !v)}>
                 I confirm the case and attachments contain no direct patient identifiers.
               </CheckRow>
-              <Text style={[typeStyles.body, s.audit]}>Submission, doctor and time will be recorded.</Text>
+              <Text style={s.audit}>Submission, doctor and time will be recorded.</Text>
             </View>
           </>
         )}
-      </ScrollView>
-
-      <StickyFooter note={`Step ${step + 1} of 3`} bottomInset={insets.bottom}>
-        {/* Cancel and Back sit in the same slot across the three steps, so they
-            share one treatment — an outlined button, not bare text on step 0. */}
-        {step === 0 ? (
-          <GhostButton testID="cancel" label="Cancel" onPress={onCancel} />
-        ) : (
-          <GhostButton testID="back-step" label="Back" onPress={() => setStep((v) => v - 1)} />
-        )}
-        {step < 2 ? (
-          <SolidButton
-            testID="continue"
-            label="Continue"
-            disabled={step === 0 && !selectedCaseId}
-            onPress={() => setStep((v) => v + 1)}
-          />
-        ) : (
-          <SolidButton
-            testID="submit"
-            label="Submit to Expert"
-            // the identifier confirmation is a hard gate, not a nudge
-            disabled={!confirmed}
-            onPress={() => onSubmit(draft)}
-          />
-        )}
-      </StickyFooter>
-      </KeyboardAvoidingView>
-    </View>
+      </View>
+    </Screen>
   );
 };
 
-const ReviewGroup = ({
-  title,
-  onEdit,
-  children,
-}: {
-  title: string;
-  onEdit: () => void;
-  children: React.ReactNode;
-}) => (
+const selectRecordFor = (records: Record<string, ConsultationRecord>, appointmentId: string) =>
+  selectRecord({ records } as never, appointmentId);
+
+const ReviewGroup = ({ title, onEdit, children }: { title: string; onEdit: () => void; children: React.ReactNode }) => (
   <View style={s.group}>
     <View style={s.groupHead}>
-      <Text style={[typeStyles.body, s.groupTitle]}>{title}</Text>
-      <Pressable onPress={onEdit} hitSlop={8}>
-        <Text style={[typeStyles.body, s.editLink]}>Edit</Text>
+      <Text style={s.groupTitle}>{title}</Text>
+      <Pressable onPress={onEdit} hitSlop={10} style={s.editBtn} accessibilityRole="button" accessibilityLabel={`Edit ${title}`}>
+        <Text style={s.editLink}>Edit</Text>
       </Pressable>
     </View>
     <View style={s.groupBody}>{children}</View>
@@ -386,92 +470,82 @@ const ReviewGroup = ({
 
 const s = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  fill: { flex: 1 },
-  root: { flex: 1, backgroundColor: colors.white },
-  saveDraft: { ...typeStyles.buttonSmall, color: colors.surfie },
+  pressed: { opacity: 0.75 },
+  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  spacer: { height: spacing.md },
+  footNote: { ...typeStyles.helper, color: C.muted, textAlign: 'center', marginBottom: 6 },
+  footRow: { flexDirection: 'row', gap: spacing.sm },
 
-  titleWrap: { paddingHorizontal: 16, marginBottom: 10 },
-  h1: { ...typeStyles.pageTitle, color: C.ink },
-  sub: { ...typeStyles.caption, color: C.muted, marginTop: 1 },
-  h2: { ...typeStyles.sectionTitle, color: C.ink, marginTop: 12, marginBottom: 6 },
-
-  scroll: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 },
-  caseHelp: { ...typeStyles.caption, color: C.muted, marginTop: -2, marginBottom: 8 },
-  caseList: { gap: 7, marginBottom: 12 },
-  caseOption: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 9, backgroundColor: colors.white },
-  caseOptionActive: { borderColor: colors.surfie, backgroundColor: '#F3FBF8' },
-  caseAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
-  caseAvatarActive: { backgroundColor: '#DDF4EC' },
-  caseInitials: { ...typeStyles.avatar, color: colors.surfie },
+  caseHelp: { ...typeStyles.caption, color: C.muted, marginTop: -2, marginBottom: spacing.sm },
+  caseList: { gap: spacing.sm, marginBottom: spacing.md },
+  caseOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 60,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 10,
+    padding: spacing.sm,
+    backgroundColor: colors.white,
+  },
+  caseAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
+  caseInitials: { ...typeStyles.avatar, lineHeight: undefined, color: colors.surfie },
   caseName: { ...typeStyles.name, color: C.ink },
   caseMeta: { ...typeStyles.caption, color: C.muted, marginTop: 2 },
 
-  sourceStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F7FAF9',
-    borderRadius: 12,
-    padding: 12,
-  },
-  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { ...typeStyles.avatar, fontSize: 15, color: colors.surfie },
+  sourceStrip: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: '#F7FAF9', borderRadius: 12, padding: 12 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
   sourceName: { ...typeStyles.cardTitle, color: C.ink },
-  sourceMeta: { ...typeStyles.bodySmall, color: C.muted, marginTop: 2 },
+  sourceMeta: { ...typeStyles.caption, color: C.muted, marginTop: 2 },
+  privateTag: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   privateText: { ...typeStyles.caption, color: C.amber },
+  changeBtn: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 4 },
   changeText: { ...typeStyles.buttonSmall, color: colors.surfie },
+  privateNote: { ...typeStyles.caption, color: C.muted, marginTop: 6 },
 
-  twoCol: { flexDirection: 'row', gap: 8 },
+  twoCol: { flexDirection: 'row', gap: spacing.sm },
 
-  previewStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: C.mint,
-    borderRadius: 10,
-    padding: 11,
-  },
+  previewStrip: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: C.mint, borderRadius: 10, padding: 11 },
   avatarSm: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfie, alignItems: 'center', justifyContent: 'center' },
-  avatarTextSm: { ...typeStyles.avatar, color: colors.white },
-  previewText: { ...typeStyles.button, color: C.ink },
+  previewText: { ...typeStyles.bodySmall, color: C.ink, fontWeight: fontWeight.medium, flexShrink: 1 },
   deidText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
   upload: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
+    minHeight: 56,
     borderWidth: 1,
     borderColor: C.line,
     borderStyle: 'dashed',
     borderRadius: 10,
-    padding: 9,
+    padding: spacing.sm,
   },
-  uploadIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
-  uploadTitle: { ...typeStyles.cardTitle, color: C.ink },
+  uploadIcon: { width: 34, height: 34, borderRadius: 8, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
+  uploadTitle: { ...typeStyles.cardTitle, fontSize: 14, color: C.ink },
   uploadMeta: { ...typeStyles.caption, color: C.muted },
   fileChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.sm,
+    minHeight: 44,
     backgroundColor: C.mint,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
+    paddingHorizontal: spacing.sm,
     marginTop: 6,
   },
   fileName: { ...typeStyles.caption, flex: 1, color: C.ink },
 
-  group: { marginTop: 12 },
+  group: { marginTop: spacing.md },
   groupHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  groupTitle: { ...typeStyles.sectionTitle, color: C.ink },
+  groupTitle: { ...typeStyles.cardTitle, fontSize: 14, color: C.ink },
+  editBtn: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 4 },
   editLink: { ...typeStyles.buttonSmall, color: colors.surfie },
-  // Filled rather than outlined: the review step is a read-back of what will be
-  // sent, so each block reads as a panel of settled values, not an input group.
   groupBody: { backgroundColor: '#F2F5F4', borderRadius: 10, paddingHorizontal: 10 },
 
-  confirmWrap: { marginTop: 14, gap: 4 },
-  audit: { ...typeStyles.helper, color: C.muted, marginLeft: 27 },
-
+  confirmWrap: { marginTop: spacing.md, gap: 4 },
+  audit: { ...typeStyles.helper, color: C.muted, marginLeft: 34 },
 });
 
 export default CreateClarificationScreen;

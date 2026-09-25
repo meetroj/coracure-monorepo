@@ -25,10 +25,12 @@ test('a sent request starts Open and carries its provenance', () => {
   const r = newRequest();
   expect(r.status).toBe('open');
   expect(r.requestedBy).toBe('Dr. Arjun Mehta');
-  expect(r.requestedOn).toBe('15 May 2024');
+  // dated by the demo calendar, which the tests pin to 15 May 2026
+  expect(r.requestedOn).toBe('15 May 2026');
   expect(r.consultationId).toBe('CON-10482');
-  expect(r.itemName).toBeTruthy();
-  expect(r.reason).toBeTruthy();
+  // the doctor names the item and the reason; nothing is pre-written
+  expect(r.itemName).toBe('');
+  expect(r.reason).toBe('');
 });
 
 test('the raising doctor may cancel an open request', () => {

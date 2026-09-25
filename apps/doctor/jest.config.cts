@@ -20,8 +20,9 @@ module.exports = {
       'react-native/jest/assetFileTransformer.js'
     ),
   },
+  // React Navigation ships ES modules, so it is transformed like React Native itself.
   transformIgnorePatterns: [
-    'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?)/)',
+    'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?|@react-navigation)/)',
   ],
   coverageDirectory: '../../coverage/apps/doctor',
   // AppShell pulls in every screen, so a first render is heavy. Under full-suite

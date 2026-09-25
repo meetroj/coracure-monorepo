@@ -1,4 +1,4 @@
-import { typeStyles } from '../../../../libs/typography/src';
+import { typeStyles } from '../theme/typography';
 import React, { Component, type ReactNode } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 

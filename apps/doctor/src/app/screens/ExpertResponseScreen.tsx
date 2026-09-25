@@ -1,99 +1,121 @@
-import { typeStyles } from '../../../../../libs/typography/src';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, StatusBar } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
-import { colors } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
+import { Screen } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { SelectField } from '../../components/form';
+import { BottomSheet } from '../../components/BottomSheet';
+import { confirm } from '../../components/confirm';
+import { Field, CheckRow, ShieldNote, SectionTitle, SummaryRow, GhostButton, SolidButton } from '../../components/compact';
+import { useStore } from '../../state/store';
+import { selectDoctor } from '../../state/selectors';
+import { nowLabel } from '../../state/actions';
 import {
-  C,
-  SlimHeader,
-  OverflowButton,
-  Field,
-  SelectRow,
-  CheckRow,
-  ShieldNote,
-  Label,
-  SectionTitle,
-  StickyFooter,
-  GhostButton,
-  SolidButton,
-} from '../../components/compact';
-import {
-  initialDraft,
-  expertGuidance,
+  experts,
   OUTCOMES,
   DECISION_MAX,
-  reviewStamp,
+  LIST_STATUS_LABEL,
+  RESPONSE_TYPE_LABEL,
+  type Clarification,
 } from '../../data/clarification';
 
 /**
  * Expert Response (DOC-CAS-05) — the treating doctor reads the guidance and
  * decides.
  *
- * Deliberately a document to read, not a workflow dashboard: the guidance sits
- * in open reading space with thin separators rather than inside a card. The
- * decision is one dropdown plus one note.
- *
- * Closing preserves the discussion for audit and writes nothing to the patient
- * record — the doctor remains responsible for the care decision, which the
- * confirmation states rather than implies.
+ * A document to read, not a dashboard: the guidance sits in open reading
+ * space. The decision is one real dropdown and one note. Nothing here writes
+ * to the patient record — the doctor remains responsible for the care
+ * decision, and the confirmation says so rather than implying it.
  */
 export const ExpertResponseScreen = ({
+  clarification,
   onBack,
-  onClose,
-  onKeepOpen,
+  onDecide,
 }: {
+  clarification: Clarification;
   onBack: () => void;
-  onClose: (outcome: string, note: string) => void;
-  onKeepOpen?: () => void;
+  /** Records the decision; `close` also closes the thread. */
+  onDecide: (outcome: string, note: string, close: boolean) => void;
 }) => {
-  const insets = useSafeAreaInsets();
-  const [outcome, setOutcome] = useState(OUTCOMES[0]);
-  const [note, setNote] = useState('');
+  const c = useStore((st) => st.clarifications.find((x) => x.id === clarification.id)) ?? clarification;
+  const doctor = useStore(selectDoctor);
+  const guidance = c.guidance;
+  const expert = experts[c.expertId];
+  const [outcome, setOutcome] = useState(c.outcome?.value ?? '');
+  const [note, setNote] = useState(c.outcome?.note ?? '');
   const [confirmed, setConfirmed] = useState(false);
+  const [sheet, setSheet] = useState<'case' | 'files' | null>(null);
+  const ready = confirmed && !!outcome;
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-      <View style={{ paddingTop: insets.top }}>
-        <SlimHeader title="Expert Response" onBack={onBack} right={<OverflowButton />} />
-      </View>
-
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {/* two-line case context — no patient identity */}
+    <Screen
+      testID="expert-response"
+      background={colors.white}
+      header={<ScreenHeader onBack={onBack} inline title="Expert Response" subtitle={c.caseId} />}
+      footer={
+        <View style={s.footRow}>
+          <GhostButton testID="keep-open" label="Save, keep open" disabled={!ready} onPress={() => onDecide(outcome, note.trim(), false)} />
+          <SolidButton
+            testID="close-thread"
+            label="Save & close"
+            disabled={!ready}
+            onPress={() =>
+              confirm({
+                title: 'Close this clarification?',
+                message: 'Your decision is recorded and the discussion is kept for audit.',
+                confirmLabel: 'Close thread',
+                onConfirm: () => onDecide(outcome, note.trim(), true),
+              })
+            }
+          />
+        </View>
+      }
+    >
+      <View style={s.body}>
         <View style={s.caseBlock}>
           <View style={s.caseTop}>
             <View style={s.flex}>
-              <Text style={[typeStyles.body, s.caseId]}>
-                {initialDraft.caseId} • {initialDraft.speciality}
+              <Text style={s.caseId}>
+                {c.caseId} • Psychiatry
               </Text>
-              <Text style={[typeStyles.body, s.caseTitle]}>{initialDraft.title}</Text>
+              <Text style={s.caseTitle}>{c.title}</Text>
             </View>
             <View style={s.greenBadge}>
-              <Icon name="checkCircle" size={12} color={colors.surfie} filled />
-              <Text style={[typeStyles.body, s.greenText]}>Response received</Text>
+              <Icon name="checkCircle" size={13} color={colors.surfie} filled />
+              <Text style={s.greenText}>{LIST_STATUS_LABEL[c.status]}</Text>
             </View>
           </View>
-          <Text style={[typeStyles.body, s.caseMeta]}>De-identified case • {expertGuidance.receivedAt}</Text>
+          <Text style={s.caseMeta}>De-identified case{guidance ? ` • ${guidance.at}` : ''}</Text>
         </View>
 
-        {/* guidance as reading matter, not a card */}
-        <Text style={[typeStyles.body, s.guidanceHead]}>Guidance from {expertGuidance.author}</Text>
-        <Text style={[typeStyles.body, s.guidanceBody]}>{expertGuidance.body}</Text>
-        <Text style={[typeStyles.body, s.guidanceMeta]}>
-          {expertGuidance.kind} • {expertGuidance.role}
-        </Text>
+        {guidance ? (
+          <>
+            <Text style={s.guidanceHead}>Guidance from {expert?.name ?? 'the expert'}</Text>
+            <Text testID="guidance-body" style={s.guidanceBody}>
+              {guidance.body}
+            </Text>
+            <Text style={s.guidanceMeta}>
+              {RESPONSE_TYPE_LABEL[guidance.kind]} • {expert?.role ?? 'Expert'}
+            </Text>
+          </>
+        ) : (
+          <Text style={s.guidanceHead}>No guidance has been sent yet.</Text>
+        )}
+
         <View style={s.linkRow}>
-          <Pressable testID="shared-case" style={s.linkBtn} hitSlop={6}>
-            <Icon name="document" size={14} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.linkText]}>Shared case</Text>
+          <Pressable testID="shared-case" style={s.linkBtn} hitSlop={8} onPress={() => setSheet('case')} accessibilityRole="button">
+            <Icon name="document" size={15} color={colors.surfie} />
+            <Text style={s.linkText}>Shared case</Text>
           </Pressable>
           <View style={s.linkDivider} />
-          <Pressable testID="attachments" style={s.linkBtn} hitSlop={6}>
-            <Icon name="clip" size={14} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.linkText]}>
-              {expertGuidance.attachments} attachment{expertGuidance.attachments === 1 ? '' : 's'}
+          <Pressable testID="attachments" style={s.linkBtn} hitSlop={8} onPress={() => setSheet('files')} accessibilityRole="button">
+            <Icon name="clip" size={15} color={colors.surfie} />
+            <Text style={s.linkText}>
+              {c.shared.files.length} attachment{c.shared.files.length === 1 ? '' : 's'}
             </Text>
           </Pressable>
         </View>
@@ -101,24 +123,25 @@ export const ExpertResponseScreen = ({
         <View style={s.divider} />
 
         <SectionTitle>Your decision</SectionTitle>
-        <Label>Outcome</Label>
-        <SelectRow
+        <SelectField
           testID="outcome"
+          label="Outcome"
+          required
           value={outcome}
-          // cycles through the authored outcomes; a picker replaces this later
-          onPress={() => setOutcome((v) => OUTCOMES[(OUTCOMES.indexOf(v) + 1) % OUTCOMES.length])}
+          options={OUTCOMES}
+          onChange={setOutcome}
+          placeholder="Choose an outcome"
         />
-        <View style={s.noteWrap}>
-          <Field
-            testID="decision-note"
-            value={note}
-            onChangeText={setNote}
-            placeholder="Record your decision or next step…"
-            multiline
-            height={82}
-            max={DECISION_MAX}
-          />
-        </View>
+        <Field
+          testID="decision-note"
+          value={note}
+          onChangeText={setNote}
+          placeholder="Record your decision or next step…"
+          multiline
+          height={84}
+          max={DECISION_MAX}
+          accessibilityLabel="Decision note"
+        />
 
         <View style={s.divider} />
 
@@ -132,77 +155,74 @@ export const ExpertResponseScreen = ({
           </ShieldNote>
         </View>
 
-        {/* preview of what will be stamped, shown only once confirmed */}
         <View style={[s.stamp, !confirmed && s.stampOff]}>
-          <Icon name="user" size={13} color={C.muted} />
-          <Text style={[typeStyles.body, s.stampText]}>
-            Reviewed by {reviewStamp.by} • {reviewStamp.at}
+          <Icon name="user" size={14} color={colors.inkMuted} />
+          <Text style={s.stampText}>
+            Reviewed by {doctor.name} • Today, {nowLabel()}
           </Text>
         </View>
+        <Text style={s.audit}>Reviewer and closure time will be recorded.</Text>
+      </View>
 
-        <Text style={[typeStyles.body, s.audit]}>Reviewer and closure time will be recorded.</Text>
-      </ScrollView>
-
-      <StickyFooter bottomInset={insets.bottom}>
-        <GhostButton testID="keep-open" label="Keep Open" onPress={onKeepOpen} />
-        <SolidButton
-          testID="close-thread"
-          label="Close Thread"
-          disabled={!confirmed}
-          onPress={() => onClose(outcome, note)}
-        />
-      </StickyFooter>
-    </View>
+      <BottomSheet visible={sheet === 'case'} title="Shared case" subtitle="Exactly what the expert received" onClose={() => setSheet(null)} testID="shared-case-sheet">
+        <View style={s.sharedBox}>
+          <SummaryRow label="Patient" value={`${c.shared.ageLabel} • ${c.shared.gender}`} />
+          <SummaryRow label="History" value={c.shared.history} />
+          <SummaryRow label="Provisional diagnosis" value={c.shared.provisionalDiagnosis} />
+          <SummaryRow label="Current plan" value={c.shared.currentPlan} />
+          <SummaryRow label="Question" value={c.shared.question} last />
+        </View>
+      </BottomSheet>
+      <BottomSheet visible={sheet === 'files'} title="Attachments" onClose={() => setSheet(null)} testID="attachments-sheet">
+        {c.shared.files.length === 0 ? (
+          <Text style={s.noFiles}>No files were shared with this case.</Text>
+        ) : (
+          c.shared.files.map((f) => (
+            <View key={f.id} style={s.fileRow}>
+              <Icon name="document" size={16} color={colors.surfie} />
+              <Text style={s.fileName}>{f.name}</Text>
+              <Text style={s.fileSize}>{f.size}</Text>
+            </View>
+          ))
+        )}
+      </BottomSheet>
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  flex: { flex: 1 },
-  root: { flex: 1, backgroundColor: colors.white },
-  scroll: { paddingHorizontal: 16, paddingBottom: 12 },
+  flex: { flex: 1, minWidth: 0 },
+  body: { paddingHorizontal: spacing.lg },
+  footRow: { flexDirection: 'row', gap: spacing.sm },
 
-  caseBlock: { backgroundColor: C.mint, borderRadius: 10, padding: 10 },
-  caseTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  caseId: { ...typeStyles.caption, color: C.ink },
-  caseTitle: { ...typeStyles.cardTitle, color: C.ink, marginTop: 2 },
-  greenBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#D6F0E4',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  greenText: { ...typeStyles.caption, color: colors.surfie },
-  caseMeta: { ...typeStyles.caption, color: C.muted, marginTop: 5 },
+  caseBlock: { backgroundColor: '#E8F8F2', borderRadius: 10, padding: spacing.md },
+  caseTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  caseId: { ...typeStyles.caption, color: colors.ink },
+  caseTitle: { ...typeStyles.cardTitle, color: colors.ink, marginTop: 2 },
+  greenBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#D6F0E4', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+  greenText: { ...typeStyles.caption, fontSize: 11, color: colors.surfie },
+  caseMeta: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 5 },
 
-  guidanceHead: { ...typeStyles.bodySmall, color: C.ink, marginTop: 16 },
-  guidanceBody: { ...typeStyles.caption, color: C.ink, marginTop: 7 },
-  guidanceMeta: { ...typeStyles.caption, color: C.muted, marginTop: 8 },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
-  linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  guidanceHead: { ...typeStyles.label, color: colors.ink, marginTop: spacing.lg },
+  guidanceBody: { ...typeStyles.body, color: colors.ink, marginTop: 6 },
+  guidanceMeta: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 8 },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
+  linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 40 },
   linkText: { ...typeStyles.buttonSmall, color: colors.surfie },
-  linkDivider: { width: 1, height: 14, backgroundColor: C.line },
+  linkDivider: { width: 1, height: 16, backgroundColor: colors.surface.line },
+  divider: { height: 1, backgroundColor: colors.surface.line, marginTop: spacing.md },
 
-  divider: { height: 1, backgroundColor: C.line, marginTop: 14 },
+  closeNote: { marginTop: spacing.md },
+  stamp: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F4F6F5', borderRadius: 8, padding: spacing.sm, marginTop: spacing.sm },
+  stampOff: { opacity: 0.5 },
+  stampText: { ...typeStyles.caption, color: colors.inkMuted },
+  audit: { ...typeStyles.helper, color: colors.inkMuted, marginTop: 8 },
 
-  noteWrap: { marginTop: 8 },
-
-  closeNote: { marginTop: 10 },
-  stamp: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F4F6F5',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    marginTop: 8,
-  },
-  stampOff: { opacity: 0.45 },
-  stampText: { ...typeStyles.caption, color: C.muted },
-  audit: { ...typeStyles.helper, color: C.muted, marginTop: 8 },
+  sharedBox: { backgroundColor: '#F2F5F4', borderRadius: 10, paddingHorizontal: 10 },
+  noFiles: { ...typeStyles.bodySmall, color: colors.inkMuted },
+  fileRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  fileName: { ...typeStyles.bodySmall, flex: 1, color: colors.ink },
+  fileSize: { ...typeStyles.caption, color: colors.inkMuted },
 });
 
 export default ExpertResponseScreen;

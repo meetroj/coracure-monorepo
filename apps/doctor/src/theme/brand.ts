@@ -90,8 +90,8 @@ export const radius = {
   pill: 999,
 } as const;
 
-import { typography } from '../../../../libs/typography/src';
-export { typography } from '../../../../libs/typography/src';
+import { typography } from './typography';
+export { typography } from './typography';
 
 /** Restrained elevation — subtle, never heavy. */
 export const shadow = {
