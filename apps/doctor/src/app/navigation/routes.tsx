@@ -194,6 +194,7 @@ export const DashboardRoute = () => {
       onOpenAppointment={(id) => nav.navigate('AppointmentDetails', { appointmentId: id })}
       onJoin={(id) => joinCall(nav, id)}
       onEditSchedule={() => nav.navigate('Availability')}
+      onOpenProfile={() => nav.navigate('ProfileTab')}
     />
   );
 };

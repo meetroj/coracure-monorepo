@@ -46,6 +46,8 @@ type Props = {
   onOpenAppointment: (appointmentId: string) => void;
   onJoin: (appointmentId: string) => void;
   onEditSchedule: () => void;
+  /** The doctor's own photo and name open their profile. */
+  onOpenProfile: () => void;
 };
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -82,6 +84,7 @@ export const DashboardScreen = ({
   onOpenAppointment,
   onJoin,
   onEditSchedule,
+  onOpenProfile,
 }: Props) => {
   const doctor = useStore(selectDoctor);
   const status = useStore(selectLiveStatus);
@@ -115,14 +118,22 @@ export const DashboardScreen = ({
       {/* doctor + live status */}
       <View style={s.identityCard}>
         <View style={s.identityRow}>
-          <Avatar initials={doctor.initials} size={64} online={instantOpen} tone={doctor.photoFile ? 'brand' : 'mint'} photo={photoPreview(doctor.photoFile)} />
-          <View style={s.identityCopy}>
-            <Text style={s.greeting}>{greeting()}</Text>
-            <Text style={s.docName} numberOfLines={2}>
-              {doctor.name}
-            </Text>
-            <Text style={s.docSpec}>{doctor.speciality}</Text>
-          </View>
+          <Pressable
+            testID="open-profile"
+            onPress={onOpenProfile}
+            style={({ pressed }) => [s.identity, pressed && s.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`${doctor.name}. Open your profile`}
+          >
+            <Avatar initials={doctor.initials} size={64} online={instantOpen} tone={doctor.photoFile ? 'brand' : 'mint'} photo={photoPreview(doctor.photoFile)} />
+            <View style={s.identityCopy}>
+              <Text style={s.greeting}>{greeting()}</Text>
+              <Text style={s.docName} numberOfLines={2}>
+                {doctor.name}
+              </Text>
+              <Text style={s.docSpec}>{doctor.speciality}</Text>
+            </View>
+          </Pressable>
           {locked ? (
             <StatusPill testID="status-locked" label={STATUS_LABEL[status]} tone="warn" />
           ) : (
@@ -425,6 +436,7 @@ const s = StyleSheet.create({
 
   identityCard: { marginTop: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   identityRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  identity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   identityCopy: { flex: 1, minWidth: 0 },
   greeting: { ...typeStyles.bodySmall, color: colors.inkMuted },
   docName: { ...typeStyles.cardTitle, fontSize: 16, lineHeight: 21, fontWeight: fontWeight.bold, color: colors.ink },

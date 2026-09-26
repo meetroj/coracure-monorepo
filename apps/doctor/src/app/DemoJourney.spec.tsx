@@ -145,3 +145,16 @@ test('a half-written alert review asks before it is dropped', () => {
   pressBack();
   expect(Alert.alert).toHaveBeenLastCalledWith('Discard changes?', expect.any(String), expect.any(Array), expect.any(Object));
 });
+
+/* ------------------------------ small touches ------------------------------ */
+
+test('the doctor’s photo and name on the Dashboard open Profile', () => {
+  renderShell();
+  fireEvent.press(screen.getByTestId('open-profile'));
+  expect(screen.getByTestId('profile')).toBeTruthy();
+});
+
+test('“Other” on Request a Report is a plain choice, with no ⋮ that looks like a menu', () => {
+  const { DOC_TYPES } = require('../data/documents');
+  expect(DOC_TYPES.find((t: { key: string }) => t.key === 'other').icon).toBeUndefined();
+});

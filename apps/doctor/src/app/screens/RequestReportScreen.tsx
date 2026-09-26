@@ -125,7 +125,7 @@ export const RequestReportScreen = ({
         </View>
 
         <FieldLabel required>What do you need?</FieldLabel>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tileRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tileScroller} contentContainerStyle={s.tileRow}>
           {DOC_TYPES.map((t) => {
             const on = docType === t.key;
             return (
@@ -143,7 +143,7 @@ export const RequestReportScreen = ({
                     <Icon name="checkCircle" size={13} color={colors.surfie} filled />
                   </View>
                 )}
-                <Icon name={t.icon} size={18} color={on ? colors.surfie : colors.inkMuted} />
+                {!!t.icon && <Icon name={t.icon} size={18} color={on ? colors.surfie : colors.inkMuted} />}
                 <Text style={[s.tileLabel, on && s.tileLabelOn]}>{t.label}</Text>
               </Pressable>
             );
@@ -236,7 +236,9 @@ const s = StyleSheet.create({
   stripDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.surface.line },
   consult: { flexShrink: 0 },
 
-  tileRow: { gap: spacing.sm, paddingBottom: spacing.lg, paddingTop: 2 },
+  // runs to the screen edges so a scrolled card slides off-screen instead of being cut at the margin
+  tileScroller: { marginHorizontal: -spacing.lg },
+  tileRow: { gap: spacing.sm, paddingBottom: spacing.lg, paddingTop: 2, paddingHorizontal: spacing.lg },
   tile: {
     width: 100,
     minHeight: 76,

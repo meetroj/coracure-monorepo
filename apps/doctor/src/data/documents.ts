@@ -85,12 +85,13 @@ export const REQUEST_STATUS_LABEL: Record<RequestStatus, string> = {
 
 export type DocTypeKey = 'prescription' | 'lab' | 'therapy' | 'history' | 'other';
 
-export const DOC_TYPES: { key: DocTypeKey; label: string; icon: 'document' | 'flask' | 'prescription' | 'folder' | 'more' }[] = [
+// "Other" is a plain label: a ⋮ on it read as a menu that does nothing
+export const DOC_TYPES: { key: DocTypeKey; label: string; icon?: 'document' | 'flask' | 'prescription' | 'folder' }[] = [
   { key: 'prescription', label: 'Previous Prescription', icon: 'document' },
   { key: 'lab', label: 'Lab Report', icon: 'flask' },
   { key: 'therapy', label: 'Therapy Notes', icon: 'prescription' },
   { key: 'history', label: 'Medical History', icon: 'folder' },
-  { key: 'other', label: 'Other', icon: 'more' },
+  { key: 'other', label: 'Other' },
 ];
 
 export type ReportRequest = {
