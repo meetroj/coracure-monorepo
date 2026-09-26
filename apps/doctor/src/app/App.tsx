@@ -7,6 +7,7 @@ import AppShell from './AppShell';
 import ErrorBoundary from './ErrorBoundary';
 import { PortalProvider } from '../components/Portal';
 import { ToastHost } from '../components/Toast';
+import { KeyboardDoneBar } from '../components/KeyboardDoneBar';
 import { useStore } from '../state/store';
 import { leaveOnboarding, signIn, submitRegistration } from '../state/actions';
 
@@ -38,6 +39,7 @@ export const App = () => {
           {stage === 'onboarding' && <OnboardingFlow mobile={mobile} onSubmitted={submitRegistration} onExit={leaveOnboarding} />}
           {stage === 'shell' && <AppShell />}
           <ToastHost />
+          <KeyboardDoneBar />
         </PortalProvider>
       </SafeAreaProvider>
     </ErrorBoundary>

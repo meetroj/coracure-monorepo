@@ -305,10 +305,13 @@ export const seedRecords = (): Record<string, ConsultationRecord> => {
     r.risk = seed.risk;
     r.allergies = seed.allergies ?? '';
     r.medicines = seed.meds.map((m) => ({ ...m, id: nextMedicineId() }));
-    r.advice = [...DEFAULT_ADVICE];
-    r.donts = [...DEFAULT_DONTS];
     r.clarificationId = seed.clarificationId;
     const reached = ['notesDraft', 'rxDraft', 'summaryPending', 'complete'].indexOf(seed.stage);
+    // only a consultation that reached its prescription carries written advice
+    if (reached >= 1) {
+      r.advice = [...DEFAULT_ADVICE];
+      r.donts = [...DEFAULT_DONTS];
+    }
     r.notesStatus = reached >= 1 ? 'saved' : 'draft';
     if (reached >= 1) r.notesSavedAt = stamp(a, 35);
     if (reached >= 1 && r.medicines.length) r.rxSavedAt = stamp(a, 40);

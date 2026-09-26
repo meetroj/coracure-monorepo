@@ -396,8 +396,9 @@ export const emptyRecord = (appointmentId: string): ConsultationRecord => ({
   allergies: '',
   notesStatus: 'empty',
   medicines: [],
-  advice: [...DEFAULT_ADVICE],
-  donts: [...DEFAULT_DONTS],
+  // a new prescription starts blank; the doctor writes it or applies a template
+  advice: [],
+  donts: [],
   rxStatus: 'draft',
   summary: '',
   summaryStatus: 'draft',

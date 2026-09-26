@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { View, Text, StyleSheet, Pressable, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, Pressable, BackHandler, Image } from 'react-native';
 
 import { colors, radius, spacing } from '../../../theme/brand';
 import { typeStyles, fontWeight } from '../../../theme/typography';
@@ -8,7 +8,7 @@ import { Screen, Button } from '../../../components/ui';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { confirm, confirmDiscard } from '../../../components/confirm';
 import { toast } from '../../../components/Toast';
-import { FilePickerSheet, useUpload, type PickedFile } from '../../../components/upload';
+import { FilePickerSheet, photoPreview, useUpload, type PickedFile } from '../../../components/upload';
 import {
   TextField,
   DateField,
@@ -206,6 +206,7 @@ const PHOTO_MAX_MB = 5;
 const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChange: (f: PickedFile | null) => void; error?: string }) => {
   const up = useUpload({ maxMb: PHOTO_MAX_MB, onDone: (f) => onChange(f) });
   const uploading = up.status === 'uploading' && !!up.pending;
+  const picture = photoPreview(file);
 
   return (
     <View style={s.photoField}>
@@ -220,6 +221,8 @@ const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChan
         >
           {uploading ? (
             <Text style={s.photoProgress}>{up.progress}%</Text>
+          ) : picture ? (
+            <Image testID="photo-image" source={picture} style={s.photoImage} accessibilityIgnoresInvertColors />
           ) : (
             <Icon name={file ? 'user' : 'plus'} size={file ? 30 : 22} color={colors.surfie} />
           )}
@@ -241,17 +244,45 @@ const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChan
                 ? `${file.name} · ${file.size}`
                 : `JPG or PNG · Max ${PHOTO_MAX_MB} MB`}
           </Text>
+          {/* removing is the quieter, second action — it sits with the file, not beside Change */}
+          {!!file && !uploading && (
+            <Pressable
+              testID="photo-remove"
+              onPress={() =>
+                confirm({
+                  title: 'Remove your photo?',
+                  message: 'A profile photo is required before you can continue.',
+                  confirmLabel: 'Remove',
+                  destructive: true,
+                  onConfirm: () => onChange(null),
+                })
+              }
+              hitSlop={8}
+              style={s.photoRemove}
+              accessibilityRole="button"
+              accessibilityLabel="Remove profile photo"
+            >
+              <Text style={s.photoRemoveText}>Remove</Text>
+            </Pressable>
+          )}
         </View>
 
         {uploading ? (
           <Pressable testID="photo-cancel" onPress={up.cancel} hitSlop={6} style={s.photoBtn} accessibilityRole="button" accessibilityLabel="Cancel photo upload">
             <Text style={s.photoBtnText}>Cancel</Text>
           </Pressable>
-        ) : file ? (
-          <Pressable testID="photo-change" onPress={up.select} hitSlop={6} style={s.photoBtn} accessibilityRole="button" accessibilityLabel="Change profile photo">
-            <Text style={s.photoBtnText}>Change</Text>
+        ) : (
+          <Pressable
+            testID={file ? 'photo-change' : 'photo-add'}
+            onPress={up.select}
+            hitSlop={6}
+            style={s.photoBtn}
+            accessibilityRole="button"
+            accessibilityLabel={file ? 'Change profile photo' : 'Add profile photo'}
+          >
+            <Text style={s.photoBtnText}>{file ? 'Change' : 'Add photo'}</Text>
           </Pressable>
-        ) : null}
+        )}
       </View>
 
       {up.status === 'error' && (
@@ -267,25 +298,6 @@ const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChan
         </View>
       )}
 
-      {!!file && !uploading && (
-        <Pressable
-          testID="photo-remove"
-          onPress={() =>
-            confirm({
-              title: 'Remove your photo?',
-              message: 'A profile photo is required before you can continue.',
-              confirmLabel: 'Remove',
-              destructive: true,
-              onConfirm: () => onChange(null),
-            })
-          }
-          hitSlop={6}
-          style={s.photoRemove}
-          accessibilityRole="button"
-        >
-          <Text style={s.photoRemoveText}>Remove photo</Text>
-        </Pressable>
-      )}
       {!file && up.status === 'idle' && <Err>{error}</Err>}
 
       <FilePickerSheet visible={up.status === 'selecting'} kind="photo" maxMb={PHOTO_MAX_MB} onPick={up.choose} onClose={up.closePicker} testID="photo" />
@@ -1071,8 +1083,9 @@ const s = StyleSheet.create({
   },
   photoErrorText: { ...typeStyles.caption, color: colors.danger, flex: 1 },
   photoErrorAction: { ...typeStyles.buttonSmall, color: colors.danger, textDecorationLine: 'underline' },
-  photoRemove: { alignSelf: 'flex-start', marginTop: spacing.sm, marginLeft: 76 + spacing.md, minHeight: 32, justifyContent: 'center' },
-  photoRemoveText: { ...typeStyles.buttonSmall, color: colors.danger },
+  photoImage: { width: '100%', height: '100%', borderRadius: 37 },
+  photoRemove: { alignSelf: 'flex-start', marginTop: 2, minHeight: 28, justifyContent: 'center' },
+  photoRemoveText: { ...typeStyles.caption, fontWeight: fontWeight.semibold, color: colors.inkMuted, textDecorationLine: 'underline' },
 
   entry: { padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.surface.line, backgroundColor: colors.white, marginBottom: spacing.sm },
   entryTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },

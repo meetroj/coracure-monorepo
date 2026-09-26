@@ -111,14 +111,17 @@ const useScrollFocusedIntoView = () => {
  * already absorbs it, while a pushed screen has no bar and pads its own end so
  * the last row never lands in the home-indicator zone. A `footer` is pinned
  * under the content and carries the inset itself. With the keyboard up the
- * whole screen shrinks above it, footer included, and the focused field is
- * scrolled into view.
+ * content shrinks above it and the focused field is scrolled into view. A
+ * footer is a bottom-of-screen action, so it stays at the foot of the screen,
+ * out of sight behind the keys, until the keyboard closes — unless it is the
+ * input itself, like a chat composer (`footerAboveKeyboard`).
  */
 export const Screen = ({
   children,
   scroll = true,
   contentStyle,
   footer,
+  footerAboveKeyboard = false,
   header,
   background = colors.surface.page,
   topColor,
@@ -128,8 +131,10 @@ export const Screen = ({
   children: ReactNode;
   scroll?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
-  /** Pinned below the scroll area, above the home indicator and the keyboard. */
+  /** Pinned below the scroll area, above the home indicator. */
   footer?: ReactNode;
+  /** The footer is an input (a composer) and rides above the keyboard with the content. */
+  footerAboveKeyboard?: boolean;
   /** Pinned above the scroll area — a header that must not scroll away. */
   header?: ReactNode;
   background?: string;
@@ -150,6 +155,9 @@ export const Screen = ({
   const cap = isTablet ? { maxWidth: MAX_CONTENT_WIDTH, width: '100%' as const, alignSelf: 'center' as const } : null;
   // the tab bar is behind the keyboard too, so only the part above it is lost
   const lift = keyboard > 0 ? Math.max(0, keyboard - (underTabBar ? tabBarHeight ?? 0 : 0)) : 0;
+  // a call to action never floats on top of the keys; it waits at the foot of
+  // the screen and is back as soon as the keyboard closes
+  const footerAway = keyboard > 0 && !footerAboveKeyboard;
 
   const setRef = (r: ScrollView | null) => {
     scrollRef.current = r;
@@ -195,6 +203,7 @@ export const Screen = ({
             style={[
               s.footer,
               { paddingBottom: keyboard > 0 || underTabBar ? spacing.md : Math.max(insets.bottom, spacing.md) },
+              footerAway && s.away,
             ]}
           >
             {footer}
@@ -380,7 +389,10 @@ export const FilterChip = ({
 }) => (
   <Pressable
     testID={testID}
-    onPress={onPress}
+    onPress={() => {
+      Keyboard.dismiss();
+      onPress();
+    }}
     style={({ pressed }) => [s.chip, active && s.chipActive, pressed && s.pressed]}
     accessibilityRole="button"
     accessibilityState={{ selected: !!active }}
@@ -705,6 +717,7 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.surface.line,
   },
+  away: { display: 'none' },
 
   iconBtn: {
     width: 40,

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Image, type ImageSourcePropType } from 'react-native';
 
 import { colors, radius, spacing } from '../theme/brand';
 import { typeStyles, fontWeight } from '../theme/typography';
@@ -47,6 +47,20 @@ const SAMPLE_PHOTOS: PickedFile[] = [
   { name: 'Profile_Studio.png', kind: 'image', size: '6.2 MB' },
 ];
 
+/**
+ * The pictures behind the sample photos, so a chosen photo shows as itself.
+ * They are drawn illustrations, never photographs of real people.
+ */
+const SAMPLE_PREVIEWS: Record<string, ImageSourcePropType> = {
+  'IMG_2041.jpg': require('../assets/samples/portrait-1.png'),
+  'IMG_2044.jpg': require('../assets/samples/portrait-2.png'),
+  'Profile_Studio.png': require('../assets/samples/portrait-3.png'),
+};
+
+/** The picture for a chosen photo, when this demo has one. */
+export const photoPreview = (file?: { name: string } | null): ImageSourcePropType | undefined =>
+  file ? SAMPLE_PREVIEWS[file.name] : undefined;
+
 /* --------------------------------- picker --------------------------------- */
 
 export const FilePickerSheet = ({
@@ -83,9 +97,13 @@ export const FilePickerSheet = ({
             accessibilityRole="button"
             accessibilityLabel={`${f.name}, ${f.size}`}
           >
-            <View style={[s.pickIcon, f.kind === 'pdf' && s.pickIconPdf]}>
-              <Text style={[s.pickKind, f.kind === 'pdf' && s.pickKindPdf]}>{f.kind === 'pdf' ? 'PDF' : 'IMG'}</Text>
-            </View>
+            {photoPreview(f) ? (
+              <Image source={photoPreview(f)} style={s.pickIcon} accessibilityIgnoresInvertColors />
+            ) : (
+              <View style={[s.pickIcon, f.kind === 'pdf' && s.pickIconPdf]}>
+                <Text style={[s.pickKind, f.kind === 'pdf' && s.pickKindPdf]}>{f.kind === 'pdf' ? 'PDF' : 'IMG'}</Text>
+              </View>
+            )}
             <View style={s.flex}>
               <Text style={s.pickName} numberOfLines={1}>
                 {f.name}

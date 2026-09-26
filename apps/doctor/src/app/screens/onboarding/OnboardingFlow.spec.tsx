@@ -59,6 +59,31 @@ test('a field is checked when it is left, not while it is typed', () => {
   expect(screen.getByText('Enter a valid email address, like name@example.com.')).toBeTruthy();
 });
 
+test('the chosen photo shows in the avatar; Change replaces it and Remove brings the placeholder back', () => {
+  setup();
+  // no photo yet: one clear way to add one
+  expect(screen.queryByTestId('photo-image')).toBeNull();
+  expect(screen.getByTestId('photo-add')).toHaveTextContent('Add photo');
+  expect(screen.queryByTestId('photo-remove')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('photo-add'));
+  fireEvent.press(screen.getByTestId('photo-pick-0'));
+  const first = screen.getByTestId('photo-image').props.source;
+  expect(first).toBeTruthy();
+  // with a photo: Change is the action, Remove the quieter one beside the file
+  expect(screen.getByTestId('photo-change')).toHaveTextContent('Change');
+  expect(screen.getByTestId('photo-remove')).toHaveTextContent('Remove');
+
+  fireEvent.press(screen.getByTestId('photo-change'));
+  fireEvent.press(screen.getByTestId('photo-pick-1'));
+  expect(screen.getByTestId('photo-image').props.source).not.toEqual(first);
+  expect(screen.getByTestId('photo-status')).toHaveTextContent(/IMG_2044\.jpg/);
+
+  fireEvent.press(screen.getByTestId('photo-remove'));
+  expect(screen.queryByTestId('photo-image')).toBeNull();
+  expect(screen.getByTestId('photo-add')).toBeTruthy();
+});
+
 test('the photo goes through the upload states: too large, retry, uploading, uploaded, replace, remove', () => {
   uploadConfig.durationMs = 1000;
   jest.useFakeTimers();

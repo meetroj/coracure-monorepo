@@ -214,6 +214,18 @@ export const selectCaseByAppointment = memoByStateAndKey((s, appointmentId): Pat
   selectCases(s).find((c) => c.appointmentId === appointmentId)
 );
 
+/**
+ * The case a clarification can be raised on. A consultation still under way is
+ * not a held case yet, so it is projected from its appointment — referring
+ * mid-call then opens on this patient instead of an empty picker.
+ */
+export const selectReferableCase = memoByStateAndKey((s, appointmentId): PatientCase | undefined => {
+  const held = selectCaseByAppointment(s, appointmentId);
+  if (held) return held;
+  const a = selectAppointment(s, appointmentId);
+  return a && a.state !== 'cancelled' ? toCase(s, a) : undefined;
+});
+
 /* -------------------------------- worklist -------------------------------- */
 
 export type TaskCategory = 'summary' | 'prescription' | 'note' | 'followUp';

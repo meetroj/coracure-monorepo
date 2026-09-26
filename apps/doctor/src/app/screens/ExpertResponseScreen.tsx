@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, radius, spacing } from '../../theme/brand';
@@ -35,21 +35,27 @@ export const ExpertResponseScreen = ({
   clarification,
   onBack,
   onDecide,
+  onDirtyChange,
 }: {
   clarification: Clarification;
   onBack: () => void;
   /** Records the decision; `close` also closes the thread. */
   onDecide: (outcome: string, note: string, close: boolean) => void;
+  /** Reports an unsaved decision so the route can ask before it is dropped. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
   const c = useStore((st) => st.clarifications.find((x) => x.id === clarification.id)) ?? clarification;
   const doctor = useStore(selectDoctor);
   const guidance = c.guidance;
   const expert = experts[c.expertId];
-  const [outcome, setOutcome] = useState(c.outcome?.value ?? '');
-  const [note, setNote] = useState(c.outcome?.note ?? '');
+  const [start] = useState(() => ({ outcome: c.outcome?.value ?? '', note: c.outcome?.note ?? '' }));
+  const [outcome, setOutcome] = useState(start.outcome);
+  const [note, setNote] = useState(start.note);
   const [confirmed, setConfirmed] = useState(false);
   const [sheet, setSheet] = useState<'case' | 'files' | null>(null);
   const ready = confirmed && !!outcome;
+  const dirty = outcome !== start.outcome || note !== start.note;
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   return (
     <Screen

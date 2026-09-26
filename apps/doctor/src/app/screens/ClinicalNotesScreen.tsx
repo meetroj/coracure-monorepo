@@ -163,7 +163,7 @@ export const ClinicalNotesScreen = ({
         initials={a.initials}
         name={a.name}
         meta={`${a.age} • ${a.gender} • ID: ${d.patientId}`}
-        ids={[`Consultation ${d.consultationId} · ${a.dateLabel}`]}
+        ids={[`Consultation ${d.consultationId}`, a.dateLabel]}
         action="View Profile"
         onAction={onViewProfile}
       />

@@ -1,5 +1,5 @@
 import React, { type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radius, spacing } from '../theme/brand';
 import { typeStyles } from '../theme/typography';
@@ -29,7 +29,11 @@ export const Checkbox = ({
 }) => (
   <Pressable
     testID={testID}
-    onPress={onToggle}
+    onPress={() => {
+      // a tick ends the typing that came before it
+      Keyboard.dismiss();
+      onToggle();
+    }}
     disabled={disabled}
     hitSlop={{ top: 4, bottom: 4 }}
     style={({ pressed }) => [s.row, pressed && s.pressed, disabled && s.disabled, style]}

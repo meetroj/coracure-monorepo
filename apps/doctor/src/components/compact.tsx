@@ -1,5 +1,5 @@
 import React, { type ReactNode } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, Keyboard, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors } from '../theme/brand';
 import { typeStyles, fontWeight } from '../theme/typography';
@@ -166,7 +166,10 @@ export const SelectRow = ({
 }) => (
   <Pressable
     testID={testID}
-    onPress={onPress}
+    onPress={() => {
+      Keyboard.dismiss();
+      onPress();
+    }}
     style={({ pressed }) => [s.select, pressed && s.pressed]}
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel ?? value ?? placeholder}
@@ -196,7 +199,10 @@ export const Segmented = <T extends string>({
         <Pressable
           key={o.key}
           testID={`${idPrefix}-${o.key}`}
-          onPress={() => onChange(o.key)}
+          onPress={() => {
+            Keyboard.dismiss();
+            onChange(o.key);
+          }}
           style={[s.segItem, on && s.segItemOn]}
           accessibilityRole="radio"
           accessibilityState={{ selected: on }}

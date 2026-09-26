@@ -8,9 +8,11 @@ import {
   Modal,
   ScrollView,
   Dimensions,
+  Keyboard,
   type KeyboardTypeOptions,
   type TextInputProps,
 } from 'react-native';
+import { doneBar } from './KeyboardDoneBar';
 
 import { colors, radius, spacing } from '../theme/brand';
 import { typeStyles, fontWeight } from '../theme/typography';
@@ -107,6 +109,7 @@ export const TextField = ({
           placeholder={placeholder}
           placeholderTextColor={colors.inkFaint}
           keyboardType={keyboardType}
+          {...doneBar(keyboardType)}
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
           returnKeyType={returnKeyType}
@@ -276,12 +279,15 @@ export const SelectField = ({
     setOpen(false);
   };
 
+  // a choice list takes over from the keyboard
   const openSheet = () => {
+    Keyboard.dismiss();
     setDraft(value);
     setOpen(true);
   };
 
   const openMenu = () => {
+    Keyboard.dismiss();
     setOpen(true);
     // measurement is best-effort: without it the menu falls back to centred
     trigger.current?.measureInWindow?.((x, y, w, h) => setAnchor({ x, y, w, h }));
@@ -442,6 +448,7 @@ export const MultiSelectField = ({
     <Pressable
       testID={testID}
       onPress={() => {
+        Keyboard.dismiss();
         setDraft(values);
         setOpen(true);
       }}
@@ -700,13 +707,17 @@ export const DateField = ({
           placeholder={placeholder}
           placeholderTextColor={colors.inkFaint}
           keyboardType="number-pad"
+          {...doneBar('number-pad')}
           maxLength={14}
           accessibilityLabel={label}
           style={[s.inputText, s.bare]}
         />
         <Pressable
           testID={testID ? `${testID}-calendar` : undefined}
-          onPress={() => setOpen(true)}
+          onPress={() => {
+            Keyboard.dismiss();
+            setOpen(true);
+          }}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={`Pick ${label}`}

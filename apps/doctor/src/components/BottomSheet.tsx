@@ -8,6 +8,7 @@ import {
   Animated,
   Easing,
   BackHandler,
+  TextInput,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,6 +34,7 @@ export const BottomSheet = ({
   onClose,
   children,
   footer,
+  footerAboveKeyboard = false,
   scroll = true,
   testID,
 }: {
@@ -44,13 +46,23 @@ export const BottomSheet = ({
   children: ReactNode;
   /** Pinned under the content — the sheet's actions. */
   footer?: ReactNode;
+  /** The footer is an input (a composer) and rides above the keyboard with the content. */
+  footerAboveKeyboard?: boolean;
   scroll?: boolean;
   testID?: string;
 }) => {
   if (!visible) return null;
   return (
     <Portal>
-      <SheetFrame title={title} subtitle={subtitle} onClose={onClose} footer={footer} scroll={scroll} testID={testID}>
+      <SheetFrame
+        title={title}
+        subtitle={subtitle}
+        onClose={onClose}
+        footer={footer}
+        footerAboveKeyboard={footerAboveKeyboard}
+        scroll={scroll}
+        testID={testID}
+      >
         {children}
       </SheetFrame>
     </Portal>
@@ -63,6 +75,7 @@ const SheetFrame = ({
   onClose,
   children,
   footer,
+  footerAboveKeyboard,
   scroll,
   testID,
 }: {
@@ -71,6 +84,7 @@ const SheetFrame = ({
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  footerAboveKeyboard: boolean;
   scroll: boolean;
   testID?: string;
 }) => {
@@ -80,6 +94,15 @@ const SheetFrame = ({
   const slide = useRef(new Animated.Value(1)).current;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // the field that had the keyboard when this sheet opened — it is outside the
+  // sheet, since the sheet's own fields have not mounted yet
+  const typingOutside = useRef(TextInput.State?.currentlyFocusedInput?.() ?? null);
+
+  // a picker or menu opened from a form takes over from the keyboard
+  useEffect(() => {
+    const field = typingOutside.current;
+    if (field) TextInput.State?.blurTextInput?.(field);
+  }, []);
 
   useEffect(() => {
     Animated.timing(slide, {
@@ -160,7 +183,8 @@ const SheetFrame = ({
           </View>
         )}
         {body}
-        {!!footer && <View style={s.footer}>{footer}</View>}
+        {/* the actions wait under the keys while the doctor types, unless they are the input */}
+        {!!footer && <View style={[s.footer, keyboard > 0 && !footerAboveKeyboard && s.away]}>{footer}</View>}
       </Animated.View>
     </View>
   );
@@ -307,6 +331,7 @@ const s = StyleSheet.create({
   body: { flexGrow: 0 },
   bodyStatic: {},
   footer: { marginTop: spacing.md },
+  away: { display: 'none' },
 
   actionList: {
     borderWidth: 1,

@@ -126,3 +126,15 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// The React bundler copies the images the JS uses into generated/res and
+// generated/assets but never removes ones it no longer uses, so an image that
+// was deleted from src/ kept shipping inside the APK. Start each bundle clean.
+tasks.matching { it.name.startsWith("createBundle") && it.name.endsWith("JsAndAssets") }.configureEach { task ->
+    task.doFirst {
+        def variant = task.name.replace("createBundle", "").replace("JsAndAssets", "")
+        variant = variant.substring(0, 1).toLowerCase() + variant.substring(1)
+        project.delete(layout.buildDirectory.dir("generated/res/react/${variant}"))
+        project.delete(layout.buildDirectory.dir("generated/assets/react/${variant}"))
+    }
+}

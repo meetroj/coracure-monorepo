@@ -120,6 +120,7 @@ const InCallChat = ({ visible, threadId, onClose }: { visible: boolean; threadId
       subtitle={thread ? `${thread.name} · ${thread.context}` : undefined}
       onClose={onClose}
       testID="room-chat"
+      footerAboveKeyboard
       footer={
         <View style={s.chatComposer}>
           <TextInput

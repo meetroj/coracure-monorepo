@@ -145,6 +145,7 @@ export const CareHubScreen = ({
                 setCondition(cnd);
                 setExpanded(false);
               }}
+              hitSlop={{ top: 4, bottom: 4 }}
               style={[s.cond, on && s.condOn]}
               accessibilityRole="button"
               accessibilityState={{ selected: on }}

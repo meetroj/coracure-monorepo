@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, radius, spacing } from '../../theme/brand';
@@ -48,6 +48,7 @@ export const PatientFollowUpDetailScreen = ({
   onReview,
   onMessage,
   onOpenConsultation,
+  onDirtyChange,
 }: {
   alert: AlertView;
   onBack: () => void;
@@ -56,6 +57,8 @@ export const PatientFollowUpDetailScreen = ({
   onMessage: () => void;
   /** The consultation whose follow-up plan raised the alert. */
   onOpenConsultation: () => void;
+  /** Reports an unsaved review so the route can ask before it is dropped. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
   const a = alert;
   const patient = patientById(a.patientId);
@@ -72,6 +75,8 @@ export const PatientFollowUpDetailScreen = ({
   const pathway = pathwayByKey(a.pathway);
   // a red flag needs a written account of what was done
   const canSave = !!action && (!redFlag || note.trim().length >= 10);
+  const dirty = !!action || note.trim().length > 0;
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   return (
     <Screen

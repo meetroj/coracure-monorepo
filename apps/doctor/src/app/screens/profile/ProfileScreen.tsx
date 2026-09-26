@@ -5,6 +5,7 @@ import { colors, spacing } from '../../../theme/brand';
 import { typeStyles } from '../../../theme/typography';
 import { Icon } from '../../../components/Icon';
 import { Screen, PageTitle, Card, Avatar, Button, StatusPill, ListRow } from '../../../components/ui';
+import { photoPreview } from '../../../components/upload';
 import { confirm } from '../../../components/confirm';
 import { useStore } from '../../../state/store';
 import { selectDoctor, selectLiveStatus } from '../../../state/selectors';
@@ -61,7 +62,7 @@ export const ProfileScreen = ({ onOpen }: { onOpen: (key: ProfileDestination) =>
 
       <Card style={s.idCard}>
         <View style={s.idRow}>
-          <Avatar initials={doctor.initials} size={54} tone="brand" />
+          <Avatar initials={doctor.initials} size={54} tone="brand" photo={photoPreview(doctor.photoFile)} />
           <View style={s.idCopy}>
             <View style={s.nameRow}>
               <Text style={s.name}>{doctor.name}</Text>

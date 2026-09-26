@@ -22,6 +22,7 @@ import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { BottomSheet } from '../../components/BottomSheet';
 import { useKeyboardHeight } from '../../components/useKeyboard';
+import { doneBar } from '../../components/KeyboardDoneBar';
 import { supportContact } from '../../data/support';
 import { openContact } from './HelpSupportScreen';
 
@@ -265,6 +266,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
             </View>
 
             <View style={styles.bannerCopy}>
+              <View style={styles.bannerLead} />
               {isOtp ? (
                 <>
                   <Text testID="heading" style={styles.heading} accessibilityRole="header">
@@ -307,6 +309,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                       onKeyPress={(e) => onOtpKeyPress(i, e)}
                       onFocus={() => setFocusedBox(i)}
                       keyboardType="number-pad"
+                      {...doneBar('number-pad')}
                       // iOS offers the SMS code above the keyboard; Android autofills it
                       textContentType={i === 0 ? 'oneTimeCode' : 'none'}
                       autoComplete={i === 0 ? 'sms-otp' : 'off'}
@@ -385,6 +388,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                     placeholder="98765 43210"
                     placeholderTextColor={colors.inkFaint}
                     keyboardType="number-pad"
+                    {...doneBar('number-pad')}
                     textContentType="telephoneNumber"
                     autoComplete="tel-national"
                     maxLength={PHONE_LENGTH + 1}
@@ -515,8 +519,10 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   portalText: { ...typeStyles.caption, color: colors.surfie },
-  // the copy sits at the foot of the banner whatever its height
-  bannerCopy: { flex: 1, justifyContent: 'flex-end', maxWidth: 200 },
+  // the heading starts level with the top of the artwork, as the banner was
+  // designed; on a short phone the lead-in gives way first, so the copy never clips
+  bannerCopy: { flex: 1, justifyContent: 'flex-start', maxWidth: 200 },
+  bannerLead: { height: 74, flexShrink: 1 },
   heading: { ...typeStyles.pageTitle, color: colors.ink },
   headingAccent: { color: colors.surfie },
   subheading: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: spacing.sm },

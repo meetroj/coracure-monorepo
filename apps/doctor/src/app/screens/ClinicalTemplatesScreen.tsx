@@ -197,6 +197,7 @@ export const ClinicalTemplatesScreen = ({
               key={f.key}
               testID={`filter-${f.key}`}
               onPress={() => setFilter(f.key)}
+              hitSlop={{ top: 4, bottom: 4 }}
               style={[s.chip, on && s.chipOn]}
               accessibilityRole="button"
               accessibilityState={{ selected: on }}

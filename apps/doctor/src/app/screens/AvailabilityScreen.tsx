@@ -22,12 +22,12 @@ import {
   toISODate,
   minutesToClock,
 } from '../../data/calendar';
-import type { DaySchedule, Leave, ScheduleOverride } from '../../data/doctor';
+import { CONSULTATION_DURATIONS, type DaySchedule, type Leave, type ScheduleOverride } from '../../data/doctor';
 
 type Draft = Omit<AvailabilityState, 'savedAt'>;
 type Tab = 'schedule' | 'timeoff';
 
-const DURATIONS = [15, 20, 30, 45, 60];
+const DURATIONS = CONSULTATION_DURATIONS.map((d) => d.minutes);
 const BUFFERS = [0, 5, 10, 15, 20, 30];
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 

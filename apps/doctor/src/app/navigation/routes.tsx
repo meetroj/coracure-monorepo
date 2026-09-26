@@ -514,14 +514,21 @@ export const AlertDetailRoute = ({ route, navigation: nav }: Props<'AlertDetail'
     if (id && alert && !alert.live.read) markAlertRead(id);
   }, [id, alert]);
   if (!alert) return <NotFound onBack={nav.goBack} what="alert" />;
+  return <AlertDetailForm alert={alert} nav={nav} />;
+};
+
+/** The review form, guarded so a half-written review is not dropped on Back. */
+const AlertDetailForm = ({ alert, nav }: { alert: NonNullable<ReturnType<typeof selectAlert>>; nav: Props<'AlertDetail'>['navigation'] }) => {
+  const { setDirty, leave } = useLeaveGuard();
   return (
     <PatientFollowUpDetailScreen
       alert={alert}
       onBack={nav.goBack}
+      onDirtyChange={setDirty}
       onReview={(action, note) => {
         reviewAlert(alert.id, action, note);
         toast.show('Alert reviewed');
-        nav.goBack();
+        leave(nav.goBack);
       }}
       onMessage={() => openThread(nav, alert.appointmentId)}
       onOpenConsultation={() => openConsultation(nav, alert.appointmentId)}
@@ -656,16 +663,18 @@ export const ClarificationRoute = ({ route, navigation: nav }: Props<'Clarificat
 export const ExpertResponseRoute = ({ route, navigation: nav }: Props<'ExpertResponse'>) => {
   const id = route.params?.clarificationId;
   const c = useStore((s) => s.clarifications.find((x) => x.id === id));
+  const { setDirty, leave } = useLeaveGuard();
   if (!c) return <NotFound onBack={nav.goBack} what="clarification" />;
   return (
     <ExpertResponseScreen
       clarification={c}
       onBack={nav.goBack}
+      onDirtyChange={setDirty}
       onDecide={(outcome, note, close) => {
         recordOutcome(c.id, outcome, note);
         if (close) closeClarification(c.id);
         toast.show(close ? 'Decision recorded and clarification closed' : 'Decision recorded');
-        nav.goBack();
+        leave(nav.goBack);
       }}
     />
   );

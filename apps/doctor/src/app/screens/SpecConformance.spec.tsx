@@ -73,7 +73,9 @@ test('clinical notes carries the specified patient line and identifiers', () => 
   expect(getByText('Rahul Sharma')).toBeTruthy();
   // identity reads on one line: age, gender, patient id
   expect(getByText('32 • Male • ID: PT-10482')).toBeTruthy();
-  expect(getByText('Consultation CON-10482 · 15 May 2026')).toBeTruthy();
+  // one line each, so the date never breaks across lines beside View Profile
+  expect(getByText('Consultation CON-10482')).toBeTruthy();
+  expect(getByText('15 May 2026')).toBeTruthy();
   expect(getByText('Clinical Notes & Diagnosis')).toBeTruthy();
   // the save state is real: nothing has been written yet
   expect(getByText('Not started')).toBeTruthy();

@@ -5,6 +5,7 @@ import { colors, radius, spacing } from '../../../theme/brand';
 import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon, type IconName } from '../../../components/Icon';
 import { Screen, Avatar, Card, Button, StatusPill } from '../../../components/ui';
+import { photoPreview } from '../../../components/upload';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { useStore } from '../../../state/store';
 import { selectDoctor } from '../../../state/selectors';
@@ -53,7 +54,7 @@ export const DoctorProfileDetailsScreen = ({
     <Screen testID="profile-details" header={<ScreenHeader onBack={onBack} title="Doctor Profile" subtitle="Your professional information." />}>
       <Card style={s.hero}>
         <View style={s.heroTop}>
-          <Avatar initials={doctor.initials} size={68} tone="brand" />
+          <Avatar initials={doctor.initials} size={68} tone="brand" photo={photoPreview(doctor.photoFile)} />
           <View style={s.flex}>
             <View style={s.nameRow}>
               <Text style={s.name}>{doctor.name}</Text>

@@ -12,6 +12,13 @@ test('reviews show in authored order with no filters, sort or trend banner', () 
   expect(screen.queryByTestId('filter-5')).toBeNull();
 });
 
+test('the list says it is the newest few of all the reviews counted above', () => {
+  render(<ReviewsScreen onBack={jest.fn()} />);
+  expect(screen.getByText('Based on 126 reviews')).toBeTruthy();
+  expect(screen.getByText('Recent reviews')).toBeTruthy();
+  expect(screen.getByText(`The latest ${screen.getAllByTestId(/^review-r\d+$/).length} of 126`)).toBeTruthy();
+});
+
 test('reviews never name the doctor by a fixed name', () => {
   render(<ReviewsScreen onBack={jest.fn()} />);
   expect(screen.queryByText(/Dr\. Mehta/)).toBeNull();

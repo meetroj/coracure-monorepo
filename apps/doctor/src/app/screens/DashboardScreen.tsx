@@ -22,6 +22,7 @@ import {
 } from '../../state/selectors';
 import { setLiveStatus } from '../../state/actions';
 import { toast } from '../../components/Toast';
+import { photoPreview } from '../../components/upload';
 import {
   feedback,
   inr,
@@ -31,8 +32,10 @@ import {
   isAutoStatus,
   acceptsInstantRequests,
   type DaySchedule,
+  type Leave,
+  type ScheduleOverride,
 } from '../../data/doctor';
-import { DEMO_NOW_MINUTES, TODAY } from '../../data/calendar';
+import { DEMO_NOW_MINUTES, TODAY, toISODate } from '../../data/calendar';
 
 type Props = {
   onOpenTasks: () => void;
@@ -47,8 +50,15 @@ type Props = {
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-/** Today's bookable hours from the weekly schedule, as one line. */
-export const todayHoursLabel = (schedule: DaySchedule[]) => {
+/**
+ * Today's bookable hours as one line. Time off wins over a date exception,
+ * which wins over the weekly schedule.
+ */
+export const todayHoursLabel = (schedule: DaySchedule[], overrides: ScheduleOverride[] = [], leave: Leave[] = []) => {
+  const iso = toISODate(TODAY);
+  if (leave.some((l) => l.date === iso)) return 'Time off today';
+  const exception = overrides.filter((o) => o.date === iso);
+  if (exception.length) return exception.map((o) => `${o.from} – ${o.to}`).join(' · ');
   const today = schedule.find((d) => d.day === WEEKDAY_NAMES[TODAY.getDay()]);
   if (!today || !today.enabled || today.ranges.length === 0) return 'Not available today';
   return today.ranges.map((r) => `${r.from} – ${r.to}`).join(' · ');
@@ -81,6 +91,8 @@ export const DashboardScreen = ({
   const alerts = useStore(selectAlertCounts);
   const earnings = useStore(selectEarnings);
   const schedule = useStore((s) => s.availability.schedule);
+  const overrides = useStore((s) => s.availability.overrides);
+  const leave = useStore((s) => s.availability.leave);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const locked = isAutoStatus(status);
@@ -103,7 +115,7 @@ export const DashboardScreen = ({
       {/* doctor + live status */}
       <View style={s.identityCard}>
         <View style={s.identityRow}>
-          <Avatar initials={doctor.initials} size={64} online={instantOpen} tone={doctor.photoFile ? 'brand' : 'mint'} />
+          <Avatar initials={doctor.initials} size={64} online={instantOpen} tone={doctor.photoFile ? 'brand' : 'mint'} photo={photoPreview(doctor.photoFile)} />
           <View style={s.identityCopy}>
             <Text style={s.greeting}>{greeting()}</Text>
             <Text style={s.docName} numberOfLines={2}>
@@ -147,7 +159,7 @@ export const DashboardScreen = ({
           setPickerOpen(false);
           toast.show(`Status set to ${STATUS_LABEL[nextStatus]}`);
         }}
-        todayHours={todayHoursLabel(schedule)}
+        todayHours={todayHoursLabel(schedule, overrides, leave)}
         onEditSchedule={() => {
           setPickerOpen(false);
           onEditSchedule();

@@ -74,6 +74,7 @@ export const ExpertClarificationScreen = ({
       testID="clarification-thread"
       background={colors.white}
       scroll={false}
+      footerAboveKeyboard
       header={<ScreenHeader onBack={onBack} inline title="Clarification Thread" subtitle={c.caseId} />}
       footer={
         closed ? (

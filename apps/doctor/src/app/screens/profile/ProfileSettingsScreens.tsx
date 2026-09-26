@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Switch, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Switch, TextInput, Keyboard } from 'react-native';
 
 import { colors, radius, spacing } from '../../../theme/brand';
 import { typeStyles, fontWeight } from '../../../theme/typography';
@@ -11,7 +11,8 @@ import { toast } from '../../../components/Toast';
 import { useStore } from '../../../state/store';
 import { selectDoctor } from '../../../state/selectors';
 import { addChangeRequest, setConsultationDuration, setConsultationFee, setPrivacy } from '../../../state/actions';
-import { inr } from '../../../data/doctor';
+import { CONSULTATION_DURATIONS, inr } from '../../../data/doctor';
+import { doneBar } from '../../../components/KeyboardDoneBar';
 
 /**
  * The Profile rows that are settings rather than modules.
@@ -42,7 +43,10 @@ const ChoiceRow = ({
 }) => (
   <Pressable
     testID={testID}
-    onPress={onPress}
+    onPress={() => {
+      Keyboard.dismiss();
+      onPress();
+    }}
     style={({ pressed }) => [s.choice, !last && s.rule, pressed && s.pressed]}
     accessibilityRole="radio"
     accessibilityState={{ selected }}
@@ -132,6 +136,7 @@ export const ConsultationFeeScreen = ({
             value={fee}
             onChangeText={(t) => setFee(t.replace(/[^\d]/g, '').replace(/^0+(?=\d)/, '').slice(0, 5))}
             keyboardType="number-pad"
+            {...doneBar('number-pad')}
             returnKeyType="done"
             style={s.amountInput}
             accessibilityLabel="Consultation fee amount"
@@ -153,12 +158,7 @@ export const ConsultationFeeScreen = ({
 
 /* --------------------------- consultation duration ------------------------- */
 
-const DURATIONS = [
-  { minutes: 15, hint: 'Short follow-ups' },
-  { minutes: 30, hint: 'Standard consultation' },
-  { minutes: 45, hint: 'Longer assessments' },
-  { minutes: 60, hint: 'First psychiatric evaluation' },
-];
+const DURATIONS = CONSULTATION_DURATIONS;
 
 export const ConsultationDurationScreen = ({
   onBack,

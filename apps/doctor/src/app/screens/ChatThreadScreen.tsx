@@ -60,6 +60,7 @@ export const ChatThreadScreen = ({
       testID="chat-thread"
       background={colors.white}
       scroll={false}
+      footerAboveKeyboard
       header={
         <ScreenHeader
           onBack={onBack}

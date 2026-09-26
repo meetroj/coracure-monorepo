@@ -427,6 +427,19 @@ export const doctor: Doctor = {
   bio: 'Psychiatrist with 8+ years of experience in anxiety, mood and sleep disorders. Focused on clear explanations, shared decisions and steady follow-up between consultations.',
 };
 
+/**
+ * The consultation lengths a doctor can offer. Profile › Consultation duration
+ * and Availability › Appointment settings both edit the same stored value, so
+ * both offer exactly this list.
+ */
+export const CONSULTATION_DURATIONS: readonly { minutes: number; hint: string }[] = [
+  { minutes: 15, hint: 'Short follow-ups' },
+  { minutes: 20, hint: 'Medication reviews' },
+  { minutes: 30, hint: 'Standard consultation' },
+  { minutes: 45, hint: 'Longer assessments' },
+  { minutes: 60, hint: 'First psychiatric evaluation' },
+];
+
 /* -------------------------------- earnings -------------------------------- */
 
 export type EarningsPeriodKey = 'daily' | 'weekly' | 'monthly';

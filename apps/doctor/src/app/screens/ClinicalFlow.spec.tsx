@@ -151,8 +151,8 @@ test('a medicine can be edited and, after confirming, removed', () => {
 
 test('finalising needs something to issue, asks first, then locks the prescription', () => {
   const onFinalised = jest.fn();
-  // start from an empty prescription: no medicines and no advice
-  require('../../state/actions').setAdvice('a1', []);
+  // a new prescription starts blank: no medicines, advice or don'ts (N14)
+  expect([record().medicines, record().advice, record().donts]).toEqual([[], [], []]);
   prescription('psychiatrist', onFinalised);
   fireEvent.press(screen.getByTestId('finalise'));
   expect(onFinalised).not.toHaveBeenCalled();

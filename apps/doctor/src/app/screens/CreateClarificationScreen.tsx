@@ -24,7 +24,7 @@ import {
   SolidButton,
 } from '../../components/compact';
 import { useStore } from '../../state/store';
-import { selectCases, selectRecord } from '../../state/selectors';
+import { selectCases, selectRecord, selectReferableCase } from '../../state/selectors';
 import {
   GUIDANCE_AREAS,
   URGENCIES,
@@ -111,9 +111,14 @@ export const CreateClarificationScreen = ({
   /** Reports unsaved work so the route can ask before it is dropped — on Back, swipe or Android back. */
   onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const cases = useStore(selectCases).filter((c) => c.state !== 'noShow');
+  const targetId = existing?.appointmentId ?? initialAppointmentId;
+  const held = useStore(selectCases).filter((c) => c.state !== 'noShow');
+  // a consultation still in progress is offered too, first, so Refer mid-call
+  // opens on this patient
+  const current = useStore((st) => (targetId ? selectReferableCase(st, targetId) : undefined));
+  const cases = current && !held.some((c) => c.appointmentId === current.appointmentId) ? [current, ...held] : held;
   const records = useStore((st) => st.records);
-  const initialCase = cases.find((c) => c.appointmentId === (existing?.appointmentId ?? initialAppointmentId));
+  const initialCase = current;
   const start = useMemo<ClarificationDraft | null>(() => {
     if (existing) return draftFromClarification(existing, initialCase);
     if (initialCase) return draftFromCase(initialCase, selectRecordFor(records, initialCase.appointmentId));

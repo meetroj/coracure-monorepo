@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
-import { Screen, EmptyState, StatusPill } from '../../components/ui';
+import { Screen, EmptyState, StatusPill, SectionHeader } from '../../components/ui';
 import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
 import { BottomSheet, SheetActions } from '../../components/BottomSheet';
 import { confirm } from '../../components/confirm';
@@ -95,7 +95,8 @@ const ReviewCard = ({ review, reported, onReport }: { review: Review; reported?:
             <View style={s.reviewNameRow}>
               <Text style={s.reviewName}>{review.label}</Text>
               <Icon name="checkCircle" size={15} color={colors.paris} filled />
-              <Text style={s.reviewVerified}>Verified</Text>
+              {/* "Verified patient" already says it; the word is not repeated */}
+              {!/verified/i.test(review.label) && <Text style={s.reviewVerified}>Verified</Text>}
             </View>
             <Stars value={review.stars} size={16} />
           </View>
@@ -186,11 +187,15 @@ export const ReviewsScreen = ({ onBack }: { onBack: () => void }) => {
       {reviews.length === 0 ? (
         <EmptyState icon="star" title="No reviews yet" body="Reviews appear here after patients rate a completed consultation." />
       ) : (
-        <View style={s.list}>
-          {reviews.map((r) => (
-            <ReviewCard key={r.id} review={r} reported={reports[r.id]} onReport={() => setReporting(r)} />
-          ))}
-        </View>
+        <>
+          {/* the overview counts every review; this list is the newest few */}
+          <SectionHeader title="Recent reviews" subtitle={`The latest ${reviews.length} of ${feedback.reviews}`} />
+          <View style={s.list}>
+            {reviews.map((r) => (
+              <ReviewCard key={r.id} review={r} reported={reports[r.id]} onReport={() => setReporting(r)} />
+            ))}
+          </View>
+        </>
       )}
 
       <BottomSheet visible={info} title="About reviews" onClose={() => setInfo(false)} testID="reviews-info-sheet">
@@ -270,7 +275,7 @@ const s = StyleSheet.create({
   distFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.surfie },
   distPct: { ...typeStyles.caption, color: colors.inkMuted, width: 34, textAlign: 'right' },
 
-  list: { marginTop: spacing.xl, gap: spacing.md },
+  list: { gap: spacing.md },
   review: {
     backgroundColor: colors.surface.card,
     borderRadius: radius.card,
