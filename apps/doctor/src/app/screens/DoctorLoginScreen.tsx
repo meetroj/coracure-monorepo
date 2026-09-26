@@ -147,8 +147,14 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
   }, [step, secondsLeft]);
 
   // keep the primary button above the keyboard; once scrolling, clear the whole
-  // logo row so it never sits half-cut at the top edge
+  // logo row so it never sits half-cut at the top edge.
+  //
+  // NOT on the OTP step: the number pad opens the moment that screen appears, so
+  // auto-scrolling there just yanks the page upward under the user while they are
+  // looking at the boxes. The OTP form is short enough to clear the keyboard on
+  // its own, and `paddingBottom: keyboard` above already reserves the space.
   useEffect(() => {
+    if (step === 'otp') return;
     if (keyboard <= 0 || !viewport || !ctaBottom) return;
     const target = bannerBoxHeight + ctaBottom + spacing.lg - viewport;
     if (target > 0) scrollRef.current?.scrollTo({ y: Math.max(target, topRowBottom), animated: true });
@@ -273,7 +279,11 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                     Verify your{'\n'}
                     <Text style={styles.headingAccent}>number</Text>
                   </Text>
-                  <Text style={styles.subheading}>Enter the {OTP_LENGTH}-digit code sent to</Text>
+                  {/* "sent to" drops to the second line: the single long line ran
+                      under the stethoscope artwork behind it. */}
+                  <Text style={styles.subheading}>
+                    Enter the {OTP_LENGTH}-digit code{'\n'}sent to
+                  </Text>
                   <Text style={styles.phoneEcho}>
                     {DIAL_CODE} {formattedPhone}
                   </Text>
@@ -487,16 +497,15 @@ const styles = StyleSheet.create({
   bannerArt: { position: 'absolute', bottom: 0, right: -44 },
   bannerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   bannerTopLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  // Bare arrow: the banner tint already separates it, and a white chip here
+  // read as a second button competing with the portal pill.
   backBtn: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.sm,
+    marginRight: spacing.xs,
+    marginLeft: -spacing.xs,
   },
   portalPill: {
     flexDirection: 'row',
@@ -521,7 +530,10 @@ const styles = StyleSheet.create({
   portalText: { ...typeStyles.caption, color: colors.surfie },
   // the heading starts level with the top of the artwork, as the banner was
   // designed; on a short phone the lead-in gives way first, so the copy never clips
-  bannerCopy: { flex: 1, justifyContent: 'flex-start', maxWidth: 200 },
+  // Hard cap so the copy stops short of the stethoscope artwork behind it.
+  // The art starts around 54% of the banner width on a 360dp phone, so the text
+  // column has to stay under that or the two collide.
+  bannerCopy: { flex: 1, justifyContent: 'flex-start', maxWidth: 172 },
   bannerLead: { height: 74, flexShrink: 1 },
   heading: { ...typeStyles.pageTitle, color: colors.ink },
   headingAccent: { color: colors.surfie },

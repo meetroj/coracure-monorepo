@@ -132,13 +132,15 @@ export const PendingTasksScreen = ({
             <Text style={s.summaryLabel}>Total pending</Text>
           </View>
         </View>
+        <View style={s.summaryRule} />
+
         <View style={s.breakdown}>
           {CATEGORIES.map((c) => (
             <View key={c} style={s.breakItem}>
               <Text testID={`task-count-${c}`} style={s.breakValue}>
                 {countFor(c)}
               </Text>
-              <Text style={s.breakLabel} numberOfLines={1}>
+              <Text style={s.breakLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>
                 {TASK_CATEGORY_LABEL[c]}
               </Text>
             </View>
@@ -201,9 +203,9 @@ const s = StyleSheet.create({
   chipText: { ...typeStyles.status, color: colors.ink },
   chipTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
 
+  // Stacked, not side-by-side: sharing one row with the total left each of the
+  // four labels ~47dp, which cut "Prescriptions" to "Prescri…".
   summary: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
     backgroundColor: '#F4FAF8',
@@ -211,8 +213,9 @@ const s = StyleSheet.create({
     borderColor: colors.surface.line,
     borderRadius: radius.md,
     padding: spacing.md,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
+  summaryRule: { height: 1, backgroundColor: colors.surface.line, marginVertical: spacing.xs },
   summaryLead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   summaryDisc: {
     width: 40,
@@ -227,7 +230,7 @@ const s = StyleSheet.create({
   breakdown: { flexDirection: 'row', flex: 1, minWidth: 0 },
   breakItem: { flex: 1, alignItems: 'center', minWidth: 0 },
   breakValue: { ...typeStyles.number, fontSize: 16, fontWeight: fontWeight.bold, color: colors.ink },
-  breakLabel: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.inkMuted },
+  breakLabel: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.inkMuted, textAlign: 'center' },
 
   toolRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   tool: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 40 },

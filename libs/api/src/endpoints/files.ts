@@ -1,12 +1,7 @@
-import { api } from '../http';
+import { apiClient } from '../client';
 
 /**
  * The patient's own files (FR-8).
- *
- * `STORAGE_PROVIDER` defaults to `stub` in local development, which signs
- * upload URLs that go nowhere — enough to build and exercise the upload UI, not
- * enough to store a file. A screen that uploads must therefore treat a
- * successful signature as "the URL was issued", not as "the file is stored".
  */
 
 export type PatientFile = {
@@ -17,24 +12,27 @@ export type PatientFile = {
   /** Set when the file is attached to a clinical record and cannot be deleted. */
   isPartOfRecord?: boolean;
   consultationId?: string | null;
+  doctorName?: string | null;
   createdAt: string;
 };
 
 export type FileRequest = {
   id: string;
   consultationId: string | null;
+  doctorName?: string;
   description: string;
+  urgency?: 'normal' | 'high';
   createdAt: string;
 };
 
-export const listFiles = (): Promise<PatientFile[]> => api.get<PatientFile[]>('/me/files');
+export const listFiles = (): Promise<PatientFile[]> => apiClient.get<PatientFile[]>('/me/files');
 
 /** Outstanding requests from a clinician for something to be uploaded. */
 export const listOpenFileRequests = (): Promise<FileRequest[]> =>
-  api.get<FileRequest[]>('/me/files/requests/open');
+  apiClient.get<FileRequest[]>('/me/files/requests/open');
 
 export const getDownloadUrl = (fileId: string): Promise<{ url: string; expiresAt?: string }> =>
-  api.get<{ url: string; expiresAt?: string }>(`/me/files/${fileId}/download-url`);
+  apiClient.get<{ url: string; expiresAt?: string }>(`/me/files/${fileId}/download-url`);
 
 /**
  * Deleting is refused with `FILE_IS_PART_OF_A_RECORD` once a file has been
@@ -42,4 +40,11 @@ export const getDownloadUrl = (fileId: string): Promise<{ url: string; expiresAt
  * shown rather than letting the user discover it from a failure.
  */
 export const deleteFile = (fileId: string): Promise<void> =>
-  api.delete<void>(`/me/files/${fileId}`);
+  apiClient.delete<void>(`/me/files/${fileId}`);
+
+export const uploadFile = (file: {
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  consultationId?: string | null;
+}): Promise<PatientFile> => apiClient.post<PatientFile>('/me/files', file);

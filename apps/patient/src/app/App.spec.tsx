@@ -17,9 +17,10 @@ beforeEach(() => {
 });
 
 describe('App boot', () => {
-  it('shows the splash first', () => {
+  it('shows the splash first', async () => {
     render(<App />);
     expect(screen.getByTestId('splash')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
   });
 
   it('lands on welcome when there is no session, and never calls the API', async () => {
@@ -36,7 +37,7 @@ describe('App boot', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
 
-    fireEvent.press(screen.getByTestId('get-started'));
+    fireEvent.press(screen.getByLabelText('Get Started'));
 
     await waitFor(() => expect(screen.getByTestId('login')).toBeTruthy());
     expect(screen.getByText('Welcome back')).toBeTruthy();
@@ -46,9 +47,9 @@ describe('App boot', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
 
-    // "Skip" is a plain navigate('login'); the guard is what matters — there is
-    // no path from here that reaches the dashboard.
-    fireEvent.press(screen.getByLabelText('Skip the introduction and sign in'));
+    // Onboarding's only route out is Get Started; the guard is what matters —
+    // no path from here reaches the dashboard without a session.
+    fireEvent.press(screen.getByLabelText('Get Started'));
 
     await waitFor(() => expect(screen.getByTestId('login')).toBeTruthy());
     expect(screen.queryByTestId('dashboard')).toBeNull();

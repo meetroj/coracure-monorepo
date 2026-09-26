@@ -244,27 +244,8 @@ const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChan
                 ? `${file.name} · ${file.size}`
                 : `JPG or PNG · Max ${PHOTO_MAX_MB} MB`}
           </Text>
-          {/* removing is the quieter, second action — it sits with the file, not beside Change */}
-          {!!file && !uploading && (
-            <Pressable
-              testID="photo-remove"
-              onPress={() =>
-                confirm({
-                  title: 'Remove your photo?',
-                  message: 'A profile photo is required before you can continue.',
-                  confirmLabel: 'Remove',
-                  destructive: true,
-                  onConfirm: () => onChange(null),
-                })
-              }
-              hitSlop={8}
-              style={s.photoRemove}
-              accessibilityRole="button"
-              accessibilityLabel="Remove profile photo"
-            >
-              <Text style={s.photoRemoveText}>Remove</Text>
-            </Pressable>
-          )}
+          {/* No separate Remove: the photo is required anyway, so Change is the
+              only action that leads anywhere useful. */}
         </View>
 
         {uploading ? (

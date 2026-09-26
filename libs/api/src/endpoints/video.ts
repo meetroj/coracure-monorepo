@@ -1,4 +1,4 @@
-import { api } from '../http';
+import { apiClient } from '../client';
 
 /**
  * The video call (FR-8.5, FR-8.6).
@@ -16,7 +16,7 @@ import { api } from '../http';
  * no recordings. The call UI says so, and this is why it can.
  */
 
-export type JoinReadiness = {
+export interface JoinReadiness {
   consultationId: string;
   /** The LiveKit server the client would connect to. */
   serverUrl: string;
@@ -27,22 +27,24 @@ export type JoinReadiness = {
   message?: string;
   /** When the call opens, ISO. Null when it is open already. */
   opensAt?: string | null;
-};
+}
 
-export type JoinToken = {
-  token: string;
+export interface JoinToken {
+  consultationId: string;
+  roomName: string;
   serverUrl: string;
-  roomName?: string;
-  expiresAt?: string;
-};
+  token: string;
+  identity: string;
+  expiresInSeconds?: number;
+}
 
 export const getVideoReadiness = (consultationId: string): Promise<JoinReadiness> =>
-  api.get<JoinReadiness>(`/consultations/${consultationId}/video/readiness`);
+  apiClient.get<JoinReadiness>(`/consultations/${consultationId}/video/readiness`);
 
 /** Requested at the moment of joining, never in advance. */
 export const getVideoToken = (consultationId: string): Promise<JoinToken> =>
-  api.post<JoinToken>(`/consultations/${consultationId}/video/token`);
+  apiClient.post<JoinToken>(`/consultations/${consultationId}/video/token`);
 
 /** Join and leave times for a finished call. No media, by design. */
 export const getVideoSession = (consultationId: string): Promise<unknown> =>
-  api.get(`/consultations/${consultationId}/video/session`);
+  apiClient.get(`/consultations/${consultationId}/video/session`);
