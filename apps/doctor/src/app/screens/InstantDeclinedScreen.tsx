@@ -1,14 +1,14 @@
-import { typeStyles } from '../../../../../libs/typography/src';
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, StatusBar } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
-import { Button } from '../../components/ui';
-
-const MINT = '#E8F8F2';
+import { Screen, Button } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { useStore } from '../../state/store';
+import { selectLiveStatus } from '../../state/selectors';
+import { STATUS_LABEL } from '../../data/doctor';
 
 /**
  * Terminal state after a declined — or unanswered — instant request.
@@ -18,51 +18,72 @@ const MINT = '#E8F8F2';
  * request reroutes, the doctor no longer has a reason to see them.
  */
 export const InstantDeclinedScreen = ({
+  expired = false,
   onReturn,
   onPause,
   onBack,
 }: {
+  /** The request timed out rather than being declined. */
+  expired?: boolean;
   onReturn: () => void;
+  /** Stops instant requests (status becomes Scheduled Only). Hidden once they are already off. */
   onPause?: () => void;
   onBack: () => void;
 }) => {
-  const insets = useSafeAreaInsets();
+  const status = useStore(selectLiveStatus);
+  const available = status === 'available';
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-      <View style={{ paddingTop: insets.top }}>
-        <View style={s.appBar}>
-          <Pressable testID="back" onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
-            <Icon name="chevronLeft" size={24} color={colors.ink} />
-          </Pressable>
-          <LogoWide width={124} height={31} />
-          <View style={s.statusChip}>
-            <View style={s.liveDot} />
-            <Text style={[typeStyles.body, s.statusText]}>Available Now</Text>
-          </View>
+    <Screen
+      testID="instant-declined"
+      background={colors.white}
+      contentStyle={s.center}
+      header={
+        <ScreenHeader
+          onBack={onBack}
+          right={
+            <View style={s.statusChip}>
+              <View style={[s.liveDot, !available && s.liveDotOff]} />
+              <Text style={[s.statusText, !available && s.statusTextOff]}>{STATUS_LABEL[status]}</Text>
+            </View>
+          }
+        />
+      }
+      footer={
+        <View style={s.actions}>
+          <Button testID="return" label="Return to dashboard" onPress={onReturn} />
+          {available && !!onPause && (
+            <Pressable testID="pause" onPress={onPause} hitSlop={8} style={s.pauseBtn} accessibilityRole="button">
+              <Text style={s.pauseText}>Pause instant requests</Text>
+            </Pressable>
+          )}
+          <Text style={s.footNote}>Patient details from this request are no longer accessible.</Text>
         </View>
-      </View>
-
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      }
+    >
+      <View style={s.body}>
         <View style={s.iconWrap}>
-          <Icon name="reroute" size={44} color={colors.inkFaint} />
+          <Icon name={expired ? 'clock' : 'reroute'} size={42} color={colors.inkFaint} />
         </View>
 
-        <Text style={[typeStyles.body, s.title]}>Request declined</Text>
-        <Text style={[typeStyles.body, s.subtitle]}>
-          The patient&apos;s request has been moved to another available doctor.
+        <Text style={s.title} accessibilityRole="header">
+          {expired ? 'Request expired' : 'Request declined'}
+        </Text>
+        <Text style={s.subtitle}>
+          {expired
+            ? 'The request was not answered in time and has moved to another available doctor.'
+            : 'The patient’s request has been moved to another available doctor.'}
         </Text>
 
         <View style={s.routingCard}>
-          <Text style={[typeStyles.body, s.routingLabel]}>Routing status</Text>
+          <Text style={s.routingLabel}>Routing status</Text>
           <View style={s.routingRow}>
             <View style={s.routingIcon}>
               <Icon name="checkCircle" size={22} color={colors.surfie} />
             </View>
             <View style={s.flex}>
-              <Text style={[typeStyles.body, s.routingTitle]}>Automatically rerouted</Text>
-              <Text style={[typeStyles.body, s.routingBody]}>No further action is required.</Text>
+              <Text style={s.routingTitle}>Automatically rerouted</Text>
+              <Text style={s.routingBody}>No further action is required.</Text>
             </View>
           </View>
         </View>
@@ -73,45 +94,33 @@ export const InstantDeclinedScreen = ({
           <View style={s.availIcon}>
             <Icon name="info" size={18} color={colors.surfie} />
           </View>
-          <Text style={[typeStyles.body, s.availText]}>You are available to receive another instant request.</Text>
+          <Text style={s.availText}>
+            {available
+              ? 'You are available to receive another instant request.'
+              : `Your status is ${STATUS_LABEL[status]}, so instant requests will not reach you.`}
+          </Text>
         </View>
-      </ScrollView>
-
-      <View style={[s.actions, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button testID="return" label="Return to dashboard" onPress={onReturn} />
-        <Pressable testID="pause" onPress={onPause} hitSlop={8} style={s.pauseBtn}>
-          <Text style={[typeStyles.body, s.pauseText]}>Pause instant requests</Text>
-        </Pressable>
-        <Text style={[typeStyles.body, s.footNote]}>Patient details from this request are no longer accessible.</Text>
       </View>
-    </View>
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  flex: { flex: 1 },
-  root: { flex: 1, backgroundColor: colors.white },
+  flex: { flex: 1, minWidth: 0 },
+  center: { flexGrow: 1, justifyContent: 'center' },
+  body: { paddingHorizontal: spacing.lg },
 
-  appBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface.line,
-  },
   statusChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   liveDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.paris },
+  liveDotOff: { backgroundColor: colors.inkFaint },
   statusText: { ...typeStyles.status, color: colors.surfie },
-
-  scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, flexGrow: 1, justifyContent: 'center' },
+  statusTextOff: { color: colors.inkMuted },
 
   iconWrap: {
     alignSelf: 'center',
-    width: 92,
-    height: 92,
-    borderRadius: 46,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: '#F1F4F3',
     alignItems: 'center',
     justifyContent: 'center',
@@ -119,46 +128,22 @@ const s = StyleSheet.create({
   title: { ...typeStyles.pageTitle, color: colors.ink, textAlign: 'center', marginTop: spacing.lg },
   subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.sm },
 
-  routingCard: {
-    backgroundColor: MINT,
-    borderRadius: radius.card,
-    padding: spacing.md,
-    marginTop: spacing.xl,
-  },
-  routingLabel: { ...typeStyles.label, color: colors.inkMuted },
+  routingCard: { backgroundColor: colors.surface.mint, borderRadius: radius.card, padding: spacing.md, marginTop: spacing.xl },
+  routingLabel: { ...typeStyles.caption, color: colors.inkMuted },
   routingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
-  routingIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#D6F0E4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  routingIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#D6F0E4', alignItems: 'center', justifyContent: 'center' },
   routingTitle: { ...typeStyles.cardTitle, color: colors.ink },
   routingBody: { ...typeStyles.body, color: colors.inkMuted },
 
   divider: { height: 1, backgroundColor: colors.surface.line, marginVertical: spacing.lg },
 
   availRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  availIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: MINT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  availIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surface.mint, alignItems: 'center', justifyContent: 'center' },
   availText: { ...typeStyles.body, flex: 1, color: colors.inkMuted },
 
-  actions: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: spacing.sm,
-    backgroundColor: colors.white,
-  },
-  pauseBtn: { alignItems: 'center', paddingVertical: spacing.sm },
-  pauseText: { ...typeStyles.body, color: colors.surfie },
+  actions: { gap: spacing.xs },
+  pauseBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 44 },
+  pauseText: { ...typeStyles.button, color: colors.surfie },
   footNote: { ...typeStyles.helper, color: colors.inkMuted, textAlign: 'center' },
 });
 

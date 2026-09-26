@@ -14,6 +14,10 @@
     "react-native": "*",
     "react-native-svg": "*",
     "react-native-safe-area-context": "*",
+    "react-native-screens": "*",
+    "@react-navigation/native": "*",
+    "@react-navigation/native-stack": "*",
+    "@react-navigation/bottom-tabs": "*",
     "@testing-library/react-native": "*",
     "react-test-renderer": "*",
     "metro-config": "*"

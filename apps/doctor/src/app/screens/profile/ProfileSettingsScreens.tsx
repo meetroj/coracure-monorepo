@@ -1,61 +1,29 @@
-import { typeStyles } from '../../../../../../libs/typography/src';
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Switch, TextInput } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Switch, TextInput, Keyboard } from 'react-native';
 
 import { colors, radius, spacing } from '../../../theme/brand';
+import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon } from '../../../components/Icon';
-import { Screen, Card, Button, StatusPill, ListRow } from '../../../components/ui';
-import { doctor, inr } from '../../../data/doctor';
+import { Screen, Card, Button, StatusPill, Note } from '../../../components/ui';
+import { ScreenHeader } from '../../../components/ScreenHeader';
+import { Checkbox } from '../../../components/Checkbox';
+import { toast } from '../../../components/Toast';
+import { useStore } from '../../../state/store';
+import { selectDoctor } from '../../../state/selectors';
+import { addChangeRequest, setConsultationDuration, setConsultationFee, setPrivacy } from '../../../state/actions';
+import { CONSULTATION_DURATIONS, inr } from '../../../data/doctor';
+import { doneBar } from '../../../components/KeyboardDoneBar';
 
 /**
  * The Profile rows that are settings rather than modules.
  *
- * Each one is a real destination with a real control, not a placeholder: a row
- * that opens nothing reads as broken, and a row that opens an empty page reads
- * worse. Values live in component state because the app has no settings
- * backend yet — the screens save and return, and wiring `onSave` to an API
- * later does not change any of this layout.
+ * Each writes to the store, so the value shows everywhere it is used the
+ * moment it is saved — Profile, Profile Details, Availability and earnings.
+ * Screens with a Save button report unsaved changes (`onDirtyChange`) so the
+ * route can ask before they are thrown away.
  */
 
-/* ------------------------------ shared frame ------------------------------ */
-
-const DetailScreen = ({
-  title,
-  subtitle,
-  onBack,
-  children,
-  footer,
-}: {
-  title: string;
-  subtitle?: string;
-  onBack: () => void;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-}) => (
-  <Screen bottomInset>
-    <View style={s.bar}>
-      <Pressable
-        testID="back"
-        onPress={onBack}
-        hitSlop={10}
-        style={s.barBtn}
-        accessibilityRole="button"
-        accessibilityLabel="Back"
-      >
-        <Icon name="arrowLeft" size={19} color={colors.ink} />
-      </Pressable>
-    </View>
-
-    <View style={s.titleWrap}>
-      <Text style={[typeStyles.body, s.title]}>{title}</Text>
-      {!!subtitle && <Text style={[typeStyles.body, s.subtitle]}>{subtitle}</Text>}
-    </View>
-
-    {children}
-
-    {footer}
-  </Screen>
-);
+/* ------------------------------ shared pieces ----------------------------- */
 
 /** A radio-style option row — one choice at a time, tick on the right. */
 const ChoiceRow = ({
@@ -75,20 +43,19 @@ const ChoiceRow = ({
 }) => (
   <Pressable
     testID={testID}
-    onPress={onPress}
-    style={({ pressed }) => [s.choice, !last && s.choiceBorder, pressed && s.pressed]}
+    onPress={() => {
+      Keyboard.dismiss();
+      onPress();
+    }}
+    style={({ pressed }) => [s.choice, !last && s.rule, pressed && s.pressed]}
     accessibilityRole="radio"
     accessibilityState={{ selected }}
   >
     <View style={s.flex}>
-      <Text style={[typeStyles.body, s.choiceLabel]}>{label}</Text>
-      {!!hint && <Text style={[typeStyles.body, s.choiceHint]}>{hint}</Text>}
+      <Text style={s.choiceLabel}>{label}</Text>
+      {!!hint && <Text style={s.choiceHint}>{hint}</Text>}
     </View>
-    {selected ? (
-      <Icon name="checkCircle" size={20} color={colors.surfie} filled />
-    ) : (
-      <View style={s.emptyRing} />
-    )}
+    {selected ? <Icon name="checkCircle" size={20} color={colors.surfie} filled /> : <View style={s.emptyRing} />}
   </Pressable>
 );
 
@@ -107,17 +74,18 @@ const ToggleRow = ({
   testID?: string;
   last?: boolean;
 }) => (
-  <View style={[s.toggle, !last && s.choiceBorder]}>
+  <View style={[s.toggle, !last && s.rule]}>
     <View style={s.flex}>
-      <Text style={[typeStyles.body, s.choiceLabel]}>{title}</Text>
-      <Text style={[typeStyles.body, s.choiceHint]}>{subtitle}</Text>
+      <Text style={s.choiceLabel}>{title}</Text>
+      <Text style={s.choiceHint}>{subtitle}</Text>
     </View>
     <Switch
       testID={testID}
       value={value}
       onValueChange={onChange}
-      trackColor={{ false: colors.surface.line, true: colors.paris }}
+      trackColor={{ false: colors.surface.inputBorder, true: colors.paris }}
       thumbColor={colors.white}
+      ios_backgroundColor={colors.surface.inputBorder}
       accessibilityLabel={title}
     />
   </View>
@@ -126,108 +94,101 @@ const ToggleRow = ({
 /* ------------------------------ consultation fee --------------------------- */
 
 const FEE_PRESETS = [499, 699, 899, 1199];
+const FEE_MAX = 99999;
 
 export const ConsultationFeeScreen = ({
   onBack,
-  onSave,
+  onSaved,
+  onDirtyChange,
 }: {
   onBack: () => void;
-  onSave?: (fee: number) => void;
+  onSaved: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const [fee, setFee] = useState(String(doctor.consultationFee));
-  const amount = Number(fee.replace(/[^\d]/g, ''));
-  // A fee of zero is a mistake, not a free consultation — the save is gated
-  // rather than silently accepting it.
-  const valid = amount > 0;
+  const saved = useStore((st) => st.profile.fee);
+  const [fee, setFee] = useState(String(saved));
+  const amount = Number(fee || 0);
+  const dirty = amount !== saved;
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  // a fee of zero is a mistake, not a free consultation
+  const error = !fee ? 'Enter the fee.' : amount <= 0 ? 'The fee must be more than ₹0.' : amount > FEE_MAX ? `Enter at most ${inr(FEE_MAX)}.` : undefined;
+
+  const save = () => {
+    if (error) return;
+    setConsultationFee(amount);
+    toast.show(`Consultation fee set to ${inr(amount)}`);
+    onSaved();
+  };
 
   return (
-    <DetailScreen
-      title="Consultation fee"
-      subtitle="What a patient pays for one consultation with you."
-      onBack={onBack}
-      footer={
-        <View style={s.footer}>
-          <Button
-            testID="save-fee"
-            label="Save fee"
-            disabled={!valid}
-            onPress={() => {
-              onSave?.(amount);
-              onBack();
-            }}
-          />
-        </View>
-      }
+    <Screen
+      testID="consultation-fee"
+      header={<ScreenHeader onBack={onBack} title="Consultation fee" subtitle="What a patient pays for one consultation with you." />}
+      footer={<Button testID="save-fee" label="Save fee" disabled={!dirty || !!error} onPress={save} />}
     >
       <Card style={s.card}>
-        <Text style={[typeStyles.body, s.fieldLabel]}>Amount</Text>
-        <View style={s.amountRow}>
-          <Text style={[typeStyles.body, s.rupee]}>₹</Text>
+        <Text style={s.fieldLabel}>Amount</Text>
+        <View style={[s.amountRow, !!error && s.amountRowInvalid]}>
+          <Text style={s.rupee}>₹</Text>
           <TextInput
             testID="fee-input"
             value={fee}
-            onChangeText={(t) => setFee(t.replace(/[^\d]/g, ''))}
+            onChangeText={(t) => setFee(t.replace(/[^\d]/g, '').replace(/^0+(?=\d)/, '').slice(0, 5))}
             keyboardType="number-pad"
-            style={[typeStyles.body, s.amountInput]}
+            {...doneBar('number-pad')}
+            returnKeyType="done"
+            style={s.amountInput}
             accessibilityLabel="Consultation fee amount"
           />
         </View>
-        <Text style={[typeStyles.body, s.help]}>
-          Coracure does not deduct a platform fee — you keep the full amount.
-        </Text>
+        {error ? <Text style={s.error}>{error}</Text> : <Text style={s.help}>CoraCure does not deduct a platform fee — you keep the full amount.</Text>}
       </Card>
 
-      <Text style={[typeStyles.body, s.section]}>Common amounts</Text>
+      <Text style={s.section}>Common amounts</Text>
       <Card style={s.listCard}>
         {FEE_PRESETS.map((p, i) => (
-          <ChoiceRow
-            key={p}
-            testID={`fee-${p}`}
-            label={inr(p)}
-            selected={amount === p}
-            onPress={() => setFee(String(p))}
-            last={i === FEE_PRESETS.length - 1}
-          />
+          <ChoiceRow key={p} testID={`fee-${p}`} label={inr(p)} selected={amount === p} onPress={() => setFee(String(p))} last={i === FEE_PRESETS.length - 1} />
         ))}
       </Card>
-    </DetailScreen>
+      <Text style={s.note}>A new fee applies to consultations booked after you save. Existing bookings keep their fee.</Text>
+    </Screen>
   );
 };
 
 /* --------------------------- consultation duration ------------------------- */
 
-const DURATIONS = [
-  { minutes: 15, hint: 'Short follow-ups' },
-  { minutes: 30, hint: 'Standard consultation' },
-  { minutes: 45, hint: 'Longer assessments' },
-  { minutes: 60, hint: 'First psychiatric evaluation' },
-];
+const DURATIONS = CONSULTATION_DURATIONS;
 
 export const ConsultationDurationScreen = ({
   onBack,
-  onSave,
+  onSaved,
+  onDirtyChange,
 }: {
   onBack: () => void;
-  onSave?: (minutes: number) => void;
+  onSaved: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const [minutes, setMinutes] = useState(doctor.consultationMinutes);
+  const saved = useStore((st) => st.availability.durationMin);
+  const [minutes, setMinutes] = useState(saved);
+  const dirty = minutes !== saved;
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   return (
-    <DetailScreen
-      title="Consultation duration"
-      subtitle="How long one slot lasts. This sets how many slots fit your day."
-      onBack={onBack}
+    <Screen
+      testID="consultation-duration"
+      header={<ScreenHeader onBack={onBack} title="Consultation duration" subtitle="How long one slot lasts. This sets how many slots fit your day." />}
       footer={
-        <View style={s.footer}>
-          <Button
-            testID="save-duration"
-            label="Save duration"
-            onPress={() => {
-              onSave?.(minutes);
-              onBack();
-            }}
-          />
-        </View>
+        <Button
+          testID="save-duration"
+          label="Save duration"
+          disabled={!dirty}
+          onPress={() => {
+            setConsultationDuration(minutes);
+            toast.show(`Consultations set to ${minutes} minutes`);
+            onSaved();
+          }}
+        />
       }
     >
       <Card style={s.listCard}>
@@ -243,304 +204,250 @@ export const ConsultationDurationScreen = ({
           />
         ))}
       </Card>
-
-      <Text style={[typeStyles.body, s.note]}>
-        Changing this does not move consultations that are already booked.
-      </Text>
-    </DetailScreen>
+      <Text style={s.note}>The same setting as Availability › Consultation duration. Changing it does not move consultations already booked.</Text>
+    </Screen>
   );
 };
 
 /* -------------------------------- bank details ----------------------------- */
 
-export const BankDetailsScreen = ({
-  onBack,
-  onRequestChange,
-}: {
-  onBack: () => void;
-  onRequestChange?: () => void;
-}) => (
-  <DetailScreen
-    title="Bank details"
-    subtitle="Where your payouts are sent."
-    onBack={onBack}
-    footer={
-      <View style={s.footer}>
-        <Button
-          testID="change-bank"
-          label="Request a change"
-          variant="secondary"
-          onPress={onRequestChange ?? onBack}
-        />
-      </View>
-    }
-  >
-    <Card style={s.card}>
-      <View style={s.bankHead}>
-        <View style={s.bankIcon}>
-          <Icon name="wallet" size={19} color={colors.surfie} />
+export const BankDetailsScreen = ({ onBack, onRequestChange }: { onBack: () => void; onRequestChange: () => void }) => {
+  const doctor = useStore(selectDoctor);
+  return (
+    <Screen
+      testID="bank-details"
+      header={<ScreenHeader onBack={onBack} title="Bank details" subtitle="Where your payouts are sent." />}
+      footer={<Button testID="change-bank" label="Request a change" variant="secondary" onPress={onRequestChange} />}
+    >
+      <Card style={s.card}>
+        <View style={s.bankHead}>
+          <View style={s.bankIcon}>
+            <Icon name="wallet" size={19} color={colors.surfie} />
+          </View>
+          <View style={s.flex}>
+            <Text style={s.bankName}>HDFC Bank</Text>
+            <Text style={s.choiceHint}>Savings account</Text>
+          </View>
+          <StatusPill label={doctor.bankVerified ? 'Verified' : 'Pending'} tone={doctor.bankVerified ? 'success' : 'warn'} />
         </View>
-        <View style={s.flex}>
-          <Text style={[typeStyles.body, s.bankName]}>HDFC Bank</Text>
-          <Text style={[typeStyles.body, s.choiceHint]}>Savings account</Text>
-        </View>
-        <StatusPill label={doctor.bankVerified ? 'Verified' : 'Pending'} tone={doctor.bankVerified ? 'success' : 'warn'} />
-      </View>
-
-      {/* Masked, always. The full number is never displayed back in the app. */}
-      <View style={s.kv}>
-        <Text style={[typeStyles.body, s.kvLabel]}>Account number</Text>
-        <Text style={[typeStyles.body, s.kvValue]}>•••• •••• 4417</Text>
-      </View>
-      <View style={s.kv}>
-        <Text style={[typeStyles.body, s.kvLabel]}>IFSC</Text>
-        <Text style={[typeStyles.body, s.kvValue]}>HDFC0001234</Text>
-      </View>
-      <View style={[s.kv, s.kvLast]}>
-        <Text style={[typeStyles.body, s.kvLabel]}>Account holder</Text>
-        <Text style={[typeStyles.body, s.kvValue]}>{doctor.name}</Text>
-      </View>
-    </Card>
-
-    <Text style={[typeStyles.body, s.note]}>
-      Bank details are verified by an administrator and cannot be edited directly.
-      A change request pauses payouts until the new account is verified.
-    </Text>
-  </DetailScreen>
-);
+        {/* masked, always — the full number is never displayed back */}
+        {[
+          ['Account number', '•••• •••• 4417'],
+          ['IFSC', 'HDFC0001234'],
+          ['Account holder', doctor.name],
+        ].map(([k, v], i, list) => (
+          <View key={k} style={[s.kv, i === list.length - 1 && s.kvLast]}>
+            <Text style={s.kvLabel}>{k}</Text>
+            <Text style={s.kvValue}>{v}</Text>
+          </View>
+        ))}
+      </Card>
+      <Text style={s.note}>
+        Bank details are verified by an administrator and cannot be edited directly. A change request pauses payouts until the new
+        account is verified.
+      </Text>
+    </Screen>
+  );
+};
 
 /* ----------------------------- privacy and security ------------------------ */
 
 export const PrivacySecurityScreen = ({ onBack }: { onBack: () => void }) => {
-  const [biometric, setBiometric] = useState(true);
-  const [showOnline, setShowOnline] = useState(true);
-  const [analytics, setAnalytics] = useState(false);
+  const privacy = useStore((st) => st.privacy);
+  const mobile = useStore((st) => st.session.mobile);
+  const masked = mobile.length === 10 ? `+91 ${mobile.slice(0, 2)}••• ••${mobile.slice(7)}` : 'your registered number';
+
+  const change = (patch: Partial<typeof privacy>, message: string) => {
+    setPrivacy(patch);
+    toast.show(message, 'info');
+  };
 
   return (
-    <DetailScreen
-      title="Privacy and security"
-      subtitle="Control how you sign in and what is shared."
-      onBack={onBack}
-    >
-      <Text style={[typeStyles.body, s.section]}>Sign-in</Text>
+    <Screen testID="privacy" header={<ScreenHeader onBack={onBack} title="Privacy and security" subtitle="How you sign in and what is shared." />}>
+      <Text style={s.section}>Sign-in</Text>
       <Card style={s.listCard}>
-        <ToggleRow
-          testID="toggle-biometric"
-          title="Biometric unlock"
-          subtitle="Use fingerprint or face to open the app"
-          value={biometric}
-          onChange={setBiometric}
-        />
-        <ListRow compact icon="lock" title="Change password" subtitle="Last changed 3 months ago" onPress={onBack} last />
+        <View style={s.toggle} accessible accessibilityLabel={`Sign-in method: one-time code sent to ${masked}`}>
+          <View style={s.bankIcon}>
+            <Icon name="lock" size={17} color={colors.surfie} />
+          </View>
+          <View style={s.flex}>
+            <Text style={s.choiceLabel}>One-time code</Text>
+            <Text style={s.choiceHint}>Sent by SMS to {masked} each time you sign in. There is no password.</Text>
+          </View>
+        </View>
       </Card>
 
-      <Text style={[typeStyles.body, s.section]}>Visibility</Text>
+      <Text style={s.section}>Visibility</Text>
       <Card style={s.listCard}>
         <ToggleRow
           testID="toggle-online"
           title="Show availability status"
-          subtitle="Patients can see when you are online"
-          value={showOnline}
-          onChange={setShowOnline}
+          subtitle="Patients can see when you are available now"
+          value={privacy.showOnline}
+          onChange={(v) => change({ showOnline: v }, v ? 'Patients can see your availability' : 'Your availability is hidden from patients')}
         />
         <ToggleRow
           testID="toggle-analytics"
           title="Share usage analytics"
           subtitle="Helps improve the app. Never includes patient data."
-          value={analytics}
-          onChange={setAnalytics}
+          value={privacy.analytics}
+          onChange={(v) => change({ analytics: v }, v ? 'Usage analytics on' : 'Usage analytics off')}
           last
         />
       </Card>
-
-      <Text style={[typeStyles.body, s.note]}>
-        Patient records are governed by the clinic's retention policy and are not
-        affected by these settings.
-      </Text>
-    </DetailScreen>
+      <Text style={s.note}>Changes save as soon as you make them. Patient records follow the clinic’s retention policy and are not affected by these settings.</Text>
+    </Screen>
   );
 };
 
 /* ------------------------------ request changes ---------------------------- */
 
-const CHANGEABLE = [
+export const CHANGEABLE = [
   'Name or qualification',
   'Speciality',
   'Medical registration number',
   'Languages spoken',
   'Profile photo',
-];
+  'About / bio',
+  'Bank account',
+] as const;
 
 export const RequestChangesScreen = ({
+  initialField,
   onBack,
-  onSubmit,
+  onSent,
+  onDirtyChange,
 }: {
+  /** Pre-selected when opened from a specific row, e.g. Bank details. */
+  initialField?: string;
   onBack: () => void;
-  onSubmit?: (fields: string[], note: string) => void;
+  onSent: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const [picked, setPicked] = useState<string[]>([]);
+  const requests = useStore((st) => st.profile.changeRequests);
+  const [picked, setPicked] = useState<string[]>(initialField && (CHANGEABLE as readonly string[]).includes(initialField) ? [initialField] : []);
   const [note, setNote] = useState('');
-  const toggle = (f: string) =>
-    setPicked((p) => (p.includes(f) ? p.filter((x) => x !== f) : [...p, f]));
+  const [showErrors, setShowErrors] = useState(false);
+  const dirty = note.trim().length > 0 || picked.join() !== (initialField ?? '');
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  const toggle = (f: string) => setPicked((p) => (p.includes(f) ? p.filter((x) => x !== f) : [...p, f]));
+  const errors = {
+    fields: picked.length === 0 ? 'Choose at least one detail to change.' : undefined,
+    note: note.trim().length < 10 ? 'Describe the change (at least 10 characters).' : undefined,
+  };
+
+  const send = () => {
+    if (errors.fields || errors.note) {
+      setShowErrors(true);
+      return;
+    }
+    addChangeRequest(picked, note.trim());
+    toast.show('Change request sent to an administrator');
+    onSent();
+  };
 
   return (
-    <DetailScreen
-      title="Request changes"
-      subtitle="Ask an administrator to update a verified detail."
-      onBack={onBack}
-      footer={
-        <View style={s.footer}>
-          <Button
-            testID="submit-request"
-            label="Send request"
-            // Nothing selected means nothing to ask for.
-            disabled={picked.length === 0}
-            onPress={() => {
-              onSubmit?.(picked, note.trim());
-              onBack();
-            }}
-          />
-        </View>
-      }
+    <Screen
+      testID="request-changes"
+      header={<ScreenHeader onBack={onBack} title="Request changes" subtitle="Ask an administrator to update a verified detail." />}
+      footer={<Button testID="submit-request" label="Send request" onPress={send} />}
     >
-      <Text style={[typeStyles.body, s.section]}>What needs to change?</Text>
-      <Card style={s.listCard}>
-        {CHANGEABLE.map((f, i) => {
-          const on = picked.includes(f);
-          return (
-            <Pressable
-              key={f}
-              testID={`field-${i}`}
-              onPress={() => toggle(f)}
-              style={({ pressed }) => [s.choice, i < CHANGEABLE.length - 1 && s.choiceBorder, pressed && s.pressed]}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: on }}
-            >
-              <View style={[s.box, on && s.boxOn]}>
-                {on && <Icon name="check" size={13} color={colors.white} />}
-              </View>
-              <Text style={[typeStyles.body, s.choiceLabel, s.flex]}>{f}</Text>
-            </Pressable>
-          );
-        })}
+      <Text style={s.section}>What needs to change?</Text>
+      <Card style={[s.listCard, showErrors && !!errors.fields && s.cardInvalid]}>
+        {CHANGEABLE.map((f, i) => (
+          <View key={f} style={i < CHANGEABLE.length - 1 && s.rule}>
+            <Checkbox testID={`field-${i}`} checked={picked.includes(f)} onToggle={() => toggle(f)}>
+              {f}
+            </Checkbox>
+          </View>
+        ))}
       </Card>
+      {showErrors && !!errors.fields && <Text style={[s.error, s.errorOut]}>{errors.fields}</Text>}
 
-      <Text style={[typeStyles.body, s.section]}>Details</Text>
-      <Card style={s.card}>
+      <Text style={s.section}>Details</Text>
+      <Card style={[s.card, showErrors && !!errors.note && s.cardInvalid]}>
         <TextInput
           testID="request-note"
           value={note}
-          onChangeText={setNote}
+          onChangeText={(t) => setNote(t.slice(0, 500))}
           multiline
           placeholder="Describe what should change and why."
           placeholderTextColor={colors.inkFaint}
-          style={[typeStyles.body, s.noteInput]}
+          style={s.noteInput}
           accessibilityLabel="Change request details"
         />
+        <Text style={s.counter}>{note.length}/500</Text>
       </Card>
+      {showErrors && !!errors.note && <Text style={[s.error, s.errorOut]}>{errors.note}</Text>}
 
-      <Text style={[typeStyles.body, s.note]}>
-        You will be notified once an administrator reviews the request. Supporting
-        documents may be requested.
-      </Text>
-    </DetailScreen>
+      <Note icon="info">An administrator reviews each request. Supporting documents may be asked for.</Note>
+
+      {requests.length > 0 && (
+        <>
+          <Text style={s.section}>Your requests</Text>
+          <Card style={s.listCard}>
+            {requests.map((r, i) => (
+              <View key={r.id} testID={`change-${r.id}`} style={[s.toggle, i < requests.length - 1 && s.rule]}>
+                <View style={s.flex}>
+                  <Text style={s.choiceLabel}>{r.fields.join(', ')}</Text>
+                  <Text style={s.choiceHint} numberOfLines={2}>
+                    {r.at} · {r.note}
+                  </Text>
+                </View>
+                <StatusPill label="Pending" tone="warn" />
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   pressed: { opacity: 0.85 },
+  rule: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
 
-  bar: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  titleWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  title: { ...typeStyles.pageTitle, color: colors.ink },
-  subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 3 },
-
-  section: {
-    ...typeStyles.sectionTitle,
-    color: colors.ink,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
+  section: { ...typeStyles.sectionTitle, color: colors.ink, paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.sm },
   card: { padding: spacing.lg },
-  listCard: { paddingVertical: 0, paddingHorizontal: 12 },
-  note: {
-    ...typeStyles.caption,
-    color: colors.inkMuted,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
+  cardInvalid: { borderColor: colors.danger },
+  listCard: { paddingVertical: 0, paddingHorizontal: spacing.md },
+  note: { ...typeStyles.caption, color: colors.inkMuted, paddingHorizontal: spacing.lg, marginTop: spacing.md },
   help: { ...typeStyles.caption, color: colors.inkMuted, marginTop: spacing.sm },
-  footer: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+  error: { ...typeStyles.helper, color: colors.danger, marginTop: spacing.sm },
+  errorOut: { marginHorizontal: spacing.lg },
 
-  /* choice + toggle rows */
-  choice: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 13 },
-  choiceBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  choice: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 52, paddingVertical: spacing.sm },
   choiceLabel: { ...typeStyles.body, color: colors.ink },
   choiceHint: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
-  emptyRing: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.surface.line },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 11 },
-  box: {
-    width: 20,
-    height: 20,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    borderColor: colors.surface.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  boxOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
+  emptyRing: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.surface.inputBorder },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 56, paddingVertical: spacing.sm },
 
-  /* fee */
   fieldLabel: { ...typeStyles.label, color: colors.inkMuted },
   amountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    height: 52,
     borderBottomWidth: 1.5,
     borderBottomColor: colors.surfie,
-    paddingBottom: 6,
     marginTop: spacing.sm,
   },
-  rupee: { ...typeStyles.metric, color: colors.ink },
-  amountInput: { ...typeStyles.metric, flex: 1, color: colors.ink, padding: 0 },
+  amountRowInvalid: { borderBottomColor: colors.danger },
+  // the symbol and the digits share one box and no line height, so they sit level
+  rupee: { ...typeStyles.inputSingle, fontFamily: typeStyles.metric.fontFamily, fontWeight: fontWeight.semibold, fontSize: 26, color: colors.ink },
+  amountInput: { ...typeStyles.inputSingle, fontFamily: typeStyles.metric.fontFamily, fontWeight: fontWeight.semibold, fontSize: 26, flex: 1, height: 50, color: colors.ink },
 
-  /* bank */
   bankHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
-  bankIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.successSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  bankIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
   bankName: { ...typeStyles.name, color: colors.ink },
-  kv: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface.line,
-  },
+  kv: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surface.line },
   kvLast: { borderBottomWidth: 0, paddingBottom: 0 },
   kvLabel: { ...typeStyles.caption, color: colors.inkMuted },
-  kvValue: { ...typeStyles.bodySmall, color: colors.ink },
+  kvValue: { ...typeStyles.bodySmall, color: colors.ink, flexShrink: 1, textAlign: 'right' },
 
-  /* request changes */
-  noteInput: { minHeight: 92, textAlignVertical: 'top', color: colors.ink, padding: 0 },
+  noteInput: { ...typeStyles.input, minHeight: 92, textAlignVertical: 'top', color: colors.ink, padding: 0 },
+  counter: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'right', marginTop: spacing.xs },
 });

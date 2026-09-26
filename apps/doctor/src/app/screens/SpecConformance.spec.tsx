@@ -1,4 +1,6 @@
 import React from 'react';
+import fs from 'fs';
+import path from 'path';
 import { render, fireEvent } from '@testing-library/react-native';
 
 import ClinicalNotesScreen from './ClinicalNotesScreen';
@@ -6,9 +8,11 @@ import EPrescriptionScreen from './EPrescriptionScreen';
 import ClinicalTemplatesScreen from './ClinicalTemplatesScreen';
 import CaseSummaryScreen from './CaseSummaryScreen';
 import ConsultationRoomScreen from './ConsultationRoomScreen';
-import { appointments, cases, nextAppointment, detailFor, doctor } from '../../data/doctor';
+import { appointments, appointmentById, nextAppointmentFor, detailFor, doctor } from '../../data/doctor';
 import { patientAlerts } from '../../data/followup';
-import { draftMedicines, templateCounts, clinicalTemplates } from '../../data/clinical';
+import { templateCounts, clinicalTemplates } from '../../data/clinical';
+import { getState } from '../../state/store';
+import { selectCases } from '../../state/selectors';
 
 /**
  * Pins the literal values the written specs call for, so a later edit to a
@@ -28,20 +32,34 @@ test('Rahul Sharma is 32, male, PT-10482 / CON-10482 in every fixture', () => {
   expect(d.patientId).toBe('PT-10482');
   expect(d.consultationId).toBe('CON-10482');
 
-  // the same person, wherever he appears
-  expect(cases.find((c) => c.initials === 'RS')!.age).toBe(32);
-  expect(nextAppointment.age).toBe(32);
-  expect(patientAlerts.find((a) => a.name === 'Rahul Sharma')!.age).toBe(32);
-  expect(patientAlerts.find((a) => a.name === 'Rahul Sharma')!.patientId).toBe('PT-10482');
+  // the same person wherever he appears: cases, the next-appointment card and
+  // follow-up alerts resolve him by ID instead of carrying their own copy (N03)
+  const hisCases = selectCases(getState()).filter((c) => c.patientId === 'PT-10482');
+  expect(hisCases.length).toBeGreaterThan(0);
+  hisCases.forEach((c) => expect([c.name, c.age, c.gender]).toEqual(['Rahul Sharma', 32, 'Male']));
+  expect(nextAppointmentFor()!.id).toBe('a1');
+  const alert = patientAlerts.find((a) => a.patientId === 'PT-10482')!;
+  expect(appointmentById(alert.appointmentId)).toEqual(expect.objectContaining({ name: 'Rahul Sharma', age: 32 }));
 });
 
 test('no cardiology content survives anywhere in the fixtures', () => {
   const banned =
     /chest (pain|discomfort)|cardiolog|heartbeat|angina|\bECG\b|blood pressure|hypertension|bronchitis|shortness of breath|palpitation|angio/i;
 
+  // every fixture module, not only the lists a screen happens to read
+  const sources = ['../../data', '../../state']
+    .map((d) => path.join(__dirname, d))
+    .flatMap((dir) =>
+      fs
+        .readdirSync(dir)
+        .filter((f) => /\.tsx?$/.test(f) && !/\.spec\./.test(f))
+        .map((f) => ({ f, text: fs.readFileSync(path.join(dir, f), 'utf8') }))
+    );
+  expect(sources.length).toBeGreaterThan(5);
+  sources.forEach(({ f, text }) => expect(`${f}: ${text.match(banned)?.[0] ?? 'clean'}`).toBe(`${f}: clean`));
+
   appointments.forEach((a) => expect(a.concern).not.toMatch(banned));
-  cases.forEach((c) => expect(c.concern).not.toMatch(banned));
-  expect(nextAppointment.concern).not.toMatch(banned);
+  selectCases(getState()).forEach((c) => expect(c.concern).not.toMatch(banned));
   expect(doctor.speciality).toBe('Psychiatrist');
   expect(doctor.professionalType).toBe('psychiatrist');
 });
@@ -49,71 +67,75 @@ test('no cardiology content survives anywhere in the fixtures', () => {
 /* ------------------------- clinical notes spec ---------------------------- */
 
 test('clinical notes carries the specified patient line and identifiers', () => {
-  const { getByText } = render(<ClinicalNotesScreen appointment={appt} onBack={noop} />);
+  const onViewProfile = jest.fn();
+  const { getByText } = render(<ClinicalNotesScreen appointment={appt} onBack={noop} onViewProfile={onViewProfile} />);
 
   expect(getByText('Rahul Sharma')).toBeTruthy();
-  // identity now reads on one line: age, gender, patient id
+  // identity reads on one line: age, gender, patient id
   expect(getByText('32 • Male • ID: PT-10482')).toBeTruthy();
-  expect(getByText('View Profile')).toBeTruthy();
-  expect(getByText('Autosaved')).toBeTruthy();
-  expect(getByText('Refer for Clarification')).toBeTruthy();
+  // one line each, so the date never breaks across lines beside View Profile
+  expect(getByText('Consultation CON-10482')).toBeTruthy();
+  expect(getByText('15 May 2026')).toBeTruthy();
   expect(getByText('Clinical Notes & Diagnosis')).toBeTruthy();
-  expect(getByText('Save Notes')).toBeTruthy();
+  // the save state is real: nothing has been written yet
+  expect(getByText('Not started')).toBeTruthy();
+  // K29: View Profile goes somewhere; N29: the save button says it moves on
+  fireEvent.press(getByText('View Profile'));
+  expect(onViewProfile).toHaveBeenCalledTimes(1);
+  expect(getByText('Refer')).toBeTruthy();
+  expect(getByText('Save notes & continue')).toBeTruthy();
 });
 
-test('clinical notes carries the exact specified field content', () => {
-  const { getByTestId, getByText } = render(
-    <ClinicalNotesScreen appointment={appt} onBack={noop} />
+test('a consultation not yet held opens with empty, required fields and no invented findings', () => {
+  // the earlier mock pre-filled this consultation's notes before it had happened;
+  // the brief asks for real clinical inputs, so each field starts blank with guidance
+  const { getAllByText, getByPlaceholderText } = render(
+    <ClinicalNotesScreen appointment={appt} onBack={noop} onViewProfile={noop} />
   );
+  expect(getAllByText('Required')).toHaveLength(7);
+  [
+    'What the patient came with, in clinical terms.',
+    'Onset, duration and course so far.',
+    'Mental state and presentation during the consultation.',
+    'State clearly whether provisional or confirmed.',
+    'What you advised, and why.',
+    'When to review, and what would bring it forward.',
+  ].forEach((p) => expect(getByPlaceholderText(p).props.value).toBe(''));
+});
 
-  expect(getByText('Anxiety, persistent restlessness and difficulty sleeping.')).toBeTruthy();
-
-  fireEvent.press(getByTestId('section-history'));
-  expect(
-    getByText(
-      'Symptoms have continued for approximately two weeks and are affecting concentration and daily work.'
-    )
-  ).toBeTruthy();
-
-  fireEvent.press(getByTestId('section-observations'));
-  expect(
-    getByText('Patient is alert, oriented and cooperative. Speech is clear. Reports racing thoughts at night.')
-  ).toBeTruthy();
-
-  fireEvent.press(getByTestId('section-diagnosis'));
-  expect(getByText('Provisional diagnosis: Generalised Anxiety Disorder')).toBeTruthy();
-
-  fireEvent.press(getByTestId('section-risk'));
-  // self-harm-thoughts and referral lines were removed by request; only the
-  // risk-category selector remains
-  expect(getByText('Moderate')).toBeTruthy();
-
-  fireEvent.press(getByTestId('section-advice'));
-  expect(getByText('Sleep routine guidance, breathing practice and scheduled clinical review.')).toBeTruthy();
-
-  fireEvent.press(getByTestId('section-followUp'));
-  expect(getByText('Review after seven days or earlier if symptoms worsen.')).toBeTruthy();
+test('a completed consultation shows exactly what was recorded', () => {
+  const earlier = appointmentById('a11')!;
+  const recorded = getState().records.a11.notes;
+  const { queryByDisplayValue, queryByText } = render(
+    <ClinicalNotesScreen appointment={earlier} onBack={noop} onViewProfile={noop} />
+  );
+  expect(recorded.complaint).toBe('Anxiety, restlessness and difficulty sleeping.');
+  expect(queryByDisplayValue(recorded.complaint) ?? queryByText(recorded.complaint)).toBeTruthy();
 });
 
 /* --------------------------- prescription spec ---------------------------- */
 
-test('the two specified medicines carry their exact structured instructions', () => {
-  const [esc, clo] = draftMedicines;
+test('a new prescription starts with no medicines; the anxiety template carries the two specified medicines', () => {
+  // DOC-CLN-02's pre-filled draft was demo content on a consultation that had
+  // not happened. Its medicine list now starts empty and the same two arrive
+  // through "Anxiety Initial Care"; its durations and instructions differ from
+  // the old mock (listed in the implementation report for product sign-off).
+  expect(getState().records.a1?.meds ?? []).toEqual([]);
 
-  expect(esc.name).toBe('Escitalopram 5 mg');
-  expect([esc.dose, esc.frequency, esc.duration, esc.instruction]).toEqual([
+  const [esc, clo] = clinicalTemplates.find((t) => t.id === 'tpl1')!.content.meds;
+  expect([esc.name, esc.dose, esc.frequency, esc.duration, esc.instruction]).toEqual([
+    'Escitalopram 5 mg',
     '5 mg',
     'Once daily',
-    '7 days',
-    'After dinner',
+    '14 days',
+    'Take in the morning',
   ]);
-
-  expect(clo.name).toBe('Clonazepam 0.25 mg');
-  expect([clo.dose, clo.frequency, clo.duration, clo.instruction]).toEqual([
+  expect([clo.name, clo.dose, clo.frequency, clo.duration, clo.instruction]).toEqual([
+    'Clonazepam 0.25 mg',
     '0.25 mg',
     'At bedtime',
     '5 days',
-    'Use only as directed',
+    'Short course only',
   ]);
 });
 
@@ -167,17 +189,17 @@ test('the four named templates exist with their specified specialties', () => {
 /* --------------------------- case summary spec ---------------------------- */
 
 test('case summary shows the specified header, patient block and helper text', () => {
-  const { getByText } = render(<CaseSummaryScreen appointment={appt} onBack={noop} />);
+  const { getByText, getByPlaceholderText } = render(<CaseSummaryScreen appointment={appt} onBack={noop} />);
 
-  expect(
-    getByText('Add a 3–5 line summary to complete this consultation.')
-  ).toBeTruthy();
-  expect(getByText('ID: CON-10482')).toBeTruthy();
+  expect(getByText('Add a 3–5 line summary to complete this consultation.')).toBeTruthy();
+  // labelled as on E-Prescription, so one reference reads the same everywhere (N23)
+  expect(getByText('Consultation ID: CON-10482')).toBeTruthy();
   expect(getByText('Psychiatry')).toBeTruthy();
-  expect(getByText('Moderate')).toBeTruthy();
-  expect(getByText('Generalised Anxiety Disorder')).toBeTruthy();
-  expect(getByText('Write your case summary here...')).toBeTruthy();
-  expect(getByText('0/1000')).toBeTruthy();
+  // diagnosis and risk come from the notes, which are not written yet
+  expect(getByText('Not recorded in notes')).toBeTruthy();
+  expect(getByText('Not assessed')).toBeTruthy();
+  expect(getByPlaceholderText('Write your case summary here…')).toBeTruthy();
+  expect(getByText(/0\s*\/\s*1000/)).toBeTruthy();
   expect(getByText('Submit Summary & Complete')).toBeTruthy();
 });
 
@@ -191,10 +213,13 @@ test('the four checklist rows are exactly those specified', () => {
 
 /* -------------------------- consultation room ----------------------------- */
 
-test('the room shows the patient at the agreed age, not the old fixture', () => {
-  const { getByText } = render(<ConsultationRoomScreen appointment={appt} onBack={noop} />);
+test('the room shows the patient at the agreed age, and the patient ID under that label', () => {
+  const { getByText, queryByText } = render(<ConsultationRoomScreen appointment={appt} onBack={noop} />);
   expect(getByText('32 years · Male')).toBeTruthy();
-  expect(getByText('CON-10482')).toBeTruthy();
+  // N46: "Patient ID" used to show the consultation ID
+  expect(getByText('Patient ID')).toBeTruthy();
+  expect(getByText('PT-10482')).toBeTruthy();
+  expect(queryByText('CON-10482')).toBeNull();
 });
 
 test('no screen claims HIPAA compliance', () => {

@@ -1,49 +1,51 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { render, fireEvent, screen } from '@testing-library/react-native';
 
 import ReviewsScreen from './ReviewsScreen';
+import { getState } from '../../state/store';
 
-const noop = () => undefined;
+test('reviews show in authored order with no filters, sort or trend banner', () => {
+  render(<ReviewsScreen onBack={jest.fn()} />);
+  expect(screen.getByText(/listened patiently/)).toBeTruthy();
+  expect(screen.queryByTestId('sort-toggle')).toBeNull();
+  expect(screen.queryByTestId('filter-5')).toBeNull();
+});
 
-test('reviews uses the simplified header and removes appreciation', () => {
-  const { getByText, queryByText } = render(<ReviewsScreen onBack={noop} />);
-  expect(getByText('Reviews & Feedback')).toBeTruthy();
-  expect(queryByText('See what patients shared after consultations')).toBeNull();
-  expect(queryByText('Patients appreciate')).toBeNull();
+test('the list says it is the newest few of all the reviews counted above', () => {
+  render(<ReviewsScreen onBack={jest.fn()} />);
+  expect(screen.getByText('Based on 126 reviews')).toBeTruthy();
+  expect(screen.getByText('Recent reviews')).toBeTruthy();
+  expect(screen.getByText(`The latest ${screen.getAllByTestId(/^review-r\d+$/).length} of 126`)).toBeTruthy();
+});
+
+test('reviews never name the doctor by a fixed name', () => {
+  render(<ReviewsScreen onBack={jest.fn()} />);
+  expect(screen.queryByText(/Dr\. Mehta/)).toBeNull();
+});
+
+test('the info button explains how reviews work', () => {
+  render(<ReviewsScreen onBack={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('reviews-info'));
+  expect(screen.getByText('About reviews')).toBeTruthy();
+  expect(screen.getByText(/Only patients who completed a consultation/)).toBeTruthy();
+});
+
+test('reporting a concern needs a reason, asks first, and marks the review', () => {
+  render(<ReviewsScreen onBack={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('report-r5'));
+  expect(screen.getByTestId('report-confirm')).toBeDisabled();
+  fireEvent.press(screen.getByTestId('reason-1'));
+  fireEvent.press(screen.getByTestId('report-confirm'));
+  expect(Alert.alert).toHaveBeenLastCalledWith('Report this review?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(getState().reviewReports.r5).toBe('Not about my consultation');
+  expect(screen.getByTestId('reported-r5')).toBeTruthy();
+  expect(screen.queryByTestId('report-r5')).toBeNull();
 });
 
 test('back reports through to the caller', () => {
-  // NOTE: the dashboard feedback card was removed by design request, so the
-  // screen no longer has an entry point in AppShell and is exercised directly.
   const onBack = jest.fn();
-  const { getByLabelText } = render(<ReviewsScreen onBack={onBack} />);
-  fireEvent.press(getByLabelText('Back'));
+  render(<ReviewsScreen onBack={onBack} />);
+  fireEvent.press(screen.getByTestId('back'));
   expect(onBack).toHaveBeenCalledTimes(1);
-});
-
-test('all reviews are shown without rating filters', () => {
-  const { queryByTestId, queryByText } = render(<ReviewsScreen onBack={noop} />);
-  expect(queryByText(/listened patiently/)).toBeTruthy();
-  expect(queryByText(/more time for questions/)).toBeTruthy();
-  expect(queryByTestId('filter-all')).toBeNull();
-  expect(queryByTestId('filter-5')).toBeNull();
-  expect(queryByTestId('filter-4')).toBeNull();
-});
-
-// The screen shows reviews in authored order. There is no sort control and no
-// rating-trend banner: this is a record of what patients said, not a dashboard.
-test('there is no sort control and no rating-trend banner', () => {
-  const { queryByTestId, queryByText } = render(<ReviewsScreen onBack={noop} />);
-
-  expect(queryByTestId('sort-toggle')).toBeNull();
-  expect(queryByText('Newest')).toBeNull();
-  expect(queryByText(/this month/)).toBeNull();
-});
-
-test('reporting a concern reports the review it belongs to', () => {
-  const onReport = jest.fn();
-  const { getByLabelText } = render(<ReviewsScreen onBack={noop} onReport={onReport} />);
-
-  fireEvent.press(getByLabelText('Report concern about the review from 2 May 2024'));
-  expect(onReport).toHaveBeenCalledWith('r5');
 });

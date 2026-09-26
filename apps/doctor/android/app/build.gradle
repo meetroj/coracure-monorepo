@@ -2,6 +2,10 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// hermes-compiler ships one binary per host OS; release bundling runs it on the build machine.
+def hostOs = System.getProperty("os.name").toLowerCase()
+def hermescBinary = hostOs.contains("windows") ? "win64-bin/hermesc.exe" : (hostOs.contains("mac") ? "osx-bin/hermesc" : "linux64-bin/hermesc")
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -49,7 +53,7 @@ react {
     //   react-native/sdks. The relative form is also resolved against the app
     //   dir rather than the workspace root, landing four levels above
     //   `apps/doctor`; an absolute path leaves nothing to re-resolve.
-    hermesCommand = file("../../../../node_modules/hermes-compiler/hermesc/win64-bin/hermesc.exe").absolutePath
+    hermesCommand = file("../../../../node_modules/hermes-compiler/hermesc/${hermescBinary}").absolutePath
     //
     //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
     // hermesFlags = ["-O", "-output-source-map"]
@@ -120,5 +124,17 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+// The React bundler copies the images the JS uses into generated/res and
+// generated/assets but never removes ones it no longer uses, so an image that
+// was deleted from src/ kept shipping inside the APK. Start each bundle clean.
+tasks.matching { it.name.startsWith("createBundle") && it.name.endsWith("JsAndAssets") }.configureEach { task ->
+    task.doFirst {
+        def variant = task.name.replace("createBundle", "").replace("JsAndAssets", "")
+        variant = variant.substring(0, 1).toLowerCase() + variant.substring(1)
+        project.delete(layout.buildDirectory.dir("generated/res/react/${variant}"))
+        project.delete(layout.buildDirectory.dir("generated/assets/react/${variant}"))
     }
 }

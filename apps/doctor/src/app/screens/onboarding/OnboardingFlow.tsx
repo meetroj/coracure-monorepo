@@ -1,12 +1,14 @@
-import { typeStyles, fontWeight } from '../../../../../../libs/typography/src';
-import React, { useMemo, useState, type ReactNode } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { View, Text, StyleSheet, Pressable, BackHandler, Image } from 'react-native';
 
-import LogoWide from '../../../assets/brand/logo-wide.svg';
-import { colors, radius, spacing, typography } from '../../../theme/brand';
+import { colors, radius, spacing } from '../../../theme/brand';
+import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon } from '../../../components/Icon';
-import { useKeyboardHeight } from '../../../components/useKeyboard';
+import { Screen, Button } from '../../../components/ui';
+import { ScreenHeader } from '../../../components/ScreenHeader';
+import { confirm, confirmDiscard } from '../../../components/confirm';
+import { toast } from '../../../components/Toast';
+import { FilePickerSheet, photoPreview, useUpload, type PickedFile } from '../../../components/upload';
 import {
   TextField,
   DateField,
@@ -19,9 +21,11 @@ import {
   PrivacyNote,
   StepProgress,
 } from '../../../components/form';
+import { TODAY } from '../../../data/calendar';
 import {
   GENDERS,
   ID_TYPES,
+  OTHER_ID,
   CONSULT_LANGUAGES,
   QUALIFICATION_OPTIONS,
   POSITION_OPTIONS,
@@ -31,33 +35,45 @@ import {
   isStepComplete,
   maskId,
   totalExperienceYears,
+  validateBasic,
+  validateIdentity,
+  validateQualification,
+  validateExperience,
   type Experience,
+  type FieldErrors,
   type Qualification,
   type RegistrationDraft,
   type StepKey,
-  type UploadedFile,
 } from '../../../data/registration';
 
 /**
  * Doctor onboarding — the four sections completed after OTP sign-in, then a
- * review screen and submission for verification.
+ * review screen and submission. Submitting leads straight to Account Status,
+ * which shows the review under way.
  *
- * One draft is held here and handed down; each step is a pure view over it.
- * That keeps "can I continue?" in one place (`isStepComplete`) rather than
- * each screen inventing its own answer.
+ * One draft is held here and handed down; each step is a view over it. A
+ * step's button always works: pressing it either moves on or shows exactly
+ * what is missing, rather than sitting disabled with no explanation. Field
+ * errors also appear once a field is left.
  *
- * File picking is not wired — `pick()` stands in for a real picker, so the
- * attached / replace states are exercisable without a native module.
+ * `resubmit` mode opens on Review with the doctor's previous submission, for a
+ * verification that came back with issues.
  */
 
-/** Stand-in for a file picker. Replace when a native picker is added. */
-const pick = (name: string, kind: 'pdf' | 'image' = 'pdf'): UploadedFile => ({
-  name,
-  kind,
-  size: kind === 'pdf' ? '1.2 MB' : '840 KB',
-});
+let idSeq = 0;
+const newId = (prefix: string) => {
+  idSeq += 1;
+  return `${prefix}-${Date.now().toString(36)}-${idSeq}`;
+};
 
-const uid = (p: string, n: number) => `${p}${n}`;
+const formatMobile = (m: string) => {
+  const d = m.replace(/\D/g, '').slice(-10);
+  return d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : m;
+};
+
+const monthNow = () => `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`;
+
+type Step = StepKey | 'review';
 
 /* -------------------------------- chrome ---------------------------------- */
 
@@ -67,99 +83,68 @@ const Layout = ({
   subtitle,
   children,
   onBack,
+  backLabel,
   primaryLabel,
-  primaryEnabled,
   onPrimary,
   secondary,
+  testID,
 }: {
   stepIndex: number;
   title: string;
-  /** Omitted where the step needs no explanation above the first field. */
   subtitle?: string;
   children: ReactNode;
   onBack?: () => void;
+  backLabel?: string;
   primaryLabel: string;
-  primaryEnabled: boolean;
   onPrimary: () => void;
   secondary?: ReactNode;
-}) => {
-  const insets = useSafeAreaInsets();
-  const keyboard = useKeyboardHeight();
-  return (
-    <View style={s.root}>
-      <View style={[s.bar, { paddingTop: insets.top + spacing.sm }]}>
-        {onBack ? (
-          <Pressable
-            testID="onboarding-back"
-            onPress={onBack}
-            hitSlop={8}
-            style={s.barBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Icon name="arrowLeft" size={19} color={colors.ink} />
-          </Pressable>
-        ) : (
-          <View style={s.barBtn} />
-        )}
-        <View style={s.barLogo}>
-          <LogoWide width={104} height={26} />
-        </View>
-        <View style={s.barBtn} />
-      </View>
-
-      {stepIndex >= 0 && (
-        <View style={s.stepWrap}>
-          {/* the count sits with the title, the bars read as the progress */}
-          <View style={s.titleRow}>
-            <Text style={[typeStyles.body, s.title]}>{title}</Text>
-            <Text style={[typeStyles.body, s.stepCount]}>
-              {stepIndex + 1} of {STEPS.length}
-            </Text>
+  testID?: string;
+}) => (
+  <Screen
+    testID={testID}
+    background={colors.white}
+    header={
+      <View>
+        <ScreenHeader onBack={onBack} backLabel={backLabel} />
+        {stepIndex >= 0 && (
+          <View style={s.stepWrap}>
+            <View style={s.titleRow}>
+              <Text style={s.title} accessibilityRole="header">
+                {title}
+              </Text>
+              <Text style={s.stepCount}>
+                {stepIndex + 1} of {STEPS.length}
+              </Text>
+            </View>
+            <StepProgress steps={STEPS} index={stepIndex} />
           </View>
-          <StepProgress steps={STEPS} index={stepIndex} />
-        </View>
-      )}
-
-      {/* the focused field is scrolled clear of the keyboard rather than sitting
-          under it — every step here is a form */}
-      <KeyboardAvoidingView
-        style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          style={s.flex}
-          contentContainerStyle={[s.content, { paddingBottom: spacing.lg + keyboard }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
-        >
-          {stepIndex < 0 && <Text style={[typeStyles.body, s.title]}>{title}</Text>}
-          {!!subtitle && <Text style={[typeStyles.body, s.subtitle]}>{subtitle}</Text>}
-          {children}
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-        {secondary}
-        <Pressable
-          testID="onboarding-primary"
-          onPress={onPrimary}
-          disabled={!primaryEnabled}
-          style={[s.cta, !primaryEnabled && s.ctaOff]}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !primaryEnabled }}
-        >
-          <Text style={[typeStyles.body, s.ctaText]}>{primaryLabel}</Text>
-          <Icon name="arrowRight" size={17} color={colors.white} />
-        </Pressable>
+        )}
       </View>
+    }
+    footer={
+      <View style={s.footerRow}>
+        {secondary}
+        <Button testID="onboarding-primary" label={primaryLabel} onPress={onPrimary} icon="arrowRight" iconRight style={s.flex} />
+      </View>
+    }
+  >
+    <View style={s.content}>
+      {stepIndex < 0 && (
+        <Text style={[s.title, s.titleStandalone]} accessibilityRole="header">
+          {title}
+        </Text>
+      )}
+      {!!subtitle && <Text style={s.subtitle}>{subtitle}</Text>}
+      {children}
     </View>
-  );
-};
+  </Screen>
+);
 
-/** A repeatable qualification / experience entry, collapsed after saving. */
+const CancelButton = ({ onPress }: { onPress: () => void }) => (
+  <Button testID="onboarding-cancel" label="Cancel" variant="secondary" onPress={onPress} style={s.cancelBtn} />
+);
+
+/** A saved qualification / experience entry. */
 const EntryCard = ({
   title,
   meta,
@@ -178,122 +163,289 @@ const EntryCard = ({
   <View testID={testID} style={s.entry}>
     <View style={s.entryTop}>
       <View style={s.flex}>
-        <Text style={[typeStyles.body, s.entryTitle]} numberOfLines={2}>{title}</Text>
-        <Text style={[typeStyles.body, s.entryMeta]} numberOfLines={1}>{meta}</Text>
+        <Text style={s.entryTitle}>{title}</Text>
+        <Text style={s.entryMeta}>{meta}</Text>
       </View>
       <Icon name="checkCircle" size={17} color={colors.surfie} />
     </View>
-    <Text style={[typeStyles.body, s.entryProof]}>{proofLabel}</Text>
+    <Text style={s.entryProof}>{proofLabel}</Text>
     <View style={s.entryActions}>
-      <Pressable onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Edit ${title}`}>
-        <Text style={[typeStyles.body, s.entryAction]}>Edit</Text>
+      <Pressable testID={testID ? `${testID}-edit` : undefined} onPress={onEdit} hitSlop={8} style={s.entryBtn} accessibilityRole="button" accessibilityLabel={`Edit ${title}`}>
+        <Icon name="pencil" size={14} color={colors.surfie} />
+        <Text style={s.entryAction}>Edit</Text>
       </Pressable>
       <View style={s.entryRule} />
-      <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${title}`}>
-        <Text style={[typeStyles.body, s.entryRemove]}>Remove</Text>
+      <Pressable testID={testID ? `${testID}-remove` : undefined} onPress={onRemove} hitSlop={8} style={s.entryBtn} accessibilityRole="button" accessibilityLabel={`Remove ${title}`}>
+        <Icon name="trash" size={14} color={colors.danger} />
+        <Text style={s.entryRemove}>Remove</Text>
       </Pressable>
     </View>
   </View>
 );
 
-const AddButton = ({ label, onPress, testID }: { label: string; onPress: () => void; testID?: string }) => (
+const AddButton = ({ label, onPress, testID, invalid }: { label: string; onPress: () => void; testID?: string; invalid?: boolean }) => (
   <Pressable
     testID={testID}
     onPress={onPress}
-    style={s.addBtn}
+    style={({ pressed }) => [s.addBtn, invalid && s.addBtnInvalid, pressed && s.pressed]}
     accessibilityRole="button"
     accessibilityLabel={label}
   >
     <Icon name="plus" size={14} color={colors.surfie} />
-    <Text style={[typeStyles.body, s.addBtnText]}>{label}</Text>
+    <Text style={s.addBtnText}>{label}</Text>
   </Pressable>
 );
+
+const Err = ({ children }: { children?: string }) => (children ? <Text style={s.error}>{children}</Text> : null);
+
+/* --------------------------------- photo ---------------------------------- */
+
+const PHOTO_MAX_MB = 5;
+
+/** The profile photo, with the same pick → upload → attached lifecycle as documents. */
+const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChange: (f: PickedFile | null) => void; error?: string }) => {
+  const up = useUpload({ maxMb: PHOTO_MAX_MB, onDone: (f) => onChange(f) });
+  const uploading = up.status === 'uploading' && !!up.pending;
+  const picture = photoPreview(file);
+
+  return (
+    <View style={s.photoField}>
+      <View style={s.photoRow}>
+        <Pressable
+          testID="photo"
+          onPress={up.select}
+          disabled={uploading}
+          style={[s.photo, !!file && s.photoOn, !!error && !file && s.photoInvalid]}
+          accessibilityRole="button"
+          accessibilityLabel={file ? 'Change profile photo' : 'Add profile photo'}
+        >
+          {uploading ? (
+            <Text style={s.photoProgress}>{up.progress}%</Text>
+          ) : picture ? (
+            <Image testID="photo-image" source={picture} style={s.photoImage} accessibilityIgnoresInvertColors />
+          ) : (
+            <Icon name={file ? 'user' : 'plus'} size={file ? 30 : 22} color={colors.surfie} />
+          )}
+          {!!file && !uploading && (
+            <View style={s.photoBadge}>
+              <Icon name="check" size={11} weight={3} color={colors.white} />
+            </View>
+          )}
+        </Pressable>
+
+        <View style={s.flex}>
+          <Text style={s.photoTitle}>
+            Profile Photo <Text style={s.star}>*</Text>
+          </Text>
+          <Text testID="photo-status" style={s.photoHint} numberOfLines={1}>
+            {uploading
+              ? `${file ? 'Replacing' : 'Uploading'} ${up.pending?.name}…`
+              : file
+                ? `${file.name} · ${file.size}`
+                : `JPG or PNG · Max ${PHOTO_MAX_MB} MB`}
+          </Text>
+          {/* removing is the quieter, second action — it sits with the file, not beside Change */}
+          {!!file && !uploading && (
+            <Pressable
+              testID="photo-remove"
+              onPress={() =>
+                confirm({
+                  title: 'Remove your photo?',
+                  message: 'A profile photo is required before you can continue.',
+                  confirmLabel: 'Remove',
+                  destructive: true,
+                  onConfirm: () => onChange(null),
+                })
+              }
+              hitSlop={8}
+              style={s.photoRemove}
+              accessibilityRole="button"
+              accessibilityLabel="Remove profile photo"
+            >
+              <Text style={s.photoRemoveText}>Remove</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {uploading ? (
+          <Pressable testID="photo-cancel" onPress={up.cancel} hitSlop={6} style={s.photoBtn} accessibilityRole="button" accessibilityLabel="Cancel photo upload">
+            <Text style={s.photoBtnText}>Cancel</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            testID={file ? 'photo-change' : 'photo-add'}
+            onPress={up.select}
+            hitSlop={6}
+            style={s.photoBtn}
+            accessibilityRole="button"
+            accessibilityLabel={file ? 'Change profile photo' : 'Add profile photo'}
+          >
+            <Text style={s.photoBtnText}>{file ? 'Change' : 'Add photo'}</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {up.status === 'error' && (
+        <View testID="photo-error" style={s.photoError}>
+          <Icon name="alertCircle" size={16} color={colors.danger} />
+          <Text style={s.photoErrorText}>{up.error}</Text>
+          <Pressable testID="photo-retry" onPress={up.select} hitSlop={6} accessibilityRole="button">
+            <Text style={s.photoErrorAction}>Try again</Text>
+          </Pressable>
+          <Pressable onPress={up.dismissError} hitSlop={6} accessibilityRole="button" accessibilityLabel="Dismiss">
+            <Icon name="close" size={15} color={colors.danger} />
+          </Pressable>
+        </View>
+      )}
+
+      {!file && up.status === 'idle' && <Err>{error}</Err>}
+
+      <FilePickerSheet visible={up.status === 'selecting'} kind="photo" maxMb={PHOTO_MAX_MB} onPick={up.choose} onClose={up.closePicker} testID="photo" />
+    </View>
+  );
+};
 
 /* ------------------------------- the flow --------------------------------- */
 
 export const OnboardingFlow = ({
-  mobile = '+91 98765 43210',
+  mobile,
   email = '',
+  initialDraft,
+  mode = 'register',
+  flagged = [],
   onSubmitted,
   onExit,
-  /** Current month as `YYYY-MM`; injected so totals do not drift with the clock. */
-  now = '2026-09',
+  now = monthNow(),
 }: {
-  mobile?: string;
+  /** The number the doctor signed in with — shown verified, never asked again. */
+  mobile: string;
   email?: string;
-  onSubmitted: () => void;
-  onExit?: () => void;
+  /** A previous submission, for resubmitting after a rejection. */
+  initialDraft?: RegistrationDraft;
+  mode?: 'register' | 'resubmit';
+  /** Sections the verification team asked to correct, with the reason shown. */
+  flagged?: { step: StepKey; label: string }[];
+  onSubmitted: (draft: RegistrationDraft) => void;
+  /** Leaves the flow (sign-in, or back to Account Status when resubmitting). */
+  onExit: () => void;
+  /** Current month as `YYYY-MM`; injected so totals do not drift with the clock. */
   now?: string;
 }) => {
-  const [draft, setDraft] = useState<RegistrationDraft>(() => emptyDraft(mobile, email));
-  const [step, setStep] = useState<StepKey | 'review'>('basic');
-  /** The entry being edited, or null when the list is shown. */
-  const [editingQual, setEditingQual] = useState<Qualification | null>(null);
-  const [editingExp, setEditingExp] = useState<Experience | null>(null);
+  // created once; a later prop change must not reset the doctor's work
+  const [start] = useState<RegistrationDraft>(() => initialDraft ?? emptyDraft(formatMobile(mobile), email));
+  const [draft, setDraft] = useState<RegistrationDraft>(start);
+  const [step, setStep] = useState<Step>(mode === 'resubmit' ? 'review' : 'basic');
+  /** Set when a step was opened from Review: its button returns there. */
+  const [fromReview, setFromReview] = useState(mode === 'resubmit');
+  const [editingQual, setEditingQual] = useState<{ entry: Qualification; original?: Qualification } | null>(null);
+  const [editingExp, setEditingExp] = useState<{ entry: Experience; original?: Experience } | null>(null);
+  /** Fields left at least once, or every field after a failed continue. */
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [showAll, setShowAll] = useState(false);
+  const [idFocused, setIdFocused] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  /** Flagged sections the doctor has opened since arriving. */
+  const [revisited, setRevisited] = useState<StepKey[]>([]);
 
   const years = useMemo(() => totalExperienceYears(draft.experience, now), [draft.experience, now]);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(start);
 
-  const setBasic = (p: Partial<RegistrationDraft['basic']>) =>
-    setDraft((d) => ({ ...d, basic: { ...d.basic, ...p } }));
-  const setIdentity = (p: Partial<RegistrationDraft['identity']>) =>
-    setDraft((d) => ({ ...d, identity: { ...d.identity, ...p } }));
+  const setBasic = (p: Partial<RegistrationDraft['basic']>) => setDraft((d) => ({ ...d, basic: { ...d.basic, ...p } }));
+  const setIdentity = (p: Partial<RegistrationDraft['identity']>) => setDraft((d) => ({ ...d, identity: { ...d.identity, ...p } }));
+  const touch = (field: string) => () => setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
+  const shown = (errors: FieldErrors, field: string) => (showAll || touched[field] ? errors[field] : undefined);
 
-  const goto = (k: StepKey | 'review') => setStep(k);
+  const goto = (k: Step) => {
+    setTouched({});
+    setShowAll(false);
+    setReviewError('');
+    setStep(k);
+  };
+
+  const exit = () => {
+    if (!dirty) return onExit();
+    confirm({
+      title: mode === 'resubmit' ? 'Discard your changes?' : 'Leave registration?',
+      message: mode === 'resubmit' ? 'Your corrections will not be submitted.' : 'The details you have entered will be lost.',
+      confirmLabel: mode === 'resubmit' ? 'Discard' : 'Leave',
+      destructive: true,
+      onConfirm: onExit,
+    });
+  };
+
+  const closeQual = () => {
+    const changed = editingQual && JSON.stringify(editingQual.entry) !== JSON.stringify(editingQual.original ?? blankQual(editingQual.entry.id));
+    const close = () => {
+      setEditingQual(null);
+      setTouched({});
+      setShowAll(false);
+    };
+    if (changed) confirmDiscard(close, 'this qualification');
+    else close();
+  };
+  const closeExp = () => {
+    const changed = editingExp && JSON.stringify(editingExp.entry) !== JSON.stringify(editingExp.original ?? blankExp(editingExp.entry.id));
+    const close = () => {
+      setEditingExp(null);
+      setTouched({});
+      setShowAll(false);
+    };
+    if (changed) confirmDiscard(close, 'this experience');
+    else close();
+  };
+
   const back = () => {
-    if (step === 'review') return goto('experience');
+    if (editingQual) return closeQual();
+    if (editingExp) return closeExp();
+    if (step === 'review') return mode === 'resubmit' ? exit() : goto('experience');
+    if (fromReview) return goto('review');
     const i = STEPS.findIndex((x) => x.key === step);
     if (i > 0) return goto(STEPS[i - 1].key);
-    onExit?.();
+    exit();
   };
+
+  // Android's back button walks the same path as the on-screen one
+  const backRef = useRef(back);
+  backRef.current = back;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      backRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
+
+  /** Continue from a step: move on when complete, otherwise show every error. */
+  const advance = (key: StepKey, next: Step) => {
+    if (!isStepComplete(draft, key)) {
+      setShowAll(true);
+      return;
+    }
+    if (fromReview || next === 'review') {
+      setFromReview(false);
+      goto('review');
+      return;
+    }
+    goto(next);
+  };
+  const continueLabel = fromReview ? 'Save & return to review' : 'Save & Continue';
 
   /* ------------------------------ 1. basic ------------------------------- */
   if (step === 'basic') {
     const b = draft.basic;
+    const e = validateBasic(b);
     return (
       <Layout
+        key="basic"
+        testID="onboarding-basic"
         stepIndex={0}
         title="Basic Details"
-        onBack={onExit ? back : undefined}
-        primaryLabel="Save & Continue"
-        primaryEnabled={isStepComplete(draft, 'basic')}
-        onPrimary={() => goto('identity')}
+        onBack={back}
+        backLabel={fromReview ? 'Back to review' : 'Leave registration'}
+        primaryLabel={continueLabel}
+        onPrimary={() => advance('basic', 'identity')}
       >
-        <View style={s.photoRow}>
-          <Pressable
-            testID="photo"
-            onPress={() => setBasic({ photo: pick('profile-photo.jpg', 'image') })}
-            style={[s.photo, !!b.photo && s.photoOn]}
-            accessibilityRole="button"
-            accessibilityLabel={b.photo ? 'Replace profile photo' : 'Add profile photo'}
-          >
-            <Icon name={b.photo ? 'user' : 'plus'} size={b.photo ? 30 : 22} color={colors.surfie} />
-            {/* a tick, not a cross: the photo is attached, not pending removal */}
-            {!!b.photo && (
-              <View style={s.photoBadge}>
-                <Icon name="check" size={11} color={colors.white} />
-              </View>
-            )}
-          </Pressable>
-
-          <View style={s.flex}>
-            <Text style={[typeStyles.body, s.photoTitle]}>
-              Profile Photo <Text style={s.star}>*</Text>
-            </Text>
-            <Text style={[typeStyles.body, s.photoHint]}>JPG or PNG · Max 5 MB</Text>
-          </View>
-
-          {!!b.photo && (
-            <Pressable
-              testID="photo-change"
-              onPress={() => setBasic({ photo: pick('profile-photo.jpg', 'image') })}
-              style={s.photoChange}
-              accessibilityRole="button"
-              accessibilityLabel="Change profile photo"
-            >
-              <Text style={[typeStyles.body, s.photoChangeText]}>Change</Text>
-            </Pressable>
-          )}
-        </View>
+        <PhotoField file={b.photo} onChange={(photo) => setBasic({ photo })} error={shown(e, 'photo')} />
 
         <TextField
           testID="fullName"
@@ -301,20 +453,18 @@ export const OnboardingFlow = ({
           required
           value={b.fullName}
           onChangeText={(v) => setBasic({ fullName: v })}
+          onBlur={touch('fullName')}
           placeholder="Enter your full name"
           autoCapitalize="words"
+          textContentType="name"
+          autoComplete="name"
+          error={shown(e, 'fullName')}
         />
 
         {/* date and gender are one fact about the doctor, so they share a row */}
         <View style={s.duo}>
           <View style={s.flex}>
-            <DateField
-              testID="dob"
-              label="Date of Birth"
-              required
-              value={b.dob}
-              onChange={(v) => setBasic({ dob: v })}
-            />
+            <DateField testID="dob" label="Date of Birth" required value={b.dob} onChange={(v) => setBasic({ dob: v })} onBlur={touch('dob')} error={shown(e, 'dob')} />
           </View>
           <View style={s.flex}>
             <SelectField
@@ -326,6 +476,7 @@ export const OnboardingFlow = ({
               options={GENDERS}
               onChange={(v) => setBasic({ gender: v })}
               placeholder="Select"
+              error={shown(e, 'gender')}
             />
           </View>
         </View>
@@ -337,10 +488,14 @@ export const OnboardingFlow = ({
           label="Email Address"
           required
           value={b.email}
-          onChangeText={(v) => setBasic({ email: v })}
-          placeholder="Enter your email address"
+          onChangeText={(v) => setBasic({ email: v.trim() })}
+          onBlur={touch('email')}
+          placeholder="name@example.com"
           keyboardType="email-address"
           autoCapitalize="none"
+          textContentType="emailAddress"
+          autoComplete="email"
+          error={shown(e, 'email')}
         />
         <MultiSelectField
           testID="languages"
@@ -349,12 +504,12 @@ export const OnboardingFlow = ({
           values={b.languages}
           options={CONSULT_LANGUAGES}
           onChange={(v) => setBasic({ languages: v })}
+          addLabel="Add language"
+          searchPlaceholder="Search languages"
+          error={shown(e, 'languages')}
         />
 
-        <PrivacyNote>
-          Privacy note: Your date of birth, mobile number and email are used only for verification
-          and are not displayed to patients.
-        </PrivacyNote>
+        <PrivacyNote>Your date of birth, mobile number and email are used only for verification and are not shown to patients.</PrivacyNote>
       </Layout>
     );
   }
@@ -362,15 +517,20 @@ export const OnboardingFlow = ({
   /* ----------------------------- 2. identity ----------------------------- */
   if (step === 'identity') {
     const idp = draft.identity;
+    const e = validateIdentity(idp);
+    const other = idp.idType === OTHER_ID;
+    const masked = !idFocused && !e.idNumber && idp.idNumber ? `Saved as ${maskId(idp.idNumber.replace(/\s/g, ''))}` : undefined;
     return (
       <Layout
+        key="identity"
+        testID="onboarding-identity"
         stepIndex={1}
         title="Proof of Identity"
         subtitle="Upload one valid government-issued identity document for verification."
         onBack={back}
-        primaryLabel="Save & Continue"
-        primaryEnabled={isStepComplete(draft, 'identity')}
-        onPrimary={() => goto('qualifications')}
+        backLabel={fromReview ? 'Back to review' : 'Back to basic details'}
+        primaryLabel={continueLabel}
+        onPrimary={() => advance('identity', 'qualifications')}
       >
         <SelectField
           testID="idType"
@@ -378,18 +538,40 @@ export const OnboardingFlow = ({
           required
           value={idp.idType}
           options={ID_TYPES}
-          onChange={(v) => setIdentity({ idType: v })}
+          onChange={(v) => setIdentity({ idType: v, idTypeName: v === OTHER_ID ? idp.idTypeName : '' })}
           placeholder="Select ID type"
+          error={shown(e, 'idType')}
         />
+        {other && (
+          <TextField
+            testID="idTypeName"
+            label="Name of the ID document"
+            required
+            value={idp.idTypeName ?? ''}
+            onChangeText={(v) => setIdentity({ idTypeName: v })}
+            onBlur={touch('idTypeName')}
+            placeholder="e.g. PAN card"
+            autoCapitalize="words"
+            maxLength={60}
+            error={shown(e, 'idTypeName')}
+          />
+        )}
         <TextField
           testID="idNumber"
           label="Government ID Number"
           required
           value={idp.idNumber}
-          onChangeText={(v) => setIdentity({ idNumber: v })}
+          onChangeText={(v) => setIdentity({ idNumber: v.toUpperCase() })}
+          onFocus={() => setIdFocused(true)}
+          onBlur={() => {
+            setIdFocused(false);
+            touch('idNumber')();
+          }}
           placeholder="Enter ID number"
           autoCapitalize="characters"
-          helper={idp.idNumber ? `Saved as ${maskId(idp.idNumber)}` : undefined}
+          maxLength={24}
+          helper={masked}
+          error={shown(e, 'idNumber')}
         />
         <UploadField
           testID="idDocument"
@@ -397,13 +579,11 @@ export const OnboardingFlow = ({
           required
           hint={UPLOAD_HINT}
           file={idp.document}
-          onPick={() => setIdentity({ document: pick('government-id.pdf') })}
-          onRemove={() => setIdentity({ document: null })}
+          onChange={(document) => setIdentity({ document })}
+          error={shown(e, 'document')}
         />
 
-        <PrivacyNote icon="shieldCheck">
-          Your identity document is used only for verification and is never displayed to patients.
-        </PrivacyNote>
+        <PrivacyNote icon="shieldCheck">Your identity document is used only for verification and is never shown to patients.</PrivacyNote>
       </Layout>
     );
   }
@@ -411,24 +591,32 @@ export const OnboardingFlow = ({
   /* --------------------------- 3. qualifications -------------------------- */
   if (step === 'qualifications') {
     if (editingQual) {
-      const q = editingQual;
-      const valid = q.degree && q.institution && q.university && q.year && q.certificate;
+      const q = editingQual.entry;
+      const e = validateQualification(q);
+      const set = (p: Partial<Qualification>) => setEditingQual({ ...editingQual, entry: { ...q, ...p } });
       return (
         <Layout
+          key={`qual-${q.id}`}
+          testID="qualification-editor"
           stepIndex={2}
-          title={draft.qualifications.some((x) => x.id === q.id) ? 'Edit Qualification' : 'Add Qualification'}
+          title={editingQual.original ? 'Edit Qualification' : 'Add Qualification'}
           subtitle="Each qualification needs its own degree certificate."
-          onBack={() => setEditingQual(null)}
+          onBack={closeQual}
+          backLabel="Cancel"
           primaryLabel="Save Qualification"
-          primaryEnabled={Boolean(valid)}
+          secondary={<CancelButton onPress={closeQual} />}
           onPrimary={() => {
+            if (Object.keys(e).length) {
+              setShowAll(true);
+              return;
+            }
             setDraft((d) => ({
               ...d,
-              qualifications: d.qualifications.some((x) => x.id === q.id)
-                ? d.qualifications.map((x) => (x.id === q.id ? q : x))
-                : [...d.qualifications, q],
+              qualifications: editingQual.original ? d.qualifications.map((x) => (x.id === q.id ? q : x)) : [...d.qualifications, q],
             }));
             setEditingQual(null);
+            setTouched({});
+            setShowAll(false);
           }}
         >
           <SelectField
@@ -438,43 +626,51 @@ export const OnboardingFlow = ({
             searchable
             value={q.degree}
             options={QUALIFICATION_OPTIONS}
-            onChange={(v) => setEditingQual({ ...q, degree: v })}
+            onChange={(v) => set({ degree: v })}
             placeholder="e.g. MBBS"
+            error={shown(e, 'degree')}
           />
           <TextField
             testID="specialty"
             label="Specialty / Subject"
             value={q.specialty ?? ''}
-            onChangeText={(v) => setEditingQual({ ...q, specialty: v })}
+            onChangeText={(v) => set({ specialty: v })}
             placeholder="Where applicable"
+            helper="Optional"
           />
           <TextField
             testID="institution"
             label="Institution / College"
             required
             value={q.institution}
-            onChangeText={(v) => setEditingQual({ ...q, institution: v })}
+            onChangeText={(v) => set({ institution: v })}
+            onBlur={touch('institution')}
             placeholder="e.g. AIIMS New Delhi"
             autoCapitalize="words"
+            error={shown(e, 'institution')}
           />
           <TextField
             testID="university"
             label="University"
             required
             value={q.university}
-            onChangeText={(v) => setEditingQual({ ...q, university: v })}
+            onChangeText={(v) => set({ university: v })}
+            onBlur={touch('university')}
             placeholder="Awarding university"
             autoCapitalize="words"
+            error={shown(e, 'university')}
           />
           <TextField
             testID="year"
             label="Year of Passing"
             required
             value={q.year}
-            onChangeText={(v) => setEditingQual({ ...q, year: v.replace(/\D/g, '').slice(0, 4) })}
+            onChangeText={(v) => set({ year: v.replace(/\D/g, '').slice(0, 4) })}
+            onBlur={touch('year')}
             placeholder="YYYY"
             keyboardType="number-pad"
             maxLength={4}
+            error={shown(e, 'year')}
           />
           <UploadField
             testID="certificate"
@@ -482,59 +678,61 @@ export const OnboardingFlow = ({
             required
             hint={UPLOAD_HINT}
             file={q.certificate}
-            onPick={() => setEditingQual({ ...q, certificate: pick('degree-certificate.pdf') })}
-            onRemove={() => setEditingQual({ ...q, certificate: null })}
+            onChange={(certificate) => set({ certificate })}
+            error={shown(e, 'certificate')}
           />
           <PrivacyNote>
-            Patients see the degree name only. Institution, university, year of passing and the
-            certificate itself are used for verification and stay private.
+            Patients see the degree name only. Institution, university, year of passing and the certificate itself are used for
+            verification and stay private.
           </PrivacyNote>
         </Layout>
       );
     }
 
+    const hasAny = draft.qualifications.length > 0;
     return (
       <Layout
+        key="qualifications"
+        testID="onboarding-qualifications"
         stepIndex={2}
         title="Professional Qualifications"
-        subtitle="Add your medical qualifications. Start with your basic qualification and add others as required."
+        subtitle="Add your medical qualifications, starting with your basic qualification."
         onBack={back}
-        primaryLabel="Save & Continue"
-        primaryEnabled={isStepComplete(draft, 'qualifications')}
-        onPrimary={() => goto('experience')}
+        backLabel={fromReview ? 'Back to review' : 'Back to proof of identity'}
+        primaryLabel={continueLabel}
+        onPrimary={() => advance('qualifications', 'experience')}
       >
-        {draft.qualifications.length === 0 && (
-          <Text style={[typeStyles.body, s.empty]}>
-            No qualifications added yet. Start with your basic medical qualification.
-          </Text>
-        )}
+        {!hasAny && <Text style={s.empty}>No qualifications added yet. Start with your basic medical qualification.</Text>}
         {draft.qualifications.map((q) => (
           <EntryCard
             key={q.id}
             testID={`qual-${q.id}`}
             title={q.degree}
             meta={`${q.institution} · ${q.year}`}
-            proofLabel="Degree certificate uploaded"
-            onEdit={() => setEditingQual(q)}
+            proofLabel={q.certificate ? `Certificate · ${q.certificate.name}` : 'Certificate missing'}
+            onEdit={() => setEditingQual({ entry: q, original: q })}
             onRemove={() =>
-              setDraft((d) => ({ ...d, qualifications: d.qualifications.filter((x) => x.id !== q.id) }))
+              confirm({
+                title: `Remove ${q.degree}?`,
+                message: 'Its certificate is removed with it.',
+                confirmLabel: 'Remove',
+                destructive: true,
+                onConfirm: () => setDraft((d) => ({ ...d, qualifications: d.qualifications.filter((x) => x.id !== q.id) })),
+              })
             }
           />
         ))}
         <AddButton
           testID="add-qualification"
-          label="Add Another Qualification"
-          onPress={() =>
-            setEditingQual({
-              id: uid('q', draft.qualifications.length + 1),
-              degree: '',
-              institution: '',
-              university: '',
-              year: '',
-              certificate: null,
-            })
-          }
+          label={hasAny ? 'Add Another Qualification' : 'Add Qualification'}
+          invalid={showAll && !hasAny}
+          onPress={() => {
+            setTouched({});
+            setShowAll(false);
+            setEditingQual({ entry: blankQual(newId('q')) });
+          }}
         />
+        {showAll && !hasAny && <Err>Add at least one qualification to continue.</Err>}
       </Layout>
     );
   }
@@ -542,24 +740,32 @@ export const OnboardingFlow = ({
   /* ----------------------------- 4. experience ---------------------------- */
   if (step === 'experience') {
     if (editingExp) {
-      const e = editingExp;
-      const valid = e.position && e.institution && e.start && (e.current || e.end) && e.proof;
+      const x = editingExp.entry;
+      const e = validateExperience(x);
+      const set = (p: Partial<Experience>) => setEditingExp({ ...editingExp, entry: { ...x, ...p } });
       return (
         <Layout
+          key={`exp-${x.id}`}
+          testID="experience-editor"
           stepIndex={3}
-          title={draft.experience.some((x) => x.id === e.id) ? 'Edit Experience' : 'Add Experience'}
+          title={editingExp.original ? 'Edit Experience' : 'Add Experience'}
           subtitle="Employment proof is required for each role."
-          onBack={() => setEditingExp(null)}
+          onBack={closeExp}
+          backLabel="Cancel"
           primaryLabel="Save Experience"
-          primaryEnabled={Boolean(valid)}
+          secondary={<CancelButton onPress={closeExp} />}
           onPrimary={() => {
+            if (Object.keys(e).length) {
+              setShowAll(true);
+              return;
+            }
             setDraft((d) => ({
               ...d,
-              experience: d.experience.some((x) => x.id === e.id)
-                ? d.experience.map((x) => (x.id === e.id ? e : x))
-                : [...d.experience, e],
+              experience: editingExp.original ? d.experience.map((y) => (y.id === x.id ? x : y)) : [...d.experience, x],
             }));
             setEditingExp(null);
+            setTouched({});
+            setShowAll(false);
           }}
         >
           <SelectField
@@ -567,48 +773,51 @@ export const OnboardingFlow = ({
             label="Position / Designation"
             required
             searchable
-            value={e.position}
+            value={x.position}
             options={POSITION_OPTIONS}
-            onChange={(v) => setEditingExp({ ...e, position: v })}
+            onChange={(v) => set({ position: v })}
             placeholder="e.g. Consultant Psychiatrist"
+            error={shown(e, 'position')}
           />
           <TextField
             testID="workplace"
             label="Institution / Hospital / Clinic"
             required
-            value={e.institution}
-            onChangeText={(v) => setEditingExp({ ...e, institution: v })}
+            value={x.institution}
+            onChangeText={(v) => set({ institution: v })}
+            onBlur={touch('institution')}
             placeholder="Where you worked"
             autoCapitalize="words"
+            error={shown(e, 'institution')}
           />
           <TextField
             testID="start"
-            label="Start Date"
+            label="Start Month"
             required
-            value={e.start}
-            onChangeText={(v) => setEditingExp({ ...e, start: monthMask(v) })}
+            value={x.start}
+            onChangeText={(v) => set({ start: monthMask(v) })}
+            onBlur={touch('start')}
             placeholder="YYYY / MM"
             keyboardType="number-pad"
             maxLength={9}
+            error={shown(e, 'start')}
           />
-          <CheckField
-            testID="current"
-            checked={e.current}
-            onToggle={() => setEditingExp({ ...e, current: !e.current, end: e.current ? e.end : null })}
-          >
+          <CheckField testID="current" checked={x.current} onToggle={() => set({ current: !x.current, end: x.current ? '' : null })}>
             I currently work here
           </CheckField>
-          {!e.current && (
+          {!x.current && (
             <View style={s.endWrap}>
               <TextField
                 testID="end"
-                label="End Date"
+                label="End Month"
                 required
-                value={e.end ?? ''}
-                onChangeText={(v) => setEditingExp({ ...e, end: monthMask(v) })}
+                value={x.end ?? ''}
+                onChangeText={(v) => set({ end: monthMask(v) })}
+                onBlur={touch('end')}
                 placeholder="YYYY / MM"
                 keyboardType="number-pad"
                 maxLength={9}
+                error={shown(e, 'end')}
               />
             </View>
           )}
@@ -617,177 +826,221 @@ export const OnboardingFlow = ({
             label="Experience / Employment Proof"
             required
             hint="Experience certificate, appointment letter or employment certificate"
-            file={e.proof}
-            onPick={() => setEditingExp({ ...e, proof: pick('employment-proof.pdf') })}
-            onRemove={() => setEditingExp({ ...e, proof: null })}
+            file={x.proof}
+            onChange={(proof) => set({ proof })}
+            error={shown(e, 'proof')}
           />
           <PrivacyNote>
-            Patients see only your total verified years of experience. Positions, institutions,
-            employment dates and certificates stay private.
+            Patients see only your total verified years of experience. Positions, institutions, employment dates and certificates
+            stay private.
           </PrivacyNote>
         </Layout>
       );
     }
 
+    const hasAny = draft.experience.length > 0;
     return (
       <Layout
+        key="experience"
+        testID="onboarding-experience"
         stepIndex={3}
         title="Experience Details"
-        subtitle="Add your current and previous professional experience. Your total is calculated automatically."
+        subtitle="Add your current and previous roles. Your total is calculated automatically."
         onBack={back}
-        primaryLabel="Save & Continue"
-        primaryEnabled={isStepComplete(draft, 'experience')}
-        onPrimary={() => goto('review')}
+        backLabel={fromReview ? 'Back to review' : 'Back to qualifications'}
+        primaryLabel={fromReview ? continueLabel : 'Save & Review'}
+        onPrimary={() => advance('experience', 'review')}
       >
-        {draft.experience.length > 0 && (
+        {hasAny && (
           <View testID="total-experience" style={s.totalCard}>
             <View style={s.totalIcon}>
               <Icon name="star" size={17} color={colors.surfie} />
             </View>
             <View style={s.flex}>
-              <Text style={[typeStyles.body, s.totalValue]}>{years} Years</Text>
-              <Text style={[typeStyles.body, s.totalLabel]}>
-                Total verified experience · overlapping roles counted once
+              <Text style={s.totalValue}>
+                {years} {years === 1 ? 'Year' : 'Years'}
               </Text>
+              <Text style={s.totalLabel}>Total experience · overlapping roles counted once</Text>
             </View>
           </View>
         )}
-        {draft.experience.length === 0 && (
-          <Text style={[typeStyles.body, s.empty]}>
-            No experience added yet. Add your current role first.
-          </Text>
-        )}
-        {draft.experience.map((e) => (
+        {!hasAny && <Text style={s.empty}>No experience added yet. Add your current role first.</Text>}
+        {draft.experience.map((x) => (
           <EntryCard
-            key={e.id}
-            testID={`exp-${e.id}`}
-            title={e.position}
-            meta={`${e.institution} · ${e.start} – ${e.current ? 'Present' : e.end}`}
-            proofLabel="Employment proof uploaded"
-            onEdit={() => setEditingExp(e)}
+            key={x.id}
+            testID={`exp-${x.id}`}
+            title={x.position}
+            meta={`${x.institution} · ${x.start} – ${x.current ? 'Present' : x.end}`}
+            proofLabel={x.proof ? `Proof · ${x.proof.name}` : 'Proof missing'}
+            onEdit={() => setEditingExp({ entry: x, original: x })}
             onRemove={() =>
-              setDraft((d) => ({ ...d, experience: d.experience.filter((x) => x.id !== e.id) }))
+              confirm({
+                title: `Remove ${x.position}?`,
+                message: 'Its employment proof is removed with it.',
+                confirmLabel: 'Remove',
+                destructive: true,
+                onConfirm: () => setDraft((d) => ({ ...d, experience: d.experience.filter((y) => y.id !== x.id) })),
+              })
             }
           />
         ))}
         <AddButton
           testID="add-experience"
-          label="Add Another Experience"
-          onPress={() =>
-            setEditingExp({
-              id: uid('e', draft.experience.length + 1),
-              position: '',
-              institution: '',
-              start: '',
-              end: null,
-              current: false,
-              proof: null,
-            })
-          }
+          label={hasAny ? 'Add Another Experience' : 'Add Experience'}
+          invalid={showAll && !hasAny}
+          onPress={() => {
+            setTouched({});
+            setShowAll(false);
+            setEditingExp({ entry: blankExp(newId('e')) });
+          }}
         />
+        {showAll && !hasAny && <Err>Add at least one role to continue.</Err>}
       </Layout>
     );
   }
 
   /* ------------------------------- 5. review ------------------------------ */
+  const idLabel = draft.identity.idType === OTHER_ID ? draft.identity.idTypeName || OTHER_ID : draft.identity.idType;
   const rows: { key: StepKey; label: string; value: string }[] = [
-    { key: 'basic', label: 'Basic Details', value: isStepComplete(draft, 'basic') ? 'Completed' : 'Incomplete' },
+    {
+      key: 'basic',
+      label: 'Basic Details',
+      value: [draft.basic.fullName, draft.basic.gender, draft.basic.languages.join(', ')].filter(Boolean).join(' · ') || 'Not started',
+    },
     {
       key: 'identity',
       label: 'Proof of Identity',
-      value: draft.identity.document ? 'Document uploaded' : 'Not uploaded',
+      value: draft.identity.idType ? `${idLabel} · ${maskId(draft.identity.idNumber.replace(/\s/g, ''))}` : 'Not started',
     },
     {
       key: 'qualifications',
       label: 'Professional Qualifications',
-      value: `${draft.qualifications.length} ${draft.qualifications.length === 1 ? 'qualification' : 'qualifications'} added`,
+      value: draft.qualifications.length ? draft.qualifications.map((q) => q.degree).join(', ') : 'None added',
     },
-    { key: 'experience', label: 'Experience Details', value: `Total experience: ${years} years` },
+    {
+      key: 'experience',
+      label: 'Experience Details',
+      value: draft.experience.length ? `${years} ${years === 1 ? 'year' : 'years'} · ${draft.experience.length} ${draft.experience.length === 1 ? 'role' : 'roles'}` : 'None added',
+    },
   ];
+  const incomplete = STEPS.filter((st) => !isStepComplete(draft, st.key));
+
+  const submit = () => {
+    if (incomplete.length) {
+      setReviewError(`Complete ${incomplete.map((x) => x.label).join(', ')} before submitting.`);
+      return;
+    }
+    if (!draft.confirmed) {
+      setReviewError('Confirm the declaration to submit.');
+      return;
+    }
+    confirm({
+      title: mode === 'resubmit' ? 'Resubmit for verification?' : 'Submit for verification?',
+      message: 'Your details are locked while the verification team reviews them.',
+      confirmLabel: 'Submit',
+      // straight on to Account Status, which shows the review under way
+      onConfirm: () => {
+        toast.show(mode === 'resubmit' ? 'Resubmitted for verification' : 'Details submitted for verification');
+        onSubmitted(draft);
+      },
+    });
+  };
 
   return (
     <Layout
+      key="review"
+      testID="onboarding-review"
       stepIndex={-1}
-      title="Review Your Details"
-      subtitle="Check everything before submitting. You can edit any section."
+      title={mode === 'resubmit' ? 'Update & Resubmit' : 'Review Your Details'}
+      subtitle={mode === 'resubmit' ? 'Correct the sections flagged by the verification team, then resubmit.' : 'Check everything before submitting. You can edit any section.'}
       onBack={back}
-      primaryLabel="Submit for Verification"
-      primaryEnabled={draft.confirmed && STEPS.every((st) => isStepComplete(draft, st.key))}
-      onPrimary={onSubmitted}
+      backLabel={mode === 'resubmit' ? 'Close' : 'Back to experience'}
+      primaryLabel={mode === 'resubmit' ? 'Resubmit for Verification' : 'Submit for Verification'}
+      onPrimary={submit}
     >
       <View style={s.reviewCard}>
-        {rows.map((r, i) => (
-          <View key={r.key} style={[s.reviewRow, i < rows.length - 1 && s.reviewBorder]}>
-            <View style={s.flex}>
-              <Text style={[typeStyles.body, s.reviewLabel]}>{r.label}</Text>
-              <Text style={[typeStyles.body, s.reviewValue]}>{r.value}</Text>
+        {rows.map((r, i) => {
+          const done = isStepComplete(draft, r.key);
+          const flag = flagged.find((f) => f.step === r.key && !revisited.includes(r.key));
+          const ok = done && !flag;
+          return (
+            <View key={r.key} testID={`review-${r.key}`} style={[s.reviewRow, i < rows.length - 1 && s.reviewBorder]}>
+              <Icon name={ok ? 'checkCircle' : 'alertCircle'} size={18} color={ok ? colors.surfie : colors.warn} filled={ok} />
+              <View style={s.flex}>
+                <Text style={s.reviewLabel}>{r.label}</Text>
+                <Text style={s.reviewValue}>{r.value}</Text>
+                {!done && <Text style={s.reviewTodo}>Needs attention</Text>}
+                {done && !!flag && <Text testID={`flag-${r.key}`} style={s.reviewTodo}>Flagged: {flag.label}</Text>}
+              </View>
+              <Pressable
+                testID={`edit-${r.key}`}
+                onPress={() => {
+                  setRevisited((v) => (v.includes(r.key) ? v : [...v, r.key]));
+                  setFromReview(true);
+                  goto(r.key);
+                }}
+                hitSlop={8}
+                style={s.reviewEditBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${r.label}`}
+              >
+                <Text style={s.reviewEdit}>Edit</Text>
+              </Pressable>
             </View>
-            <Pressable
-              testID={`edit-${r.key}`}
-              onPress={() => goto(r.key)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${r.label}`}
-            >
-              <Text style={[typeStyles.body, s.reviewEdit]}>Edit</Text>
-            </Pressable>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       <View style={s.confirmWrap}>
         <CheckField
           testID="confirm"
           checked={draft.confirmed}
-          onToggle={() => setDraft((d) => ({ ...d, confirmed: !d.confirmed }))}
+          onToggle={() => {
+            setReviewError('');
+            setDraft((d) => ({ ...d, confirmed: !d.confirmed }));
+          }}
         >
           I confirm that the information and documents provided are accurate and authentic.
         </CheckField>
       </View>
+      {!!reviewError && (
+        <Text testID="review-error" style={s.error}>
+          {reviewError}
+        </Text>
+      )}
 
       <PrivacyNote icon="shieldCheck">
-        Once approved, patients see your name, photo, specialty, degree names, total experience,
-        languages, bio, fee and availability. Everything else stays private.
+        Once approved, patients see your name, photo, specialty, degree names, total experience, languages, bio, fee and
+        availability. Everything else stays private.
       </PrivacyNote>
     </Layout>
   );
 };
 
+const blankQual = (id: string): Qualification => ({ id, degree: '', institution: '', university: '', year: '', certificate: null });
+const blankExp = (id: string): Experience => ({ id, position: '', institution: '', start: '', end: null, current: false, proof: null });
+
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.white },
   flex: { flex: 1, minWidth: 0 },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
+  pressed: { opacity: 0.8 },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
 
-  bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  barLogo: { flex: 1, alignItems: 'center' },
-
-  stepWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+  stepWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 10 },
   stepCount: { ...typeStyles.caption, color: colors.inkMuted },
-  /* two fields on one row, each taking half the width */
-  duo: { flexDirection: 'row', gap: spacing.md },
-
-  title: {
-    flex: 1,
-    fontFamily: typography.heading.family,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: fontWeight.bold,
-    color: colors.ink,
-  },
+  title: { ...typeStyles.pageTitle, flex: 1, color: colors.ink },
+  titleStandalone: { flex: 0 },
   subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 4, marginBottom: spacing.xl },
+  duo: { flexDirection: 'row', gap: spacing.md },
   star: { color: colors.danger },
-  empty: { ...typeStyles.caption, color: colors.inkMuted, marginBottom: spacing.md },
+  empty: { ...typeStyles.bodySmall, color: colors.inkMuted, marginBottom: spacing.md },
+  error: { ...typeStyles.helper, color: colors.danger, marginTop: 4, marginBottom: spacing.md },
 
-  /* photo */
-  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.xl },
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  cancelBtn: { paddingHorizontal: spacing.lg },
+
+  photoField: { marginBottom: spacing.xl },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   photo: {
     width: 76,
     height: 76,
@@ -800,6 +1053,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   photoOn: { borderStyle: 'solid', borderColor: colors.surface.selected },
+  photoInvalid: { borderColor: colors.danger },
+  photoProgress: { ...typeStyles.number, color: colors.surfie },
   photoBadge: {
     position: 'absolute',
     right: 2,
@@ -815,37 +1070,30 @@ const s = StyleSheet.create({
   },
   photoTitle: { ...typeStyles.label, color: colors.ink },
   photoHint: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
-  photoChange: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 9,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    borderColor: colors.surfie,
-  },
-  photoChangeText: { ...typeStyles.buttonSmall, color: colors.surfie },
-
-  /* repeatable entries */
-  entry: {
-    padding: spacing.md,
+  photoBtn: { paddingHorizontal: spacing.md, minHeight: 40, justifyContent: 'center', borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.surfie },
+  photoBtnText: { ...typeStyles.buttonSmall, color: colors.surfie },
+  photoError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    marginBottom: spacing.sm,
+    backgroundColor: colors.dangerSoft,
   },
+  photoErrorText: { ...typeStyles.caption, color: colors.danger, flex: 1 },
+  photoErrorAction: { ...typeStyles.buttonSmall, color: colors.danger, textDecorationLine: 'underline' },
+  photoImage: { width: '100%', height: '100%', borderRadius: 37 },
+  photoRemove: { alignSelf: 'flex-start', marginTop: 2, minHeight: 28, justifyContent: 'center' },
+  photoRemoveText: { ...typeStyles.caption, fontWeight: fontWeight.semibold, color: colors.inkMuted, textDecorationLine: 'underline' },
+
+  entry: { padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.surface.line, backgroundColor: colors.white, marginBottom: spacing.sm },
   entryTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   entryTitle: { ...typeStyles.cardTitle, color: colors.ink },
   entryMeta: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
   entryProof: { ...typeStyles.caption, color: colors.surfie, marginTop: 6 },
-  entryActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.line,
-  },
+  entryActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, paddingTop: spacing.xs, borderTopWidth: 1, borderTopColor: colors.surface.line },
+  entryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 40 },
   entryAction: { ...typeStyles.buttonSmall, color: colors.surfie },
   entryRemove: { ...typeStyles.buttonSmall, color: colors.danger },
   entryRule: { width: 1, height: 14, backgroundColor: colors.surface.line },
@@ -861,13 +1109,13 @@ const s = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.surfie,
     marginTop: spacing.sm,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
+  addBtnInvalid: { borderColor: colors.danger },
   addBtnText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
   endWrap: { marginTop: spacing.lg },
 
-  /* total experience */
   totalCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -879,60 +1127,20 @@ const s = StyleSheet.create({
     borderColor: colors.surface.selected,
     marginBottom: spacing.lg,
   },
-  totalIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  totalValue: {
-    fontFamily: typography.heading.family,
-    fontSize: 20,
-    fontWeight: fontWeight.bold,
-    color: colors.ink,
-  },
+  totalIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  totalValue: { ...typeStyles.metricSmall, color: colors.ink },
   totalLabel: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
 
-  /* review */
-  reviewCard: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    marginBottom: spacing.lg,
-  },
-  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+  reviewCard: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.surface.line, backgroundColor: colors.white, marginBottom: spacing.lg },
+  reviewRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, padding: spacing.md },
   reviewBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
   reviewLabel: { ...typeStyles.cardTitle, color: colors.ink },
   reviewValue: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
+  reviewTodo: { ...typeStyles.caption, color: colors.warn, fontWeight: fontWeight.semibold, marginTop: 2 },
+  reviewEditBtn: { minHeight: 36, justifyContent: 'center', paddingHorizontal: spacing.xs },
   reviewEdit: { ...typeStyles.buttonSmall, color: colors.surfie },
-  confirmWrap: { marginBottom: spacing.lg },
+  confirmWrap: { marginBottom: spacing.sm },
 
-  /* footer */
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.line,
-  },
-  cta: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    height: 52,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfie,
-  },
-  ctaOff: { backgroundColor: colors.inkFaint },
-  ctaText: { ...typeStyles.button, color: colors.white },
 });
 
 export default OnboardingFlow;

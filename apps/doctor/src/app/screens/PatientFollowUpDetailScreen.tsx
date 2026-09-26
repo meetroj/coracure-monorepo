@@ -1,486 +1,362 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, StatusBar, KeyboardAvoidingView, Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
+import { Screen, Button, StatusPill } from '../../components/ui';
+import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
+import { NoteInput } from '../../components/clinical';
+import { useStore } from '../../state/store';
+import { selectDoctor, type AlertView } from '../../state/selectors';
+import { patientById } from '../../data/patients';
 import {
-  checkInDays,
-  triggerResponses,
-  recommendedActions,
-  followUpDetail,
+  ALERT_ACTIONS,
+  ALERT_CATEGORY,
+  ALERT_STATUS,
   DAY_STATE,
   NOTE_LIMIT,
+  actionsFor,
+  alertCheckInLabel,
+  pathwayByKey,
+  type AlertAction,
   type DayState,
 } from '../../data/followup';
-import { threads, type ChatThread } from '../../data/messaging';
-
-const MINT = '#E8F8F2';
-const LINE = '#E1EDE8';
-const INK = '#16232B';
-const MUTED = '#6B7C86';
-const AMBER = '#C97F1B';
 
 const STATE_COLOR: Record<DayState, string> = {
   stable: colors.paris,
   attention: '#E9A93B',
   redFlag: colors.danger,
-  pending: '#D3DCD8',
+  pending: '#C9D4D0',
 };
-
-/** Only the three states a doctor can act on are worth a key. */
-const LEGEND: DayState[] = ['stable', 'attention', 'redFlag'];
-
-const ACTION_TONE: Record<'brand' | 'warn' | 'danger', { fg: string; bg: string }> = {
-  brand: { fg: colors.surfie, bg: MINT },
-  warn: { fg: AMBER, bg: '#FDF4E5' },
-  danger: { fg: colors.danger, bg: '#FDECEB' },
-};
-
-/** The plan facts, in the order the card reads them. */
-const FACTS = [
-  { k: 'day', icon: 'calendar' as const, flex: 0.9, label: 'Day', value: `${followUpDetail.dayOf} / ${followUpDetail.dayTotal}` },
-  { k: 'who', icon: 'user' as const, flex: 1.34, label: 'Assigned To', value: followUpDetail.assignedTo },
-  { k: 'next', icon: 'clock' as const, flex: 0.9, label: 'Next Check-in', value: followUpDetail.nextCheckIn },
-];
 
 /**
- * Patient Follow-up Detail.
+ * Patient Follow-up Detail — Critical Findings.
  *
- * The trend is a direction between two observed check-in states — never a
- * score, grade or prediction. Marking the alert reviewed records who acted and
- * when; it does not assert that the safety concern is medically resolved, and
- * the footer says so explicitly.
+ * Read top to bottom the way a clinician triages:
+ *   1. what happened — the alert, when, in the patient's own words;
+ *   2. why it fired — the answers that triggered it;
+ *   3. what to do — reach the patient, then record what was done;
+ * with the plan and the week's check-ins underneath as context.
+ *
+ * Marking the alert reviewed records who acted, how and when. It does not
+ * assert that the concern is resolved, and the screen says so.
  */
 export const PatientFollowUpDetailScreen = ({
+  alert,
   onBack,
-  onSave,
-  onOpenChat,
+  onReview,
+  onMessage,
+  onOpenConsultation,
+  onDirtyChange,
 }: {
+  alert: AlertView;
   onBack: () => void;
-  onSave: (action: string, note: string) => void;
-  onOpenChat?: (thread: ChatThread) => void;
+  onReview: (action: AlertAction, note: string) => void;
+  /** Opens this patient's chat thread. */
+  onMessage: () => void;
+  /** The consultation whose follow-up plan raised the alert. */
+  onOpenConsultation: () => void;
+  /** Reports an unsaved review so the route can ask before it is dropped. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) => {
-  const insets = useSafeAreaInsets();
-  const d = followUpDetail;
-  const [selectedDay, setSelectedDay] = useState(d.dayOf);
-  const [action, setAction] = useState<string | null>('followUp');
+  const a = alert;
+  const patient = patientById(a.patientId);
+  const doctor = useStore(selectDoctor);
+  const tone = ALERT_CATEGORY[a.category].tone;
+  const fg = tone === 'danger' ? colors.danger : tone === 'warn' ? colors.warn : colors.surfie;
+  const bg = tone === 'danger' ? colors.dangerSoft : tone === 'warn' ? colors.warnSoft : colors.successSoft;
+  const options = actionsFor(a.category);
+  const reviewed = a.live.status === 'reviewed' || a.live.status === 'escalated';
+  const [action, setAction] = useState<AlertAction | null>(null);
   const [note, setNote] = useState('');
-  const thread = threads.find((t) => t.name === d.name);
+  const redFlag = a.category === 'redFlag';
+  const flagged = a.responses.filter((r) => r.flagged);
+  const pathway = pathwayByKey(a.pathway);
+  // a red flag needs a written account of what was done
+  const canSave = !!action && (!redFlag || note.trim().length >= 10);
+  const dirty = !!action || note.trim().length > 0;
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-      <View style={{ paddingTop: insets.top }}>
-        <View style={s.appBar}>
-          <Pressable testID="back" onPress={onBack} hitSlop={10} style={s.iconBtn} accessibilityLabel="Back">
-            <Icon name="arrowLeft" size={18} color={INK} />
-          </Pressable>
-          <Text style={[typeStyles.body, s.appTitle]}>Patient Follow-up Detail</Text>
-          <View style={s.appBarActions}>
-            {thread && (
-              <Pressable
-                testID="open-chat"
-                onPress={() => onOpenChat?.(thread)}
-                hitSlop={10}
-                style={s.iconBtn}
-                accessibilityLabel={`Message ${d.name}`}
-              >
-                <Icon name="message" size={17} color={INK} />
-              </Pressable>
-            )}
-            <Pressable hitSlop={10} style={s.iconBtn} accessibilityLabel="More options">
-              <Icon name="more" size={17} color={INK} />
-            </Pressable>
+    <Screen
+      testID="alert-detail"
+      background={colors.white}
+      header={
+        <ScreenHeader
+          onBack={onBack}
+          inline
+          title="Critical Findings"
+          subtitle={patient?.name}
+          right={<HeaderAction testID="open-chat" icon="message" label={`Message ${patient?.name}`} onPress={onMessage} />}
+        />
+      }
+      footer={
+        reviewed ? undefined : (
+          <View>
+            <Button
+              testID="save"
+              label="Save & mark as reviewed"
+              icon="check"
+              onPress={() => action && onReview(action, note.trim())}
+              disabled={!canSave}
+              variant={redFlag ? 'secondary' : 'primary'}
+            />
+            <Text style={s.footNote}>Reviewing records your action. It does not close the safety concern.</Text>
           </View>
+        )
+      }
+    >
+      {/* ------------------------------- 1. what -------------------------------- */}
+      <View testID="alert-banner" style={[s.banner, { backgroundColor: bg, borderColor: fg }]}>
+        <View style={s.bannerTop}>
+          <View style={[s.severity, { backgroundColor: fg }]}>
+            <Icon name={redFlag ? 'flag' : 'alertTriangle'} size={14} color={colors.white} />
+            <Text style={s.severityText}>{ALERT_CATEGORY[a.category].label.toUpperCase()}</Text>
+          </View>
+          <Text style={s.bannerTime}>{alertCheckInLabel(a)}</Text>
+        </View>
+        <Text style={[s.trigger, { color: fg }]}>{a.trigger}</Text>
+        <Text style={s.patientLine}>
+          {patient?.name} · {patient?.gender}, {patient?.age} · {a.patientId}
+        </Text>
+        {a.checkIn ? (
+          <View style={s.quote}>
+            <Text style={s.quoteLabel}>In the patient&apos;s words</Text>
+            <Text testID="alert-quote" style={s.quoteText}>
+              &ldquo;{a.checkIn}&rdquo;
+            </Text>
+          </View>
+        ) : (
+          <Text style={s.quoteLabel}>No check-in was submitted.</Text>
+        )}
+      </View>
+
+      {/* -------------------------------- 2. why -------------------------------- */}
+      {a.responses.length > 0 && (
+        <View style={s.block}>
+          <Text style={s.blockTitle}>{redFlag ? 'Answers triggering the red flag' : 'Check-in answers'}</Text>
+          <Text style={s.blockSub}>
+            Today&apos;s check-in · {flagged.length} {flagged.length === 1 ? 'answer' : 'answers'} flagged
+          </Text>
+          <View style={s.answers}>
+            {a.responses.map((r, i) => (
+              <View
+                key={r.id}
+                testID={`response-${r.id}`}
+                style={[s.answerRow, i < a.responses.length - 1 && s.answerRule]}
+                accessible
+                accessibilityLabel={`${r.question} ${r.answer}${r.flagged ? ', flagged' : ''}`}
+              >
+                <View style={[s.answerIcon, r.flagged && { backgroundColor: bg }]}>
+                  <Icon name={r.icon} size={14} color={r.flagged ? fg : colors.surfie} />
+                </View>
+                <Text style={s.answerQ}>{r.question}</Text>
+                <Text style={[s.answerA, r.flagged && { color: fg }]}>{r.answer}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* ------------------------------ 3. what to do ---------------------------- */}
+      {reviewed ? (
+        <View testID="alert-reviewed" style={[s.block, s.reviewedBox]}>
+          <View style={s.reviewedHead}>
+            <Icon name="checkCircle" size={18} color={colors.surfie} filled />
+            <Text style={s.reviewedTitle}>
+              {ALERT_STATUS[a.live.status]} {a.live.reviewedAt ? `· ${a.live.reviewedAt}` : ''}
+            </Text>
+          </View>
+          {!!a.live.action && <Text style={s.reviewedLine}>Action: {ALERT_ACTIONS[a.live.action].label}</Text>}
+          {!!a.live.note && <Text style={s.reviewedLine}>Note: {a.live.note}</Text>}
+          <Text style={s.reviewedLine}>Recorded by {doctor.name}</Text>
+        </View>
+      ) : (
+        <View style={s.block}>
+          <Text style={s.blockTitle}>What to do now</Text>
+          {redFlag && (
+            <Text style={s.urgent}>
+              Contact the patient now. If there is an immediate risk to life, advise emergency services (112) or the
+              Tele-MANAS helpline (14416).
+            </Text>
+          )}
+          <Button
+            testID="message-now"
+            label={`Message ${patient?.name.split(' ')[0] ?? 'patient'}`}
+            icon="message"
+            onPress={onMessage}
+            variant={redFlag ? 'primary' : 'secondary'}
+            style={s.messageBtn}
+          />
+
+          <Text style={s.fieldLabel}>What did you do?</Text>
+          <View style={s.actionList}>
+            {options.map((k) => {
+              const on = action === k;
+              return (
+                <Pressable
+                  key={k}
+                  testID={`action-${k}`}
+                  onPress={() => setAction(k)}
+                  style={[s.actionRow, on && s.actionRowOn]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Icon name={ALERT_ACTIONS[k].icon} size={17} color={on ? colors.surfie : colors.inkMuted} />
+                  <Text style={[s.actionText, on && s.actionTextOn]}>{ALERT_ACTIONS[k].label}</Text>
+                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={s.fieldLabel}>Doctor note{redFlag ? ' (required)' : ''}</Text>
+          <NoteInput
+            testID="note"
+            value={note}
+            onChangeText={setNote}
+            placeholder={redFlag ? 'What was discussed, safety plan, next contact…' : 'Your observations about this check-in'}
+            max={NOTE_LIMIT}
+            minHeight={72}
+            accessibilityLabel="Doctor note"
+          />
+        </View>
+      )}
+
+      {/* -------------------------------- context -------------------------------- */}
+      <View style={s.block}>
+        <Text style={s.blockTitle}>Follow-up plan</Text>
+        <View style={s.factRow}>
+          <View style={s.fact}>
+            <Text style={s.factLabel}>Pathway</Text>
+            <Text style={s.factValue}>{pathway?.label}</Text>
+          </View>
+          <View style={s.fact}>
+            <Text style={s.factLabel}>Day</Text>
+            <Text style={s.factValue}>
+              {a.dayOf} of {a.dayTotal}
+            </Text>
+          </View>
+          <View style={s.fact}>
+            <Text style={s.factLabel}>Assigned to</Text>
+            <Text style={s.factValue} numberOfLines={1}>
+              You
+            </Text>
+          </View>
+        </View>
+        <Pressable
+          testID="open-consultation"
+          onPress={onOpenConsultation}
+          hitSlop={6}
+          style={s.linkRow}
+          accessibilityRole="button"
+        >
+          <Text style={s.linkText}>Open the consultation record</Text>
+          <Icon name="chevronRight" size={14} color={colors.surfie} />
+        </Pressable>
+
+        <Text style={[s.fieldLabel, s.historyLabel]}>Last {a.history.length} check-ins</Text>
+        <View style={s.trend} accessible accessibilityLabel={`Check-in history: ${a.history.map((h) => `${h.label} ${DAY_STATE[h.state].label}`).join(', ')}`}>
+          {a.history.map((h) => (
+            <View key={h.day} style={s.trendDay}>
+              <View style={[s.trendBar, { backgroundColor: STATE_COLOR[h.state] }]} />
+              <Text style={s.trendLabel}>{h.label}</Text>
+              <Text style={s.trendDate}>{h.date}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={s.legend}>
+          {(['stable', 'attention', 'redFlag', 'pending'] as DayState[]).map((k) => (
+            <View key={k} style={s.legendItem}>
+              <View style={[s.legendDot, { backgroundColor: STATE_COLOR[k] }]} />
+              <Text style={s.legendText}>{DAY_STATE[k].label}</Text>
+            </View>
+          ))}
         </View>
       </View>
 
-      {/* keeps the focused field and the primary action above the keyboard */}
-      <KeyboardAvoidingView
-        style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* patient */}
-          <View style={s.card}>
-            <View style={s.patientRow}>
-              <View style={s.avatar}>
-                <Text style={[typeStyles.body, s.avatarText]}>{d.initials}</Text>
-              </View>
-              <View style={s.flex}>
-                <Text style={[typeStyles.body, s.name]}>{d.name}</Text>
-                <Text style={[typeStyles.body, s.meta]}>
-                  {d.gender} • {d.age} years • {d.patientId}
-                </Text>
-                <View style={s.pathPill}>
-                  <Icon name="brain" size={10} color={colors.surfie} />
-                  <Text style={[typeStyles.body, s.pathText]}>{d.pathway}</Text>
-                </View>
-              </View>
-
-              {/* when the check-in arrived sits above the flag it raised */}
-              <View style={s.riskCol}>
-                <Text style={[typeStyles.body, s.riskLabel]}>Last Check-in</Text>
-                <Text style={[typeStyles.body, s.riskTime]}>{d.lastCheckIn}</Text>
-                <View style={s.riskPill}>
-                  <Icon name="alertCircle" size={9} color={colors.danger} />
-                  <Text style={[typeStyles.body, s.riskText]}>{d.status}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* three equal columns, so no fact is pinned to an edge */}
-            <View style={s.factRow}>
-              {FACTS.map((f, i) => (
-                <React.Fragment key={f.k}>
-                  {i > 0 && <View style={s.factDivider} />}
-                  <View style={[s.fact, { flex: f.flex }]}>
-                    <Icon name={f.icon} size={15} color={colors.surfie} />
-                    <View style={s.flex}>
-                      <Text style={[typeStyles.body, s.factLabel]}>{f.label}</Text>
-                      <Text style={[typeStyles.body, s.factValue]} numberOfLines={1}>
-                        {f.value}
-                      </Text>
-                    </View>
-                  </View>
-                </React.Fragment>
-              ))}
-            </View>
-          </View>
-
-          {/* seven-day history */}
-          <View style={[s.card, s.histCard]}>
-            <View style={s.histHead}>
-              <Text style={[typeStyles.body, s.histTitle]}>7-Day Check-in History</Text>
-              <View style={s.legend}>
-                {LEGEND.map((k) => (
-                  <View key={k} style={s.legendItem}>
-                    <View style={[s.legendDot, { backgroundColor: STATE_COLOR[k] }]} />
-                    <Text style={[typeStyles.body, s.legendText]}>{DAY_STATE[k].label}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <View style={s.dayRow}>
-              {checkInDays.map((c) => {
-                const on = c.day === selectedDay;
-                return (
-                  <Pressable
-                    key={c.day}
-                    testID={`day-${c.day}`}
-                    onPress={() => setSelectedDay(c.day)}
-                    style={[s.day, on && s.dayOn]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on }}
-                  >
-                    <Text style={[typeStyles.body, [s.dayLabel, on && { color: INK, fontWeight: fontWeight.semibold }]]}>
-                      {c.label}
-                    </Text>
-                    <Text style={[typeStyles.body, s.dayDate]}>{c.date}</Text>
-                    <View style={[s.dayDot, { backgroundColor: STATE_COLOR[c.state] }]} />
-                    <Icon name={DAY_STATE[c.state].face} size={21} color={STATE_COLOR[c.state]} />
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* answers that triggered the alert */}
-          <View style={[s.card, s.sectionCard]}>
-            <View style={s.sectionHead}>
-              <View style={[s.sectionTile, { backgroundColor: '#FDECEB' }]}>
-                <Icon name="bell" size={16} color={colors.danger} />
-              </View>
-              <View style={s.flex}>
-                <Text style={[typeStyles.body, s.sectionTitle]}>Answers Triggering Red Flag</Text>
-                <Text style={[typeStyles.body, s.sectionSub]}>
-                  Today&apos;s check-in • {triggerResponses.length} issues
-                </Text>
-              </View>
-            </View>
-
-            {triggerResponses.map((r, i) => (
-              <Pressable
-                key={r.id}
-                testID={`response-${r.id}`}
-                style={[s.respRow, i < triggerResponses.length - 1 && s.respBorder]}
-                accessibilityRole="button"
-                accessibilityLabel={`${r.question} ${r.answer}`}
-              >
-                <View style={s.respTile}>
-                  <Icon name={r.icon} size={14} color={colors.surfie} />
-                </View>
-                <Text style={[typeStyles.body, s.respQ]}>{r.question}</Text>
-                <Text style={[typeStyles.body, s.respA]}>{r.answer}</Text>
-                <Icon name="chevronRight" size={14} color={MUTED} />
-              </Pressable>
-            ))}
-          </View>
-
-          {/* doctor note */}
-          <View style={[s.card, s.sectionCard]}>
-            <View style={s.sectionHead}>
-              <View style={[s.sectionTile, { backgroundColor: MINT }]}>
-                <Icon name="notes" size={16} color={colors.surfie} />
-              </View>
-              <View style={s.flex}>
-                <Text style={[typeStyles.body, s.sectionTitle]}>Doctor Note</Text>
-                <Text style={[typeStyles.body, s.sectionSub]}>
-                  Add your observations or notes about this patient
-                </Text>
-              </View>
-            </View>
-
-            <View style={s.noteBox}>
-              <TextInput
-                testID="note"
-                style={[typeStyles.input, s.noteInput]}
-                value={note}
-                onChangeText={(t) => setNote(t.slice(0, NOTE_LIMIT))}
-                multiline
-                placeholder="Type your note here..."
-                placeholderTextColor={MUTED}
-              />
-            </View>
-            <Text style={[typeStyles.body, s.counter]}>
-              {note.length}/{NOTE_LIMIT}
-            </Text>
-          </View>
-
-          {/* recommended action */}
-          <View style={[s.card, s.sectionCard]}>
-            <Text style={[typeStyles.body, s.sectionTitle]}>Recommended Action</Text>
-            <Text style={[typeStyles.body, s.sectionSub]}>Choose the best next step for this patient</Text>
-
-            <View style={s.actionList}>
-              {recommendedActions.map((a) => {
-                const on = action === a.key;
-                const t = ACTION_TONE[a.tone];
-                return (
-                  <Pressable
-                    key={a.key}
-                    testID={`action-${a.key}`}
-                    onPress={() => setAction(a.key)}
-                    style={[s.actionTile, { backgroundColor: t.bg }, on && { borderColor: t.fg }]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: on }}
-                    accessibilityLabel={`${a.line1} ${a.line2}`}
-                  >
-                    <Icon name={a.icon} size={17} color={t.fg} />
-                    <Text
-                      style={[typeStyles.body, s.actionText, { color: t.fg }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {a.line1}
-                    </Text>
-                    <Text
-                      style={[typeStyles.body, s.actionText, { color: t.fg }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {a.line2}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        </ScrollView>
-
-        <View style={[s.footer, { paddingBottom: insets.bottom + spacing.sm }]}>
-          <Pressable
-            testID="save"
-            onPress={() => onSave(action ?? '', note)}
-            disabled={!action}
-            style={[s.cta, !action && s.ctaOff]}
-            accessibilityRole="button"
-          >
-            <Text style={[typeStyles.body, s.ctaText]}>Save &amp; Mark as Reviewed</Text>
-            <View style={s.ctaCheck}>
-              <Icon name="check" size={13} color={colors.white} />
-            </View>
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </View>
+      <View style={s.statusFoot}>
+        <StatusPill label={`Status: ${ALERT_STATUS[a.live.status]}`} tone={reviewed ? 'success' : 'warn'} dot={false} />
+      </View>
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  flex: { flex: 1, minWidth: 0 },
-  root: { flex: 1, backgroundColor: colors.white },
+  footNote: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'center', marginTop: 6 },
 
-  appBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  appTitle: { ...typeStyles.pageTitle, fontSize: 16, color: INK },
-  appBarActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  iconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: LINE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
-
-  card: { borderWidth: 1, borderColor: LINE, borderRadius: radius.md, padding: 9 },
-  patientRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { ...typeStyles.avatar, color: colors.surfie },
-  name: { ...typeStyles.name, color: INK },
-  meta: { ...typeStyles.caption, color: MUTED },
-  pathPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: MINT,
-    borderRadius: radius.pill,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    alignSelf: 'flex-start',
-    marginTop: 3,
-  },
-  pathText: { ...typeStyles.caption, flexShrink: 1, color: colors.surfie },
-  riskCol: { alignItems: 'flex-end', gap: 1 },
-  riskLabel: { ...typeStyles.label, fontSize: 9.5, color: MUTED },
-  riskTime: { ...typeStyles.label, fontSize: 10.5, color: colors.surfie, fontWeight: fontWeight.semibold, marginBottom: 3 },
-  riskPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FDECEB',
-    borderRadius: radius.pill,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  riskText: { ...typeStyles.status, fontSize: 9.5, color: colors.danger },
-
-  factRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: LINE,
-  },
-  /** equal thirds: every fact gets the same width, none hugs an edge */
-  /** widths are weighted, not equal: the doctor's full name needs the room */
-  fact: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  /** a rule between the three facts, never at either end */
-  factDivider: { width: 1, alignSelf: 'stretch', backgroundColor: LINE, marginHorizontal: 6 },
-  factLabel: { ...typeStyles.label, color: MUTED },
-  factValue: { ...typeStyles.caption, color: INK, fontWeight: fontWeight.semibold },
-
-  histCard: { marginTop: spacing.md, padding: spacing.md },
-  histHead: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  histTitle: { ...typeStyles.caption, color: INK, fontWeight: fontWeight.semibold },
-
-  dayRow: { flexDirection: 'row', gap: 4 },
-  day: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 3,
-    borderWidth: 1,
-    borderColor: LINE,
-    borderRadius: radius.sm,
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-  },
-  dayOn: { borderColor: colors.surfie, borderWidth: 1.5 },
-  dayLabel: { ...typeStyles.label, color: MUTED },
-  dayDate: { ...typeStyles.label, fontSize: 9, color: MUTED },
-  dayDot: { width: 7, height: 7, borderRadius: 4, marginTop: 1 },
-  legend: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginLeft: 'auto' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  legendDot: { width: 6, height: 6, borderRadius: 3 },
-  legendText: { ...typeStyles.label, fontSize: 9.5, color: MUTED },
-
-  sectionCard: { marginTop: spacing.md, padding: spacing.md },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 4 },
-  sectionTile: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  sectionTitle: { ...typeStyles.caption, color: INK, fontWeight: fontWeight.semibold },
-  sectionSub: { ...typeStyles.helper, color: MUTED, marginTop: 1 },
-
-  respRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9 },
-  respBorder: { borderBottomWidth: 1, borderBottomColor: LINE },
-  respTile: { width: 26, height: 26, borderRadius: 8, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center' },
-  respQ: { ...typeStyles.caption, flex: 1, color: INK },
-  respA: { ...typeStyles.caption, color: colors.danger, fontWeight: fontWeight.semibold },
-
-  noteBox: {
-    borderWidth: 1,
-    borderColor: LINE,
-    borderRadius: radius.sm,
-    padding: 10,
-    marginTop: 10,
-  },
-  noteInput: { ...typeStyles.input, color: INK, minHeight: 52, padding: 0, textAlignVertical: 'top' },
-  counter: { ...typeStyles.number, color: MUTED, textAlign: 'right', marginTop: 5 },
-
-  actionList: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  /**
-   * Icon sits above the label, not beside it — a narrow 1/3-width tile has no
-   * room to spare, and stacking gives the two label lines the tile's full
-   * width instead of fighting the icon for it.
-   */
-  actionTile: {
-    flex: 1,
-    alignItems: 'flex-start',
-    gap: 6,
+  banner: {
+    marginHorizontal: spacing.lg,
+    borderRadius: radius.lg,
     borderWidth: 1.5,
-    borderColor: 'transparent',
-    borderRadius: radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    padding: spacing.md,
+    gap: 6,
   },
-  actionText: { ...typeStyles.label, fontSize: 12, lineHeight: 16, fontWeight: fontWeight.semibold },
+  bannerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  severity: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  severityText: { ...typeStyles.caption, fontWeight: fontWeight.bold, color: colors.white, letterSpacing: 0.4 },
+  bannerTime: { ...typeStyles.caption, color: colors.inkMuted },
+  trigger: { ...typeStyles.sectionTitle, fontSize: 19, lineHeight: 25 },
+  patientLine: { ...typeStyles.caption, color: colors.inkMuted },
+  quote: { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, marginTop: 4 },
+  quoteLabel: { ...typeStyles.caption, color: colors.inkMuted },
+  quoteText: { ...typeStyles.body, color: colors.ink, marginTop: 2 },
 
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    backgroundColor: colors.white,
-  },
-  cta: {
+  block: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
+  blockTitle: { ...typeStyles.sectionTitle, fontSize: 16, lineHeight: 22, color: colors.ink },
+  blockSub: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
+  answers: { marginTop: spacing.sm, borderWidth: 1, borderColor: colors.surface.line, borderRadius: radius.md },
+  answerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 52, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  answerRule: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  answerIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
+  answerQ: { ...typeStyles.bodySmall, flex: 1, color: colors.ink },
+  answerA: { ...typeStyles.bodySmall, fontWeight: fontWeight.bold, color: colors.ink },
+
+  urgent: { ...typeStyles.bodySmall, color: colors.danger, marginTop: 4 },
+  messageBtn: { marginTop: spacing.md },
+  fieldLabel: { ...typeStyles.label, color: colors.ink, marginTop: spacing.lg, marginBottom: spacing.sm },
+  actionList: { gap: spacing.sm },
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: colors.surfie,
-    borderRadius: radius.pill,
+    gap: spacing.md,
     minHeight: 50,
-    paddingHorizontal: 14,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
   },
-  ctaOff: { opacity: 0.45 },
-  ctaText: { ...typeStyles.button, flexShrink: 1, textAlign: 'center', color: colors.white },
-  ctaCheck: {
-    position: 'absolute',
-    right: 8,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.paris,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  actionRowOn: { borderColor: colors.surfie, backgroundColor: colors.surface.mintSoft },
+  actionText: { ...typeStyles.body, flex: 1, color: colors.ink },
+  actionTextOn: { fontWeight: fontWeight.semibold, color: colors.surfie },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.surface.inputBorder, alignItems: 'center', justifyContent: 'center' },
+  radioOn: { borderColor: colors.surfie },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surfie },
+
+  reviewedBox: { backgroundColor: colors.surface.mintSoft, borderRadius: radius.md, padding: spacing.md, gap: 4 },
+  reviewedHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reviewedTitle: { ...typeStyles.cardTitle, color: colors.surfie },
+  reviewedLine: { ...typeStyles.bodySmall, color: colors.ink },
+
+  factRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  fact: { flex: 1, borderWidth: 1, borderColor: colors.surface.line, borderRadius: radius.md, padding: spacing.sm },
+  factLabel: { ...typeStyles.caption, color: colors.inkMuted },
+  factValue: { ...typeStyles.bodySmall, fontWeight: fontWeight.semibold, color: colors.ink },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 40, marginTop: 4 },
+  linkText: { ...typeStyles.buttonSmall, color: colors.surfie },
+  historyLabel: { marginTop: spacing.sm },
+  trend: { flexDirection: 'row', gap: 4 },
+  trendDay: { flex: 1, alignItems: 'center', gap: 3 },
+  trendBar: { width: '100%', height: 8, borderRadius: 4 },
+  trendLabel: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.ink },
+  trendDate: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.inkFaint },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { ...typeStyles.caption, fontSize: 11, color: colors.inkMuted },
+
+  statusFoot: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
 });
 
 export default PatientFollowUpDetailScreen;

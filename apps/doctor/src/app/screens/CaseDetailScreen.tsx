@@ -1,72 +1,54 @@
-import { typeStyles } from '../../../../../libs/typography/src';
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  type ViewStyle,
-  type StyleProp,
-} from 'react-native';
-import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import React from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
-import { Screen } from '../../components/ui';
-import { careResources } from '../../data/followup';
-import {
-  caseDetailFor,
-  isClinicallyComplete,
-  type PatientCase,
-} from '../../data/doctor';
+import { Screen, StatusPill } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { useStore } from '../../state/store';
+import { selectAlerts, selectDoctor, selectRecord } from '../../state/selectors';
+import { careResources, pathwayByKey, reviewDateFor, ALERT_CATEGORY } from '../../data/followup';
+import { STAGE_LABEL, recordStage } from '../../data/clinical';
+import { LIST_STATUS_LABEL } from '../../data/clarification';
+import { isClinicallyComplete, modeLabel, type Appointment, type PatientCase } from '../../data/doctor';
 
 /**
  * Case Detail — the complete consultation record behind one case (DR-11-01).
  *
- * This screen owns none of the clinical content. Each block is a summary of
- * what another module holds — notes, prescription, summary, follow-up,
- * check-ins, clarification — and opens that module. A block the doctor has not
- * written yet says so plainly rather than being hidden, because an unwritten
- * record is exactly what the doctor needs to see.
+ * This screen owns none of the clinical content. Each block summarises what
+ * another module holds and opens that module, for this consultation only. A
+ * block with nothing written yet says so plainly and offers the step that
+ * fills it, because an unwritten record is exactly what the doctor needs to
+ * see.
  */
 
-const STATE_META: Record<PatientCase['state'], { label: string; fg: string; bg: string }> = {
-  complete: { label: 'Completed', fg: colors.surfie, bg: colors.successSoft },
-  pending: { label: 'Pending', fg: colors.warn, bg: colors.warnSoft },
-  followUp: { label: 'Follow-up', fg: colors.warn, bg: colors.warnSoft },
-  noShow: { label: 'No-show', fg: colors.inkMuted, bg: '#EFF3F1' },
+const STATE_META: Record<PatientCase['state'], { label: string; tone: 'success' | 'warn' | 'neutral' }> = {
+  complete: { label: 'Completed', tone: 'success' },
+  pending: { label: 'Pending', tone: 'warn' },
+  followUp: { label: 'Follow-up', tone: 'warn' },
+  noShow: { label: 'No-show', tone: 'neutral' },
 };
 
-/** One record block. `onPress` is omitted where nothing can be opened yet. */
 const RecordRow = ({
   icon,
   title,
   lines,
   chips,
-  tag,
   trailing,
-  accessory,
-  chevron,
   onPress,
+  actionLabel,
   testID,
-  style,
 }: {
   icon: IconName;
   title: string;
-  lines?: (string | null)[];
-  /** Rendered on one swipeable line — a long list must not grow the card. */
+  lines?: (string | null | undefined)[];
   chips?: string[];
-  /** Only the label carries the tint; the value sits plainly beside it. */
-  tag?: { label: string; value: string };
   trailing?: React.ReactNode;
-  /** Sits between the copy and the chevron — an avatar, for instance. */
-  accessory?: React.ReactNode;
-  /** Forces the chevron on a row that has no destination wired yet. */
-  chevron?: boolean;
   onPress?: () => void;
+  /** Shown instead of a chevron when the row starts something new. */
+  actionLabel?: string;
   testID?: string;
-  style?: StyleProp<ViewStyle>;
 }) => {
   const body = (
     <>
@@ -75,48 +57,53 @@ const RecordRow = ({
       </View>
       <View style={s.flex}>
         <View style={s.rowTitleLine}>
-          <Text style={[typeStyles.body, s.rowTitle]} numberOfLines={1}>{title}</Text>
+          <Text style={s.rowTitle} numberOfLines={1}>
+            {title}
+          </Text>
           {trailing}
         </View>
         {(lines ?? []).filter(Boolean).map((l) => (
-          <Text key={l} style={[typeStyles.body, s.rowLine]} numberOfLines={2}>{l}</Text>
+          <Text key={l as string} style={s.rowLine} numberOfLines={2}>
+            {l}
+          </Text>
         ))}
-        {!!tag && (
-          <View style={s.tagRow}>
-            <View style={s.chip}>
-              <Text style={[typeStyles.body, s.chipText]}>{tag.label}</Text>
-            </View>
-            <Text style={[typeStyles.body, s.tagValue]} numberOfLines={1}>{tag.value}</Text>
-          </View>
-        )}
         {!!chips?.length && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.chipRow}
-            style={s.chipScroll}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow} style={s.chipScroll}>
             {chips.map((c) => (
               <View key={c} style={s.chip}>
-                <Text style={[typeStyles.body, s.chipText]} numberOfLines={1}>{c}</Text>
+                <Text style={s.chipText} numberOfLines={1}>
+                  {c}
+                </Text>
               </View>
             ))}
           </ScrollView>
         )}
       </View>
-      {accessory}
-      {(chevron || !!onPress) && <Icon name="chevronRight" size={16} color={colors.inkFaint} />}
+      {onPress &&
+        (actionLabel ? (
+          <View style={s.rowAction}>
+            <Text style={s.rowActionText}>{actionLabel}</Text>
+          </View>
+        ) : (
+          <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+        ))}
     </>
   );
 
-  if (!onPress) return <View style={[s.row, style]}>{body}</View>;
+  if (!onPress) {
+    return (
+      <View testID={testID} style={s.row}>
+        {body}
+      </View>
+    );
+  }
   return (
     <Pressable
       testID={testID}
       onPress={onPress}
-      style={({ pressed }) => [s.row, pressed && s.rowPressed, style]}
+      style={({ pressed }) => [s.row, pressed && s.pressed]}
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={actionLabel ? `${title}: ${actionLabel}` : title}
     >
       {body}
     </Pressable>
@@ -125,353 +112,269 @@ const RecordRow = ({
 
 export const CaseDetailScreen = ({
   patientCase,
+  appointment,
   onBack,
-  onExport = () => undefined,
   onOpenNotes,
   onOpenPrescription,
   onOpenSummary,
-  onOpenCheckins,
+  onOpenAlert,
+  onAssignPlan,
   onOpenClarification,
-  recommended = [],
+  onNewClarification,
   onOpenRecommended,
+  onOpenDocuments,
+  onOpenAppointment,
 }: {
   patientCase: PatientCase;
+  appointment: Appointment;
   onBack: () => void;
-  onExport?: () => void;
-  onOpenNotes?: () => void;
-  onOpenPrescription?: () => void;
-  onOpenSummary?: () => void;
-  onOpenCheckins?: () => void;
-  onOpenClarification?: () => void;
-  /** Care Hub resources recommended for this consultation (DOC-FUP-04). */
-  recommended?: string[];
-  onOpenRecommended?: () => void;
+  onOpenNotes: () => void;
+  onOpenPrescription: () => void;
+  onOpenSummary: () => void;
+  onOpenAlert: (alertId: string) => void;
+  onAssignPlan: () => void;
+  onOpenClarification: (clarificationId: string) => void;
+  onNewClarification: () => void;
+  onOpenRecommended: () => void;
+  onOpenDocuments: () => void;
+  onOpenAppointment: () => void;
 }) => {
   const c = patientCase;
-  const d = caseDetailFor(c);
+  const a = appointment;
+  const doctor = useStore(selectDoctor);
+  const record = useStore((st) => selectRecord(st, a.id));
+  const alerts = useStore(selectAlerts).filter((al) => al.appointmentId === a.id);
+  const clarification = useStore((st) =>
+    record.clarificationId ? st.clarifications.find((x) => x.id === record.clarificationId) : undefined
+  );
   const state = STATE_META[c.state];
   const complete = isClinicallyComplete(c);
-  /** Measured footer size — a percentage-width rect left a sliver unpainted. */
-  const [barSize, setBarSize] = useState({ w: 0, h: 0 });
-  const [cardSize, setCardSize] = useState({ w: 0, h: 0 });
-  const recommendedTitles = careResources
-    .filter((r) => recommended.includes(r.id))
-    .map((r) => r.title);
+  const noShow = c.state === 'noShow';
+  const stage = recordStage(record, doctor.professionalType);
+
+  const recommendedTitles = careResources.filter((r) => record.recommendations.ids.includes(r.id)).map((r) => r.title);
+  const plan = record.plan ? pathwayByKey(record.plan.pathway) : undefined;
+  const latestAlert = alerts[0];
+  const lastUpdated = record.summarySubmittedAt ?? record.rxFinalisedAt ?? record.rxSavedAt ?? record.notesSavedAt;
 
   return (
-    <View style={s.root}>
-      <Screen contentStyle={s.content} bottomInset>
-        {/* ---------------------------------- bar ---------------------------------- */}
-        <View style={s.bar}>
-          <Pressable
-            testID="back"
-            onPress={onBack}
-            hitSlop={8}
-            style={s.barBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Icon name="arrowLeft" size={19} color={colors.ink} />
-          </Pressable>
+    <Screen
+      testID="case-detail"
+      header={<ScreenHeader onBack={onBack} inline title={`${c.caseId} Case Detail`} subtitle="Complete consultation record" />}
+    >
+      {/* -------------------------------- patient -------------------------------- */}
+      <Pressable
+        testID="case-patient"
+        onPress={onOpenAppointment}
+        style={({ pressed }) => [s.patient, pressed && s.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={`${c.name}, open appointment details`}
+      >
+        <View style={s.patientTop}>
+          <View style={s.avatar}>
+            <Text style={s.avatarText}>{c.initials}</Text>
+          </View>
           <View style={s.flex}>
-            <Text style={[typeStyles.body, s.title]} numberOfLines={1}>{d.ref} Case Detail</Text>
-            <Text style={[typeStyles.body, s.subtitle]} numberOfLines={1}>
-              Complete consultation record
+            <Text style={s.caseRef} numberOfLines={1} selectable>
+              {c.caseId} · {a.patientId}
+            </Text>
+            <Text style={s.name} numberOfLines={1}>
+              {c.name}
+            </Text>
+            <Text style={s.meta}>
+              {c.gender} · {c.age} years
             </Text>
           </View>
-          <Pressable
-            testID="export-case"
-            onPress={onExport}
-            style={({ pressed }) => [s.exportBtn, pressed && s.rowPressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Export case record"
-          >
-            <Icon name="upload" size={14} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.exportText]}>Export</Text>
-          </Pressable>
-        </View>
-
-        {/* -------------------------------- patient -------------------------------- */}
-        <View
-          style={s.patient}
-          onLayout={(e) => {
-            const { width, height } = e.nativeEvent.layout;
-            setCardSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
-          }}
-        >
-          {/* Light mint fading to white, top to bottom. */}
-          {cardSize.w > 0 && (
-            <Svg style={StyleSheet.absoluteFill} width={cardSize.w} height={cardSize.h}>
-              <Defs>
-                <LinearGradient id="caseCardGrad" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={colors.surface.selected} />
-                  <Stop offset="1" stopColor={colors.white} />
-                </LinearGradient>
-              </Defs>
-              <Rect x={0} y={0} width={cardSize.w} height={cardSize.h} fill="url(#caseCardGrad)" />
-            </Svg>
-          )}
-          <View style={s.patientTop}>
-            <View style={s.avatar}>
-              <Text style={[typeStyles.body, s.avatarText]}>{c.initials}</Text>
-            </View>
-            <View style={s.flex}>
-              <Text style={[typeStyles.body, s.caseRef]} numberOfLines={1}>
-                CASE ID  {d.ref} · {c.caseId}
-              </Text>
-              <Text style={[typeStyles.body, s.name]} numberOfLines={1}>{c.name}</Text>
-              <Text style={[typeStyles.body, s.meta]}>{c.gender} · {c.age} years</Text>
-            </View>
-            <View style={s.patientRight}>
-              <View style={[s.statePill, { backgroundColor: state.bg }]}>
-                <View style={[s.stateDot, { backgroundColor: state.fg }]} />
-                <Text style={[typeStyles.body, s.stateText, { color: state.fg }]}>{state.label}</Text>
-              </View>
-              <View style={s.paidRow}>
-                <Text style={[typeStyles.body, s.paidText]}>{d.paid ? 'Paid' : 'Unpaid'}</Text>
-                <Icon
-                  name={d.paid ? 'checkCircle' : 'alertCircle'}
-                  size={14}
-                  color={d.paid ? colors.surfie : colors.warn}
-                />
-              </View>
-            </View>
-          </View>
-
-          <View style={s.patientFoot}>
-            <View style={s.footItem}>
-              <Icon name="calendar" size={14} color={colors.surfie} />
-              <Text style={[typeStyles.body, s.footText]} numberOfLines={1}>{c.dateLabel}</Text>
-            </View>
-            <View style={s.footRule} />
-            <View style={s.footItem}>
-              <Icon name="video" size={14} color={colors.surfie} />
-              <Text style={[typeStyles.body, s.footText]} numberOfLines={1}>{d.mode}</Text>
-            </View>
+          <View style={s.patientRight}>
+            <StatusPill testID="case-state" label={state.label} tone={state.tone} />
+            <Text style={s.paidText}>{a.payment === 'paid' ? 'Paid' : a.payment === 'refunded' ? 'Refunded' : 'Not paid'}</Text>
           </View>
         </View>
-
-        {/* -------------------------------- record --------------------------------- */}
-        {/* Created and last-updated each get their own line — combined, the
-            timestamp wrapped and broke mid-date. */}
-        <RecordRow
-          icon="shieldCheck"
-          title="Audit Trail"
-          chevron
-          lines={[
-            `Created by ${d.audit.createdBy}`,
-            d.audit.createdAt,
-            `Last updated ${d.audit.updatedAt}`,
-          ]}
-        />
-
-        <RecordRow
-          testID="row-notes"
-          icon="stethoscope"
-          title="Clinical Notes & Diagnosis"
-          lines={[d.notes ? d.notes.excerpt : 'Not yet written.']}
-          tag={d.notes ? { label: 'Primary Diagnosis', value: d.notes.primaryDiagnosis } : undefined}
-          onPress={onOpenNotes}
-        />
-
-        <RecordRow
-          testID="row-prescription"
-          icon="prescription"
-          title={d.prescription ? 'Prescription Issued' : 'Prescription'}
-          lines={[
-            d.prescription
-              ? `${d.prescription.medicines} Medicines · ${d.prescription.supplements} Supplement`
-              : 'Not yet finalised.',
-          ]}
-          chips={d.prescription?.names}
-          onPress={onOpenPrescription}
-        />
-
-        <RecordRow
-          testID="row-summary"
-          icon="document"
-          title="Case Summary"
-          lines={[d.summary ?? 'Not yet submitted.']}
-          onPress={onOpenSummary}
-        />
-
-        <RecordRow
-          testID="row-checkins"
-          icon="heart"
-          title="Follow-up Plan"
-          lines={
-            d.checkins
-              ? [`${d.checkins.count} Check-ins submitted`, `Latest on ${d.checkins.latest}`]
-              : ['No check-ins submitted yet.']
-          }
-          trailing={
-            d.checkins ? (
-              <View style={s.okPill}>
-                <Text style={[typeStyles.body, s.okPillText]}>{d.checkins.status}</Text>
-              </View>
-            ) : undefined
-          }
-          onPress={onOpenCheckins}
-        />
-
-        <RecordRow
-          testID="row-clarification"
-          icon="message"
-          title="Clarification Thread"
-          lines={
-            d.clarification
-              ? [`${d.clarification.messages} Messages`, `Latest: ${d.clarification.latest}`]
-              : ['No clarification raised.']
-          }
-          accessory={
-            d.clarification ? (
-              <View style={s.threadAvatar}>
-                <Text style={[typeStyles.body, s.threadAvatarText]}>
-                  {d.clarification.withInitials}
-                </Text>
-              </View>
-            ) : undefined
-          }
-          onPress={onOpenClarification}
-        />
-
-        <RecordRow
-          testID="row-recommended"
-          icon="sparkle"
-          title="Recommended Resources"
-          lines={[
-            recommended.length
-              ? `${recommended.length} recommended from the Care Hub`
-              : 'Nothing recommended yet.',
-          ]}
-          chips={recommendedTitles.length ? recommendedTitles : undefined}
-          onPress={onOpenRecommended}
-        />
-
-        {/* --------------------------------- footer -------------------------------- */}
-        {/* Sits at the end of the record, not pinned to the viewport — it is a
-            closing statement about the case, not a persistent toolbar. */}
-        <View style={s.footerWrap}>
-          <View
-          style={s.footer}
-          onLayout={(e) => {
-            const { width, height } = e.nativeEvent.layout;
-            setBarSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
-          }}
-        >
-          {barSize.w > 0 && (
-            <Svg style={StyleSheet.absoluteFill} width={barSize.w} height={barSize.h}>
-              <Defs>
-                {/* Same light mint-to-white ramp as the patient card, so the
-                    two bookend the record with one treatment. */}
-                <LinearGradient id="caseFootGrad" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={colors.surface.selected} />
-                  <Stop offset="1" stopColor={colors.white} />
-                </LinearGradient>
-              </Defs>
-              <Rect x={0} y={0} width={barSize.w} height={barSize.h} fill="url(#caseFootGrad)" />
-            </Svg>
-          )}
-
-          <View style={s.footInner}>
-            <Icon name="lock" size={13} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.footStrong]} numberOfLines={1}>
-              Records encrypted
+        <View style={s.patientFoot}>
+          <View style={s.footItem}>
+            <Icon name="calendar" size={14} color={colors.surfie} />
+            <Text style={s.footText} numberOfLines={1}>
+              {c.dateLabel}
             </Text>
-            <View style={s.footRule} />
-            <Text style={[typeStyles.body, s.footFaint]} numberOfLines={1}>
-              {complete ? `Closed ${d.closedAt}` : 'Open · work outstanding'}
+          </View>
+          <View style={s.footRule} />
+          <View style={s.footItem}>
+            <Icon name={a.mode === 'audio' ? 'phone' : a.mode === 'inPerson' ? 'inPerson' : 'video'} size={14} color={colors.surfie} />
+            <Text style={s.footText} numberOfLines={1}>
+              {modeLabel[a.mode]}
             </Text>
-            <Icon
-              name={complete ? 'checkCircle' : 'alertCircle'}
-              size={15}
-              color={complete ? colors.surfie : colors.warn}
+          </View>
+        </View>
+      </Pressable>
+
+      {/* ---------------------------------- record -------------------------------- */}
+      <RecordRow
+        testID="row-audit"
+        icon="shieldCheck"
+        title="Record"
+        lines={[
+          `Treating doctor: ${doctor.name}`,
+          noShow ? 'Patient did not join the consultation.' : `Status: ${STAGE_LABEL[stage]}`,
+          lastUpdated ? `Last updated ${lastUpdated}` : undefined,
+        ]}
+      />
+
+      {!noShow && (
+        <>
+          <RecordRow
+            testID="row-notes"
+            icon="stethoscope"
+            title="Clinical Notes & Diagnosis"
+            lines={[
+              record.notes.complaint ? record.notes.complaint : 'Not yet written.',
+              record.notes.diagnosis ? `Diagnosis: ${record.notes.diagnosis}` : undefined,
+            ]}
+            trailing={<StatusPill label={record.notesStatus === 'saved' ? 'Saved' : record.notesStatus === 'draft' ? 'Draft' : 'Empty'} tone={record.notesStatus === 'saved' ? 'success' : 'warn'} dot={false} />}
+            onPress={onOpenNotes}
+          />
+
+          <RecordRow
+            testID="row-prescription"
+            icon="prescription"
+            title={record.rxStatus === 'finalised' ? 'Prescription Issued' : 'Prescription'}
+            lines={[
+              record.rxStatus === 'finalised'
+                ? `${record.medicines.length} medicine${record.medicines.length === 1 ? '' : 's'} · finalised ${record.rxFinalisedAt ?? ''}`
+                : record.medicines.length
+                  ? `${record.medicines.length} medicine${record.medicines.length === 1 ? '' : 's'} in draft`
+                  : 'Not yet written.',
+            ]}
+            chips={record.medicines.map((m) => m.name)}
+            onPress={onOpenPrescription}
+          />
+
+          <RecordRow
+            testID="row-summary"
+            icon="document"
+            title="Case Summary"
+            lines={[record.summaryStatus === 'submitted' ? record.summary : record.summary ? 'Draft in progress.' : 'Not yet submitted.']}
+            onPress={onOpenSummary}
+          />
+
+          {plan && record.plan ? (
+            <RecordRow
+              testID="row-checkins"
+              icon="heart"
+              title="Follow-up Plan"
+              lines={[
+                `${plan.label} · ${record.plan.duration} days`,
+                `Review ${reviewDateFor(record.plan.start, record.plan.duration)}`,
+                latestAlert ? `Latest alert: ${ALERT_CATEGORY[latestAlert.category].label} — ${latestAlert.trigger}` : 'No alerts from check-ins.',
+              ]}
+              trailing={
+                latestAlert ? (
+                  <StatusPill
+                    label={latestAlert.live.status === 'open' ? 'Open alert' : 'Reviewed'}
+                    tone={latestAlert.live.status === 'open' ? (latestAlert.category === 'redFlag' ? 'danger' : 'warn') : 'success'}
+                    dot={false}
+                  />
+                ) : undefined
+              }
+              onPress={latestAlert ? () => onOpenAlert(latestAlert.id) : complete ? undefined : onAssignPlan}
             />
-          </View>
-          </View>
-        </View>
-      </Screen>
-    </View>
+          ) : (
+            <RecordRow
+              testID="row-checkins"
+              icon="heart"
+              title="Follow-up Plan"
+              lines={['No plan assigned.']}
+              onPress={complete ? undefined : onAssignPlan}
+              actionLabel={complete ? undefined : 'Assign'}
+            />
+          )}
+
+          {clarification ? (
+            <RecordRow
+              testID="row-clarification"
+              icon="message"
+              title="Clarification Thread"
+              lines={[
+                `${clarification.caseId} · ${LIST_STATUS_LABEL[clarification.status]}`,
+                `${clarification.messages.length} message${clarification.messages.length === 1 ? '' : 's'} · ${clarification.lastActivity}`,
+              ]}
+              onPress={() => onOpenClarification(clarification.id)}
+            />
+          ) : (
+            <RecordRow
+              testID="row-clarification"
+              icon="message"
+              title="Clarification Thread"
+              lines={['No clarification raised.']}
+              onPress={onNewClarification}
+              actionLabel="Ask expert"
+            />
+          )}
+
+          <RecordRow
+            testID="row-recommended"
+            icon="sparkle"
+            title="Recommended Resources"
+            lines={[
+              recommendedTitles.length
+                ? `${recommendedTitles.length} recommended from the Care Hub`
+                : 'Nothing recommended yet.',
+            ]}
+            chips={recommendedTitles}
+            onPress={complete && recommendedTitles.length === 0 ? undefined : onOpenRecommended}
+          />
+        </>
+      )}
+
+      <RecordRow testID="row-documents" icon="folder" title="Patient Documents" lines={['Reports and files shared by the patient.']} onPress={onOpenDocuments} />
+
+      <View style={s.footer}>
+        <Icon name="lock" size={13} color={colors.surfie} />
+        <Text style={s.footStrong} numberOfLines={1}>
+          Visible only to your care team
+        </Text>
+        <View style={s.footRuleSmall} />
+        <Text testID="case-closure" style={s.footFaint} numberOfLines={1}>
+          {complete ? `Closed ${record.summarySubmittedAt ?? ''}`.trim() : noShow ? 'No-show' : 'Open · work outstanding'}
+        </Text>
+        <Icon
+          name={complete ? 'checkCircle' : 'alertCircle'}
+          size={15}
+          color={complete ? colors.surfie : colors.warn}
+          filled={complete}
+        />
+      </View>
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface.page },
   flex: { flex: 1, minWidth: 0 },
-  content: { paddingBottom: spacing.lg },
+  pressed: { opacity: 0.75 },
 
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  title: { ...typeStyles.pageTitle, fontSize: 18, color: colors.ink },
-  subtitle: { ...typeStyles.caption, color: colors.inkMuted },
-  exportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    flexShrink: 0,
-  },
-  exportText: { ...typeStyles.buttonSmall, color: colors.surfie },
-
-  /* patient header */
   patient: {
     marginHorizontal: spacing.lg,
-    borderRadius: 14,
-    overflow: 'hidden',
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
+    backgroundColor: colors.surface.mint,
     padding: spacing.md,
   },
   patientTop: { flexDirection: 'row', gap: spacing.md },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  avatarText: { ...typeStyles.avatar, fontSize: 19, color: colors.surfie },
-  caseRef: { ...typeStyles.label, fontSize: 9.5, color: colors.inkFaint },
+  avatarText: { ...typeStyles.avatar, fontSize: 18, lineHeight: undefined, color: colors.surfie },
+  caseRef: { ...typeStyles.caption, color: colors.inkFaint },
   name: { ...typeStyles.name, color: colors.ink, marginTop: 1 },
   meta: { ...typeStyles.bodySmall, color: colors.inkMuted },
   patientRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
-  statePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  stateDot: { width: 6, height: 6, borderRadius: 3 },
-  stateText: { ...typeStyles.status },
-  paidRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   paidText: { ...typeStyles.caption, color: colors.inkMuted },
-
   patientFoot: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -480,35 +383,26 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.surface.line,
   },
-  // `paddingHorizontal` keeps the mode label off the divider it used to touch.
-  footItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minWidth: 0,
-    paddingHorizontal: spacing.sm,
-  },
+  footItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0, paddingHorizontal: spacing.xs },
+  footRule: { width: 1, height: 16, backgroundColor: colors.surface.line },
   footText: { ...typeStyles.bodySmall, color: colors.ink },
 
-  /* record rows */
   row: {
     flexDirection: 'row',
-    // Centred so the chevron sits level with the card, not its first line.
     alignItems: 'center',
     gap: spacing.md,
     marginHorizontal: spacing.lg,
     marginTop: spacing.sm,
     padding: spacing.md,
+    minHeight: 64,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
   },
-  rowPressed: { opacity: 0.75 },
   rowIcon: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 12,
     backgroundColor: colors.successSoft,
     alignItems: 'center',
@@ -516,62 +410,36 @@ const s = StyleSheet.create({
     flexShrink: 0,
   },
   rowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  rowTitle: { ...typeStyles.cardTitle, flex: 1, color: colors.ink },
+  rowTitle: { ...typeStyles.cardTitle, fontSize: 14, flex: 1, color: colors.ink },
   rowLine: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
-
-  // One swipeable line — chips never wrap and never grow the card.
+  rowAction: {
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.surfie,
+  },
+  rowActionText: { ...typeStyles.buttonSmall, color: colors.surfie },
   chipScroll: { marginTop: spacing.sm, marginHorizontal: -2 },
   chipRow: { flexDirection: 'row', gap: 5, paddingHorizontal: 2 },
-  chip: {
-    backgroundColor: colors.surface.selected,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  chipText: { ...typeStyles.caption, fontSize: 10, color: colors.surfie },
-  // Only the label is tinted; the diagnosis itself reads as plain text.
-  tagRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
-  tagValue: { ...typeStyles.caption, fontSize: 10.5, color: colors.ink, flexShrink: 1 },
-  threadAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.successSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  threadAvatarText: { ...typeStyles.caption, fontSize: 10, color: colors.surfie },
-  okPill: {
-    backgroundColor: colors.successSoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    flexShrink: 0,
-  },
-  okPillText: { ...typeStyles.caption, fontSize: 10, color: colors.surfie },
+  chip: { backgroundColor: colors.surface.selected, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 3 },
+  chipText: { ...typeStyles.caption, fontSize: 11, lineHeight: 15, color: colors.surfie },
 
-  /* footer — floating pill, not a welded strip */
-  footerWrap: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
   footer: {
-    height: 44,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-    // Solid fallback if the gradient layer fails to paint.
-    backgroundColor: colors.surface.selected,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-  },
-  footInner: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface.selected,
   },
-  footRule: { width: 1, height: 16, backgroundColor: colors.surface.line },
-  footStrong: { ...typeStyles.caption, fontSize: 10.5, fontWeight: '700', color: colors.ink, flexShrink: 1 },
-  footFaint: { ...typeStyles.caption, fontSize: 10.5, color: colors.inkMuted, flex: 1 },
+  footStrong: { ...typeStyles.caption, fontWeight: fontWeight.semibold, color: colors.ink, flexShrink: 1 },
+  footRuleSmall: { width: 1, height: 16, backgroundColor: colors.surface.inputBorder },
+  footFaint: { ...typeStyles.caption, color: colors.inkMuted, flex: 1 },
 });
 
 export default CaseDetailScreen;

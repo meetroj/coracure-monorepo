@@ -1,76 +1,53 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, screen } from '@testing-library/react-native';
 
-import AppShell from '../AppShell';
-import { cases, appointments, caseDetailFor, isClinicallyComplete } from '../../data/doctor';
+import CasesScreen from './CasesScreen';
+import { getState } from '../../state/store';
+import { selectCases } from '../../state/selectors';
 
-const noop = () => undefined;
+const total = () => selectCases(getState()).length;
 
-/**
- * DR-11-01: a past item opens its full consultation record, and every block on
- * that record links out to the module that owns it.
- */
-
-test('every case is linked to a real consultation', () => {
-  // the link is explicit, not inferred from list position or patient name
-  cases.forEach((c) => {
-    expect(appointments.some((a) => a.id === c.appointmentId)).toBe(true);
-  });
+test('the count is derived from the cases, not written in', () => {
+  render(<CasesScreen onOpenCase={jest.fn()} />);
+  expect(screen.getByTestId('case-count')).toHaveTextContent(`${total()} cases`);
 });
 
-test('a case opens its record, not the pre-call appointment screen', () => {
-  const complete = cases.find((c) => isClinicallyComplete(c))!;
-  const d = caseDetailFor(complete);
-  const { getByTestId, queryByTestId, getByText } = render(
-    <AppShell onLogout={noop} initialAcknowledged />
-  );
-
-  fireEvent.press(getByTestId('tab-cases'));
-  fireEvent.press(getByTestId(`case-${complete.id}`));
-
-  expect(getByText(`${d.ref} Case Detail`)).toBeTruthy();
-  expect(getByText('Complete consultation record')).toBeTruthy();
-  // it is the record, so there is no join action anywhere on it
-  expect(queryByTestId('join-consultation')).toBeNull();
-  // a closed case states when it closed
-  expect(getByText(/^Closed /)).toBeTruthy();
+test('a case row opens that case by its appointment', () => {
+  const onOpenCase = jest.fn();
+  render(<CasesScreen onOpenCase={onOpenCase} />);
+  fireEvent.press(screen.getByTestId('case-a2'));
+  expect(onOpenCase).toHaveBeenCalledWith('a2');
 });
 
-test('an unfinished case is shown as open rather than closed', () => {
-  const pending = cases.find((c) => !isClinicallyComplete(c))!;
-  const { getByTestId, getByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByTestId('tab-cases'));
-  fireEvent.press(getByTestId(`case-${pending.id}`));
-
-  expect(getByText(/^Open · work outstanding/)).toBeTruthy();
+test('the status picker filters, and the count follows', () => {
+  render(<CasesScreen onOpenCase={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('filter-status'));
+  fireEvent.press(screen.getByTestId('status-option-followUp'));
+  const followUps = selectCases(getState()).filter((c) => c.state === 'followUp').length;
+  expect(screen.getByTestId('case-count')).toHaveTextContent(`${followUps} cases of ${total()}`);
+  expect(screen.queryByTestId('case-a2')).toBeNull();
+  expect(screen.getByTestId('case-a11')).toBeTruthy();
 });
 
-test('each record block opens the module that owns it', () => {
-  const complete = cases.find((c) => isClinicallyComplete(c))!;
-  const { getByTestId, getByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByTestId('tab-cases'));
-  fireEvent.press(getByTestId(`case-${complete.id}`));
-
-  fireEvent.press(getByTestId('row-prescription'));
-  expect(getByText('E-Prescription')).toBeTruthy();
-
-  // back returns to the record, not out of the trail
-  fireEvent.press(getByTestId('back'));
-  expect(getByText('Complete consultation record')).toBeTruthy();
-
-  fireEvent.press(getByTestId('row-summary'));
-  expect(getByTestId('submit-summary')).toBeTruthy();
+test('search matches a patient name or case id', () => {
+  render(<CasesScreen onOpenCase={jest.fn()} />);
+  fireEvent.changeText(screen.getByTestId('case-search'), 'CON-10459');
+  expect(screen.getByTestId('case-a2')).toBeTruthy();
+  expect(screen.getByTestId('case-count')).toHaveTextContent(`1 case of ${total()}`);
+  fireEvent.changeText(screen.getByTestId('case-search'), 'no such patient');
+  expect(screen.queryByTestId('case-a2')).toBeNull();
 });
 
-test('an appointment opened from the schedule still offers the join action', () => {
-  const { getByTestId, queryByTestId } = render(<AppShell onLogout={noop} initialAcknowledged />);
+test('sorting by name orders the list alphabetically', () => {
+  render(<CasesScreen onOpenCase={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('sort-cases'));
+  fireEvent.press(screen.getByTestId('sort-option-name'));
+  const ids = screen.getAllByTestId(/^case-a\d+$/).map((n) => n.props.testID);
+  const names = ids.map((id) => selectCases(getState()).find((c) => `case-${c.appointmentId}` === id)!.name);
+  expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+});
 
-  fireEvent.press(getByTestId('tab-appointments'));
-  fireEvent.press(getByTestId('appt-a1'));
-
-  // no case context, so the footer stays the pre-call join
-  expect(getByTestId('join-consultation')).toBeTruthy();
-  expect(queryByTestId('case-action')).toBeNull();
+test('no row pretends to know whether a patient is online', () => {
+  render(<CasesScreen onOpenCase={jest.fn()} />);
+  expect(screen.queryByLabelText(/online/i)).toBeNull();
 });

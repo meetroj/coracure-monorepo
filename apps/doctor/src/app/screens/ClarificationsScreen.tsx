@@ -1,16 +1,17 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
-import { Screen, AppHeader, IconButton, PageTitle, EmptyState } from '../../components/ui';
+import { Screen, PageTitle, EmptyState } from '../../components/ui';
+import { TabHeader } from '../navigation/TabHeader';
+import { useStore } from '../../state/store';
 import {
-  clarificationList,
   CLARIFICATION_FILTERS,
   LIST_STATUS_LABEL,
   URGENCY_SHORT,
-  type ClarificationSummary,
+  type Clarification,
   type ListStatus,
   type Urgency,
 } from '../../data/clarification';
@@ -18,12 +19,10 @@ import {
 /**
  * Case Clarifications — DR-17-01 and DR-17-02.
  *
- * The doctor's own queue, not the expert queue. A clarification lives for days
- * rather than minutes — posted, answered, discussed, closed — which is why it
- * has a tab of its own rather than sitting inside a single consultation.
- *
- * Nothing here reaches the patient: the thread is between the treating doctor
- * and the expert, and the case is de-identified before it is shared.
+ * The doctor's own queue. A clarification lives for days — posted, answered,
+ * discussed, closed — which is why it has a tab of its own. Each row opens
+ * that clarification: a draft reopens in the editor, guidance waiting for a
+ * decision opens the response, anything else opens its thread.
  */
 
 const URGENCY_TONE: Record<Urgency, { fg: string; bg: string }> = {
@@ -32,12 +31,12 @@ const URGENCY_TONE: Record<Urgency, { fg: string; bg: string }> = {
   routine: { fg: colors.surfie, bg: colors.successSoft },
 };
 
-/** Status tint: waiting on someone else is quiet, action-on-me is not. */
+/** Waiting on someone else is quiet; action-on-me is not. */
 const STATUS_TONE: Record<ListStatus, { fg: string; bg: string }> = {
   draft: { fg: colors.inkMuted, bg: '#EFF3F1' },
   posted: { fg: colors.inkMuted, bg: '#EFF3F1' },
   expertReview: { fg: colors.inkMuted, bg: '#EFF3F1' },
-  clarificationNeeded: { fg: '#6B5BB5', bg: '#F0EDFB' },
+  clarificationNeeded: { fg: '#5B4BA8', bg: '#F0EDFB' },
   responseReceived: { fg: colors.surfie, bg: colors.successSoft },
   reviewed: { fg: colors.surfie, bg: colors.successSoft },
   closed: { fg: colors.inkMuted, bg: '#EFF3F1' },
@@ -53,7 +52,7 @@ const STATUS_ICON: Record<ListStatus, 'pencil' | 'sort' | 'clock' | 'message' | 
   closed: 'checkCircle',
 };
 
-const CaseRow = ({ item, onPress }: { item: ClarificationSummary; onPress: () => void }) => {
+const CaseRow = ({ item, onPress }: { item: Clarification; onPress: () => void }) => {
   const urg = URGENCY_TONE[item.urgency];
   const st = STATUS_TONE[item.status];
   return (
@@ -62,7 +61,7 @@ const CaseRow = ({ item, onPress }: { item: ClarificationSummary; onPress: () =>
       onPress={onPress}
       style={({ pressed }) => [s.card, pressed && s.pressed]}
       accessibilityRole="button"
-      accessibilityLabel={`${item.title}, ${LIST_STATUS_LABEL[item.status]}`}
+      accessibilityLabel={`${item.title}, ${LIST_STATUS_LABEL[item.status]}, ${URGENCY_SHORT[item.urgency]} urgency`}
     >
       <View style={s.cardTop}>
         <View style={s.cardIcon}>
@@ -70,29 +69,29 @@ const CaseRow = ({ item, onPress }: { item: ClarificationSummary; onPress: () =>
         </View>
         <View style={s.flex}>
           <View style={s.titleLine}>
-            <Text style={[typeStyles.body, s.cardTitle]} numberOfLines={2}>{item.title}</Text>
+            <Text style={s.cardTitle} numberOfLines={2}>
+              {item.title || 'Untitled draft'}
+            </Text>
             <View style={[s.urg, { backgroundColor: urg.bg }]}>
               <View style={[s.urgDot, { backgroundColor: urg.fg }]} />
-              <Text style={[typeStyles.body, s.urgText, { color: urg.fg }]}>
-                {URGENCY_SHORT[item.urgency]}
-              </Text>
+              <Text style={[s.urgText, { color: urg.fg }]}>{URGENCY_SHORT[item.urgency]}</Text>
             </View>
-            <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </View>
-          <Text style={[typeStyles.body, s.caseId]}>Case ID: {item.caseId}</Text>
-          <Text style={[typeStyles.body, s.blurb]} numberOfLines={2}>{item.blurb}</Text>
+          <Text style={s.caseId}>Case ID: {item.caseId}</Text>
+          <Text style={s.blurb} numberOfLines={2}>
+            {item.blurb || 'No question written yet.'}
+          </Text>
         </View>
       </View>
-
       <View style={s.cardRule} />
       <View style={s.cardFoot}>
         <Icon name="calendar" size={13} color={colors.inkFaint} />
-        <Text style={[typeStyles.body, s.footText]} numberOfLines={1}>
-          Last activity: {item.lastActivity}
+        <Text style={s.footText} numberOfLines={1}>
+          {item.lastActivity}
         </Text>
         <View style={[s.status, { backgroundColor: st.bg }]}>
-          <Icon name={STATUS_ICON[item.status]} size={11} color={st.fg} />
-          <Text style={[typeStyles.body, s.statusText, { color: st.fg }]} numberOfLines={1}>
+          <Icon name={STATUS_ICON[item.status]} size={12} color={st.fg} />
+          <Text style={[s.statusText, { color: st.fg }]} numberOfLines={1}>
             {LIST_STATUS_LABEL[item.status]}
           </Text>
         </View>
@@ -102,41 +101,23 @@ const CaseRow = ({ item, onPress }: { item: ClarificationSummary; onPress: () =>
 };
 
 export const ClarificationsScreen = ({
-  onOpenCase = () => undefined,
-  onNewQuery = () => undefined,
-  onOpenNotifications,
-  onOpenMessages,
+  onOpen,
+  onNewQuery,
 }: {
-  onOpenCase?: (c: ClarificationSummary) => void;
-  onNewQuery?: () => void;
-  onOpenNotifications?: () => void;
-  onOpenMessages?: () => void;
+  onOpen: (c: Clarification) => void;
+  onNewQuery: () => void;
 }) => {
+  const all = useStore((st) => st.clarifications);
   const [filter, setFilter] = useState<ListStatus | 'all'>('all');
 
-  const list = useMemo(
-    () => (filter === 'all' ? clarificationList : clarificationList.filter((c) => c.status === filter)),
-    [filter]
-  );
+  const list = useMemo(() => (filter === 'all' ? all : all.filter((c) => c.status === filter)), [all, filter]);
+  const countOf = (k: ListStatus | 'all') => (k === 'all' ? all.length : all.filter((c) => c.status === k).length);
 
   return (
     <View style={s.root}>
-      <Screen contentStyle={s.content}>
-        <AppHeader
-          right={
-            <>
-              <IconButton testID="nav-notifications" name="bell" badge label="Notifications" onPress={onOpenNotifications} />
-              <IconButton testID="nav-messages" name="message" label="Messages" onPress={onOpenMessages} />
-            </>
-          }
-        />
-
-        {/* The status chips below are the only filter — a second control in the
-            header would have offered the same thing twice. */}
-        <PageTitle
-          title="Case Clarifications"
-          subtitle="Track and manage clarification queries"
-        />
+      <Screen testID="clarifications" contentStyle={s.content}>
+        <TabHeader />
+        <PageTitle title="Case Clarifications" subtitle="Track and manage clarification queries" />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
           {CLARIFICATION_FILTERS.map((f) => {
@@ -151,30 +132,26 @@ export const ClarificationsScreen = ({
                 accessibilityState={{ selected: on }}
               >
                 <Icon name={f.icon} size={13} color={on ? colors.white : colors.inkMuted} />
-                <Text style={[typeStyles.body, s.chipText, on && s.chipTextOn]}>{f.label}</Text>
+                <Text style={[s.chipText, on && s.chipTextOn]}>
+                  {f.label} · {countOf(f.key)}
+                </Text>
               </Pressable>
             );
           })}
         </ScrollView>
 
         {list.length === 0 ? (
-          <EmptyState
-            icon="message"
-            title="Nothing here"
-            body="No clarifications match this filter."
-            actionLabel="Clear filter"
-            onAction={() => setFilter('all')}
-          />
+          <EmptyState icon="message" title="Nothing here" body="No clarifications match this filter." actionLabel="Show all" onAction={() => setFilter('all')} />
         ) : (
           <View style={s.list}>
             {list.map((c) => (
-              <CaseRow key={c.id} item={c} onPress={() => onOpenCase(c)} />
+              <CaseRow key={c.id} item={c} onPress={() => onOpen(c)} />
             ))}
           </View>
         )}
       </Screen>
 
-      {/* Floating above the list, clear of the tab bar. */}
+      {/* floating above the list, clear of the tab bar */}
       <Pressable
         testID="new-clarification"
         onPress={onNewQuery}
@@ -182,8 +159,8 @@ export const ClarificationsScreen = ({
         accessibilityRole="button"
         accessibilityLabel="New clarification query"
       >
-        <Icon name="plus" size={17} color={colors.white} />
-        <Text style={[typeStyles.body, s.fabText]}>New Query</Text>
+        <Icon name="plus" size={18} color={colors.white} />
+        <Text style={s.fabText}>New Query</Text>
       </Pressable>
     </View>
   );
@@ -192,17 +169,16 @@ export const ClarificationsScreen = ({
 const s = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1, minWidth: 0 },
-  content: { paddingBottom: 96 },
+  content: { paddingBottom: 104 },
   pressed: { opacity: 0.8 },
 
-
-  filterRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 2, marginTop: spacing.sm },
+  filterRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 2 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    minHeight: 38,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.surface.line,
@@ -216,7 +192,7 @@ const s = StyleSheet.create({
   card: {
     marginHorizontal: spacing.lg,
     padding: spacing.md,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
     backgroundColor: colors.white,
@@ -232,16 +208,7 @@ const s = StyleSheet.create({
     flexShrink: 0,
   },
   titleLine: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  cardTitle: {
-    flex: 1,
-    fontFamily: typography.heading.family,
-    fontSize: 14,
-    lineHeight: 18,
-    // 700 now that a real Bold file is bundled — at semibold the query title
-    // did not stand out from the blurb beneath it.
-    fontWeight: fontWeight.bold,
-    color: colors.ink,
-  },
+  cardTitle: { ...typeStyles.cardTitle, fontSize: 14, lineHeight: 19, fontWeight: fontWeight.bold, flex: 1, color: colors.ink },
   urg: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -251,19 +218,13 @@ const s = StyleSheet.create({
     borderRadius: radius.sm,
     flexShrink: 0,
   },
-  urgDot: { width: 5, height: 5, borderRadius: 3 },
-  urgText: { ...typeStyles.caption, fontSize: 10, fontWeight: fontWeight.semibold },
-  caseId: { ...typeStyles.caption, fontSize: 10.5, color: colors.inkFaint, marginTop: 2 },
+  urgDot: { width: 6, height: 6, borderRadius: 3 },
+  urgText: { ...typeStyles.caption, fontSize: 11, lineHeight: 15, fontWeight: fontWeight.semibold },
+  caseId: { ...typeStyles.caption, fontSize: 11, color: colors.inkFaint, marginTop: 2 },
   blurb: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 4 },
-
   cardRule: { height: 1, backgroundColor: colors.surface.line, marginTop: spacing.md },
-  cardFoot: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingTop: spacing.sm,
-  },
-  footText: { ...typeStyles.caption, fontSize: 10.5, color: colors.inkMuted, flex: 1 },
+  cardFoot: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingTop: spacing.sm },
+  footText: { ...typeStyles.caption, fontSize: 11, color: colors.inkMuted, flex: 1 },
   status: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -273,7 +234,7 @@ const s = StyleSheet.create({
     borderRadius: radius.sm,
     flexShrink: 0,
   },
-  statusText: { ...typeStyles.caption, fontSize: 10, fontWeight: fontWeight.semibold },
+  statusText: { ...typeStyles.caption, fontSize: 11, lineHeight: 15, fontWeight: fontWeight.semibold },
 
   fab: {
     position: 'absolute',
@@ -282,11 +243,15 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 46,
+    minHeight: 50,
     paddingHorizontal: spacing.lg,
-    // Minimal radius, matching the chips and buttons elsewhere in the app.
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     backgroundColor: colors.surfie,
+    shadowColor: '#0E766C',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   fabText: { ...typeStyles.button, color: colors.white },
 });

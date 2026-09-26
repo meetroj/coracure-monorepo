@@ -1,51 +1,60 @@
 import React from 'react';
-import { Image, StyleSheet } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { render, screen } from '@testing-library/react-native';
 
-import {
-  ApprovedStatusScreen,
-  PendingStatusScreen,
-  RejectedStatusScreen,
-} from './AccountStatusScreens';
+import { AccountStatusScreen, verificationItems } from './AccountStatusScreens';
+import { demoRegistration } from '../../../data/registration';
 
-const noop = () => undefined;
+const draft = {
+  ...demoRegistration('+91 91234 56780'),
+  basic: { ...demoRegistration('+91 91234 56780').basic, fullName: 'Kavya Rao', languages: ['English', 'Kannada'] },
+};
 
-const APPROVED = require('../../../assets/b1.png');
-const REVIEW = require('../../../assets/b2.png');
-const REJECTED = require('../../../assets/b3.png');
+const show = (status: 'pending' | 'rejected' | 'approved', acknowledged = false, onBack?: () => void) =>
+  render(
+    <AccountStatusScreen
+      status={status}
+      acknowledged={acknowledged}
+      submittedAt="15 May 2026"
+      items={verificationItems(status, draft)}
+      onBack={onBack}
+      onAcknowledge={jest.fn()}
+      onGetSupport={jest.fn()}
+      onResubmit={jest.fn()}
+    />
+  );
 
-test('each account state renders its supplied banner artwork', () => {
-  const cases: [React.ReactElement, unknown, string][] = [
-    [<ApprovedStatusScreen onAcknowledge={noop} />, APPROVED, 'Account Approved'],
-    [<PendingStatusScreen onContact={noop} />, REVIEW, 'Under Review'],
-    [<RejectedStatusScreen onResubmit={noop} onContact={noop} />, REJECTED, 'Changes Required'],
-  ];
-
-  cases.forEach(([el, art, title]) => {
-    const { UNSAFE_getAllByType, getByText } = render(el);
-    const sources = UNSAFE_getAllByType(Image).map((i) => i.props.source);
-    expect(sources).toContain(art);
-    // the copy sits over the artwork's empty left side, not under the image
-    expect(getByText(title)).toBeTruthy();
-  });
+test('the items describe what this doctor submitted, not a fixture', () => {
+  show('pending');
+  expect(screen.getByText('Kavya Rao · English, Kannada')).toBeTruthy();
+  expect(screen.getByText(/Aadhaar · •+1156/)).toBeTruthy();
+  const rows = screen.getAllByTestId(/^verification-/);
+  expect(rows).toHaveLength(4);
+  rows.forEach((row) => expect(row.props.accessibilityLabel).toMatch(/, Under review\./));
 });
 
-test.each([
-  [ApprovedStatusScreen, { onAcknowledge: noop }, APPROVED],
-  [PendingStatusScreen, { onContact: noop }, REVIEW],
-  [RejectedStatusScreen, { onResubmit: noop, onContact: noop }, REJECTED],
-] as const)('banner artwork cannot impose its native height on the card (%#)', (Screen, props, art) => {
-  const { UNSAFE_getAllByType } = render(React.createElement(Screen as React.ComponentType<any>, props));
-  const banner = UNSAFE_getAllByType(Image).find((i) => i.props.source === art)!;
-  const style = StyleSheet.flatten(banner.props.style);
+test('progress is a real sequence, not a made-up percentage', () => {
+  show('pending');
+  expect(screen.queryByText(/% Complete/)).toBeNull();
+  expect(screen.getByText('Submitted 15 May 2026')).toBeTruthy();
+  ['Submitted', 'Under review', 'Approved'].forEach((l) => expect(screen.getAllByText(l).length).toBeGreaterThan(0));
+});
 
-  expect(banner.props.resizeMode).toBe('contain');
-  expect(style.position).toBe('absolute');
-  // Both axes must be given explicitly, so the artwork's intrinsic size can
-  // never drive the card's height. The width is a right-hand fraction rather
-  // than the full card, which is what keeps the art off the copy.
-  expect(style.height).toBe('100%');
-  expect(typeof style.width).toBe('string');
-  expect(style.width).toMatch(/%$/);
-  expect(style.right).toBe(0);
+test('a rejection names the issues and marks the rest verified', () => {
+  show('rejected');
+  expect(screen.getByText('Name mismatch')).toBeTruthy();
+  expect(screen.getByText('Document unclear')).toBeTruthy();
+  expect(screen.getByText('2 items need your attention before your account can be activated.')).toBeTruthy();
+});
+
+test('Go to Dashboard is offered while the status is new; not once it has been seen', () => {
+  const unseen = show('approved', false);
+  expect(screen.getByTestId('acknowledge')).toBeTruthy();
+  unseen.unmount();
+  show('approved', true, jest.fn());
+  expect(screen.queryByTestId('acknowledge')).toBeNull();
+});
+
+test('status rows are information, not dead controls', () => {
+  show('pending');
+  screen.getAllByTestId(/^verification-/).forEach((row) => expect(row.props.onPress).toBeUndefined());
 });

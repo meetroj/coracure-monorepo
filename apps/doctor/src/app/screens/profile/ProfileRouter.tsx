@@ -1,59 +1,69 @@
-import React, { useState } from 'react';
+import React from 'react';
 
-import type { VerificationStatus } from '../../../data/doctor';
-import { PendingStatusScreen, RejectedStatusScreen, ApprovedStatusScreen } from './AccountStatusScreens';
+import { useStore } from '../../../state/store';
+import { signOut } from '../../../state/actions';
+import { demoRegistration } from '../../../data/registration';
+import { AccountStatusScreen, verificationItems } from './AccountStatusScreens';
 import { ProfileScreen } from './ProfileScreen';
 
 /**
- * Verification gate for the Profile tab.
+ * Account Status first, then the profile.
  *
- *   pending                      -> Pending Account Status
- *   rejected                     -> Rejected Account Status
- *   approved + !acknowledged     -> Account Approved (shown once)
- *   approved + acknowledged      -> full Profile
+ * After creating a profile — or whenever an administrator changes the account
+ * state — the Profile tab shows Account Status (under review, changes
+ * required or approved) until the doctor continues with "Go to Dashboard".
+ * From then on it shows the full profile, whatever the review status, with
+ * Account Status one row away. In this frontend-only build the review is not
+ * enforced; gating features on it is for the backend integration.
  *
- * The Profile tab stays selected for every one of these — the status screens
- * live inside the Profile flow, not as separate destinations.
+ * The state comes from the store only. Testers move an account between states
+ * with the hidden demo tools on the wordmark.
  */
 export const ProfileRouter = ({
-  status,
-  acknowledged,
-  onAcknowledge,
-  onLogout,
   onOpen,
-  onContactAdmin,
+  onAcknowledge,
+  onGetSupport,
   onResubmit,
 }: {
-  status: VerificationStatus;
-  acknowledged: boolean;
+  onOpen: (key: ProfileDestination) => void;
   onAcknowledge: () => void;
-  onLogout: () => void;
-  onOpen: (key: string) => void;
-  onContactAdmin: () => void;
+  onGetSupport: () => void;
   onResubmit: () => void;
 }) => {
-  // The status tabs are a preview control: they swap the state on screen so the
-  // three account states can be reviewed without a backend. `status` remains
-  // the real value and is what the app lands on.
-  const [preview, setPreview] = useState<VerificationStatus | null>(null);
-  const shown = preview ?? status;
+  const verification = useStore((s) => s.verification);
+  const submission = useStore((s) => s.submission);
+  const mobile = useStore((s) => s.session.mobile);
 
-  if (shown === 'pending') {
-    return <PendingStatusScreen onContact={onContactAdmin} onSelectPhase={setPreview} />;
-  }
-  if (shown === 'rejected') {
+  const status = verification.status === 'notSubmitted' ? 'pending' : verification.status;
+  if (!verification.acknowledged) {
     return (
-      <RejectedStatusScreen
+      <AccountStatusScreen
+        status={status}
+        acknowledged={verification.acknowledged}
+        submittedAt={verification.submittedAt}
+        items={verificationItems(status, submission ?? demoRegistration(mobile))}
+        onAcknowledge={onAcknowledge}
+        onGetSupport={onGetSupport}
         onResubmit={onResubmit}
-        onContact={onContactAdmin}
-        onSelectPhase={setPreview}
+        onLogout={signOut}
       />
     );
   }
-  if (!acknowledged || preview === 'approved') {
-    return <ApprovedStatusScreen onAcknowledge={onAcknowledge} onSelectPhase={setPreview} />;
-  }
-  return <ProfileScreen onLogout={onLogout} onOpen={onOpen} />;
+  return <ProfileScreen onOpen={onOpen} />;
 };
+
+export type ProfileDestination =
+  | 'accountStatus'
+  | 'profileDetails'
+  | 'requestChanges'
+  | 'fee'
+  | 'duration'
+  | 'availability'
+  | 'earnings'
+  | 'reviews'
+  | 'bank'
+  | 'notifications'
+  | 'help'
+  | 'privacy';
 
 export default ProfileRouter;

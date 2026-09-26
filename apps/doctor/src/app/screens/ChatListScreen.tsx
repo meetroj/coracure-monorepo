@@ -1,64 +1,60 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, StatusBar } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
 
-import { colors } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
-import { C, SlimHeader, ShieldNote } from '../../components/compact';
-import { threads, THREAD_FILTERS, threadUnread, type ChatThread } from '../../data/messaging';
+import { Screen, EmptyState, Note } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { useStore } from '../../state/store';
+import { selectUnreadMessageCount } from '../../state/selectors';
+import { THREAD_FILTERS } from '../../data/messaging';
 
 /**
- * Chat list.
+ * Messages.
  *
- * Every thread is anchored to a consultation or a clarification case — there is
- * no contextless messaging and no directory to browse. Expert threads are
- * marked internal, matching the rule that expert discussion is never shown to
- * the patient.
+ * Every thread is anchored to a consultation or a clarification case — there
+ * is no contextless messaging and no directory to browse. Expert threads are
+ * marked internal: expert discussion is never shown to the patient.
  */
 export const ChatListScreen = ({
   onBack,
   onOpenThread,
 }: {
   onBack: () => void;
-  onOpenThread: (t: ChatThread) => void;
+  onOpenThread: (threadId: string) => void;
 }) => {
-  const insets = useSafeAreaInsets();
+  const threads = useStore((st) => st.threads);
+  const unread = useStore(selectUnreadMessageCount);
   const [filter, setFilter] = useState<(typeof THREAD_FILTERS)[number]['key']>('all');
   const [query, setQuery] = useState('');
 
   const shown = useMemo(() => {
-    let out = threads;
+    let out = threads.filter((t) => t.messages.length > 0 || t.lastMessage);
     if (filter === 'unread') out = out.filter((t) => t.unread > 0);
     else if (filter !== 'all') out = out.filter((t) => t.kind === filter);
     const q = query.trim().toLowerCase();
     if (q) out = out.filter((t) => t.name.toLowerCase().includes(q) || t.context.toLowerCase().includes(q));
     return out;
-  }, [filter, query]);
+  }, [threads, filter, query]);
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-      <View style={{ paddingTop: insets.top }}>
-        <SlimHeader title="Messages" onBack={onBack} />
-      </View>
-
-      <View style={s.countRow}>
-        <Text style={[typeStyles.body, s.count]}>{threadUnread(threads)} unread messages</Text>
-      </View>
-
-      <View style={s.searchWrap}>
-        <View style={s.search}>
-          <Icon name="search" size={15} color={C.muted} />
-          <TextInput
-            testID="search"
-            style={[typeStyles.input, s.searchInput]}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search by name or case"
-            placeholderTextColor={C.muted}
-          />
-        </View>
+    <Screen
+      testID="chat-list"
+      background={colors.white}
+      header={<ScreenHeader onBack={onBack} title="Messages" subtitle={unread ? `${unread} unread` : 'No unread messages'} />}
+    >
+      <View style={s.search}>
+        <Icon name="search" size={16} color={colors.inkFaint} />
+        <TextInput
+          testID="search"
+          style={s.searchInput}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search by name or case"
+          placeholderTextColor={colors.inkFaint}
+          accessibilityLabel="Search messages"
+        />
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
@@ -70,145 +66,128 @@ export const ChatListScreen = ({
               testID={`tfilter-${f.key}`}
               onPress={() => setFilter(f.key)}
               style={[s.chip, on && s.chipOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
             >
-              <Text style={[typeStyles.body, [s.chipText, on && s.chipTextOn]]}>{f.label}</Text>
+              <Text style={[s.chipText, on && s.chipTextOn]}>{f.label}</Text>
             </Pressable>
           );
         })}
       </ScrollView>
 
-      <ScrollView
-        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 16 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {shown.length === 0 ? (
-          <View style={s.empty}>
-            <Icon name="message" size={26} color={colors.surfie} />
-            <Text style={[typeStyles.body, s.emptyTitle]}>No conversations</Text>
-            <Text style={[typeStyles.body, s.emptyBody]}>Nothing matches this filter or search.</Text>
-          </View>
-        ) : (
-          shown.map((t, i) => (
+      {shown.length === 0 ? (
+        <EmptyState icon="message" title="No conversations" body="Nothing matches this filter or search." />
+      ) : (
+        <View style={s.list}>
+          {shown.map((t, i) => (
             <Pressable
               key={t.id}
               testID={`thread-${t.id}`}
-              onPress={() => onOpenThread(t)}
-              style={[s.row, i < shown.length - 1 && s.rowBorder]}
+              onPress={() => onOpenThread(t.id)}
+              style={({ pressed }) => [s.row, i < shown.length - 1 && s.rowBorder, pressed && s.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel={`${t.name}, ${t.context}${t.unread ? `, ${t.unread} unread` : ''}. ${t.lastMessage}`}
             >
               <View style={[s.avatar, t.kind === 'expert' && s.avatarExpert]}>
-                <Text style={[typeStyles.body, [s.avatarText, t.kind === 'expert' && s.avatarTextExpert]]}>{t.initials}</Text>
+                <Text style={[s.avatarText, t.kind === 'expert' && s.avatarTextExpert]}>{t.initials}</Text>
               </View>
               <View style={s.flex}>
                 <View style={s.rowHead}>
-                  <Text style={[typeStyles.body, s.name]}>
+                  <Text style={s.name} numberOfLines={1}>
                     {t.name}
                   </Text>
                   {t.internalOnly && (
                     <View style={s.internalPill}>
-                      <Icon name="lock" size={8} color={C.muted} />
-                      <Text style={[typeStyles.body, s.internalText]}>Internal</Text>
+                      <Icon name="lock" size={10} color={colors.inkMuted} />
+                      <Text style={s.internalText}>Internal</Text>
                     </View>
                   )}
                   <View style={s.flex} />
-                  <Text style={[typeStyles.body, s.at]}>{t.at}</Text>
+                  <Text style={s.at}>{t.at}</Text>
                 </View>
-                <Text style={[typeStyles.body, s.context]}>{t.context}</Text>
-                <Text style={[typeStyles.body, [s.last, t.unread > 0 && s.lastUnread]]}>
+                <Text style={s.context}>{t.context}</Text>
+                <Text style={[s.last, t.unread > 0 && s.lastUnread]} numberOfLines={1}>
                   {t.lastMessage}
                 </Text>
               </View>
               {t.unread > 0 && (
                 <View style={s.badge}>
-                  <Text style={[typeStyles.body, s.badgeText]}>{t.unread}</Text>
+                  <Text style={s.badgeText}>{t.unread}</Text>
                 </View>
               )}
             </Pressable>
-          ))
-        )}
-
-        <View style={s.note}>
-          <ShieldNote tone="grey">
-            Conversations are limited to your assigned patients and your own case threads.
-          </ShieldNote>
+          ))}
         </View>
-      </ScrollView>
-    </View>
+      )}
+
+      <Note tone="neutral" icon="shield">
+        Conversations are limited to your assigned patients and your own case threads.
+      </Note>
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  flex: { flex: 1 },
-  root: { flex: 1, backgroundColor: colors.white },
-
-  countRow: { paddingHorizontal: 16, paddingTop: 2 },
-  count: { ...typeStyles.number, color: C.ink },
-
-  searchWrap: { paddingHorizontal: 16, paddingTop: 8 },
+  flex: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.8 },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
+    minHeight: 46,
     borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    height: 38,
+    borderColor: colors.surface.line,
+    borderRadius: radius.md,
   },
-  searchInput: { ...typeStyles.input, flex: 1, color: C.ink, padding: 0 },
-
-  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
+  searchInput: { ...typeStyles.inputSingle, flex: 1, height: 44, color: colors.ink },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   chip: {
-    alignSelf: 'flex-start',
-    flexShrink: 0,
+    minHeight: 36,
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 999,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
+    borderColor: colors.surface.line,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
   },
   chipOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  chipText: { ...typeStyles.status, color: C.muted },
+  chipText: { ...typeStyles.status, color: colors.inkMuted },
   chipTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
 
-  scroll: { paddingHorizontal: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 10 },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: C.line },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
+  list: { paddingHorizontal: spacing.lg },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 72, paddingVertical: spacing.sm },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
+  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
   avatarExpert: { backgroundColor: '#EEF3FB' },
-  avatarText: { ...typeStyles.avatar, color: colors.surfie },
+  avatarText: { ...typeStyles.avatar, lineHeight: undefined, color: colors.surfie },
   avatarTextExpert: { color: '#4A6A9B' },
-  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  name: { ...typeStyles.name, color: C.ink, maxWidth: 140 },
+  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  name: { ...typeStyles.name, color: colors.ink, flexShrink: 1 },
   internalPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
     backgroundColor: '#F1F4F3',
-    borderRadius: 999,
-    paddingHorizontal: 5,
+    borderRadius: radius.pill,
+    paddingHorizontal: 6,
     paddingVertical: 1,
   },
-  internalText: { ...typeStyles.caption, color: C.muted },
-  at: { ...typeStyles.caption, color: C.muted },
+  internalText: { ...typeStyles.caption, fontSize: 11, lineHeight: 15, color: colors.inkMuted },
+  at: { ...typeStyles.caption, color: colors.inkMuted },
   context: { ...typeStyles.caption, color: colors.surfie, marginTop: 1 },
-  last: { ...typeStyles.caption, color: C.muted, marginTop: 2 },
-  lastUnread: { color: C.ink, fontWeight: fontWeight.semibold },
+  last: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
+  lastUnread: { color: colors.ink, fontWeight: fontWeight.semibold },
   badge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 5,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
     backgroundColor: colors.surfie,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { ...typeStyles.status, color: colors.white },
-
-  note: { marginTop: 12 },
-  empty: { alignItems: 'center', paddingVertical: 40, gap: 4 },
-  emptyTitle: { ...typeStyles.cardTitle, color: C.ink },
-  emptyBody: { ...typeStyles.caption, color: C.muted },
+  badgeText: { ...typeStyles.caption, fontSize: 11, lineHeight: 15, fontWeight: fontWeight.bold, color: colors.white },
 });
 
 export default ChatListScreen;

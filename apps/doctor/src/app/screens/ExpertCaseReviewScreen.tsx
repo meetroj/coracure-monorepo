@@ -1,4 +1,4 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,6 @@ import { Icon } from '../../components/Icon';
 import {
   C,
   SlimHeader,
-  OverflowButton,
   Field,
   CheckRow,
   ShieldNote,
@@ -19,12 +18,28 @@ import {
   SolidButton,
 } from '../../components/compact';
 import {
-  initialDraft,
-  deIdentify,
-  RESPONSE_TYPES,
+  clarifications,
   GUIDANCE_MAX,
+  RESPONSE_TYPE_LABEL,
   type ResponseType,
 } from '../../data/clarification';
+
+const RESPONSE_TYPES = (Object.keys(RESPONSE_TYPE_LABEL) as ResponseType[]).map((key) => ({
+  key,
+  label: RESPONSE_TYPE_LABEL[key],
+}));
+
+/** The case an expert sees: the shared, de-identified fields of a clarification. */
+const sharedCaseOf = (id: string) => {
+  const c = clarifications.find((x) => x.id === id) ?? clarifications[0];
+  return {
+    caseId: c.caseId,
+    title: c.title,
+    speciality: 'Psychiatry',
+    attachments: c.shared.files.length,
+    ...c.shared,
+  };
+};
 
 /**
  * Expert Case Review (DOC-CAS-04) — the authorised expert's side.
@@ -41,13 +56,15 @@ export const ExpertCaseReviewScreen = ({
   onBack,
   onSubmit,
   onSaveDraft,
+  clarificationId = 'cl3',
 }: {
   onBack: () => void;
   onSubmit: (guidance: string, type: ResponseType) => void;
   onSaveDraft?: (guidance: string) => void;
+  clarificationId?: string;
 }) => {
   const insets = useSafeAreaInsets();
-  const shared = deIdentify(initialDraft);
+  const shared = sharedCaseOf(clarificationId);
   const [guidance, setGuidance] = useState('');
   const [type, setType] = useState<ResponseType>('considerations');
   const [confirmed, setConfirmed] = useState(false);
@@ -59,7 +76,6 @@ export const ExpertCaseReviewScreen = ({
       <View style={{ paddingTop: insets.top }}>
         <SlimHeader
           onBack={onBack}
-          right={<OverflowButton />}
           center={
             <View style={s.headCenter}>
               <Text style={[typeStyles.body, s.headTitle]}>Expert Case Review</Text>
@@ -104,12 +120,12 @@ export const ExpertCaseReviewScreen = ({
             <SummaryRow label="Provisional diagnosis" value={shared.provisionalDiagnosis} />
             <SummaryRow label="Current plan" value={shared.currentPlan} />
             <SummaryRow label="Clinical question" value={shared.question} last />
-            <Pressable testID="attachment" style={s.attachLink}>
+            <View testID="attachment" style={s.attachLink}>
               <Icon name="clip" size={13} color={colors.surfie} />
-              <Text style={[typeStyles.body, s.attachText]}>View permitted attachment ({shared.attachments})</Text>
-              <View style={s.flex} />
-              <Icon name="chevronRight" size={13} color={C.muted} />
-            </Pressable>
+              <Text style={[typeStyles.body, s.attachText]}>
+                {shared.attachments} permitted attachment{shared.attachments === 1 ? '' : 's'}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -161,7 +177,7 @@ export const ExpertCaseReviewScreen = ({
       </ScrollView>
 
       <StickyFooter bottomInset={insets.bottom}>
-        <GhostButton testID="draft" label="Save draft" onPress={() => onSaveDraft?.(guidance)} />
+        {onSaveDraft && <GhostButton testID="draft" label="Save draft" onPress={() => onSaveDraft(guidance)} />}
         <SolidButton
           testID="submit"
           label="Submit guidance"

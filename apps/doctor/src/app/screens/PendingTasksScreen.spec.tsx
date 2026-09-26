@@ -1,102 +1,46 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, screen } from '@testing-library/react-native';
 
-import AppShell from '../AppShell';
 import PendingTasksScreen from './PendingTasksScreen';
-import { clinicalTaskList } from '../../data/doctor';
+import { getState } from '../../state/store';
+import { selectTaskCounts, selectTasks } from '../../state/selectors';
+import { saveNotes, setRisk, updateNote } from '../../state/actions';
+import { NOTE_FIELDS } from '../../data/clinical';
 
-const noop = () => undefined;
-
-test('the dashboard tasks card opens it, and the tab bar stays', () => {
-  const { getByText, getByTestId } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByText('Pending Clinical Tasks'));
-
-  expect(getByText('Stay on top of your unfinished clinical work.')).toBeTruthy();
-  expect(getByTestId('tab-dashboard')).toBeTruthy();
-});
-
-test('the worklist is never a navigation tab of its own', () => {
-  const { getByText, queryByTestId } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByText('Pending Clinical Tasks'));
-
-  // it is an internal page pushed from the dashboard, by design
-  expect(queryByTestId('tab-tasks')).toBeNull();
-});
-
-test('back returns to the dashboard', () => {
-  const { getByText, getByLabelText, queryByText } = render(<AppShell onLogout={noop} initialAcknowledged />);
-
-  fireEvent.press(getByText('Pending Clinical Tasks'));
-  fireEvent.press(getByLabelText('Back'));
-
-  expect(getByText("Today's Summary")).toBeTruthy();
-  expect(queryByText('Stay on top of your unfinished clinical work.')).toBeNull();
-});
-
-test('every count on the summary card is derived from the data', () => {
-  const { getByText } = render(<PendingTasksScreen onBack={noop} />);
-  const countFor = (c: string) => clinicalTaskList.filter((t) => t.category === c).length;
-
-  expect(getByText(String(clinicalTaskList.length))).toBeTruthy();
-  expect(getByText('Total Pending Tasks')).toBeTruthy();
-  expect(getByText('Across all categories')).toBeTruthy();
-
-  // the four category columns, each labelled and counted
-  expect(countFor('summary')).toBe(6);
-  expect(countFor('prescription')).toBe(5);
-  expect(countFor('note')).toBe(4);
-  expect(countFor('followUp')).toBe(3);
-  expect(countFor('summary') + countFor('prescription') + countFor('note') + countFor('followUp')).toBe(
-    clinicalTaskList.length
+test('the totals are derived from the worklist itself', () => {
+  render(<PendingTasksScreen onBack={jest.fn()} onOpenTask={jest.fn()} />);
+  const counts = selectTaskCounts(getState());
+  expect(screen.getByTestId('task-total')).toHaveTextContent(String(counts.total));
+  (['summary', 'prescription', 'note', 'followUp'] as const).forEach((c) =>
+    expect(screen.getByTestId(`task-count-${c}`)).toHaveTextContent(String(counts[c]))
   );
 });
 
-test('the category chips narrow the worklist', () => {
-  const { getByTestId, queryByText, getAllByText } = render(<PendingTasksScreen onBack={noop} />);
-
-  fireEvent.press(getByTestId('chip-followUp'));
-  expect(getAllByText('Unread Follow-up Response')).toHaveLength(3);
-  expect(queryByText('Pending Case Summary')).toBeNull();
-
-  fireEvent.press(getByTestId('chip-all'));
-  expect(getAllByText('Pending Case Summary')).toHaveLength(6);
+test('a category chip narrows the list to that kind of task', () => {
+  render(<PendingTasksScreen onBack={jest.fn()} onOpenTask={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('chip-prescription'));
+  const rx = selectTasks(getState()).filter((t) => t.category === 'prescription');
+  rx.forEach((t) => expect(screen.getByTestId(`task-${t.id}`)).toBeTruthy());
+  expect(screen.queryByTestId('task-t-a15')).toBeNull();
 });
 
-test('sort flips between oldest and newest pending', () => {
-  const { getByTestId, getByText } = render(<PendingTasksScreen onBack={noop} />);
-
-  expect(getByText('Oldest pending first')).toBeTruthy();
-  fireEvent.press(getByTestId('sort-toggle'));
-  expect(getByText('Newest pending first')).toBeTruthy();
+test('every task opens with its own record attached', () => {
+  const onOpenTask = jest.fn();
+  render(<PendingTasksScreen onBack={jest.fn()} onOpenTask={onOpenTask} />);
+  fireEvent.press(screen.getByTestId('task-action-t-a2'));
+  expect(onOpenTask).toHaveBeenCalledWith(expect.objectContaining({ id: 't-a2', appointmentId: 'a2', category: 'prescription' }));
 });
 
-test('each row carries its patient, case id, specialty and how long it has waited', () => {
-  const { getByText } = render(<PendingTasksScreen onBack={noop} />);
-
-  expect(getByText('Rahul Sharma')).toBeTruthy();
-  expect(getByText('Case ID: CON-10482')).toBeTruthy();
-  expect(getByText('14d 22h')).toBeTruthy();
-  expect(getByText('Opened on 30 Apr')).toBeTruthy();
-});
-
-test('task actions report the task they belong to', () => {
-  const onAction = jest.fn();
-  const { getByTestId } = render(<PendingTasksScreen onBack={noop} onAction={onAction} />);
-
-  fireEvent.press(getByTestId('task-action-t1'));
-  expect(onAction).toHaveBeenCalledWith('t1');
-});
-
-test('the worklist carries no general-medicine or cardiology specialty', () => {
-  const banned = /cardiolog|dermatolog|orthopedic|orthopaedic|general physician|ENT\b/i;
-  clinicalTaskList.forEach((t) => expect(t.specialty).not.toMatch(banned));
-});
-
-test('the documentation notice is always present', () => {
-  const { getByText } = render(<PendingTasksScreen onBack={noop} />);
-  expect(
-    getByText('New instant requests resume after required documentation is completed.')
-  ).toBeTruthy();
+test('finishing a step moves the task on to the next one', () => {
+  const before = selectTaskCounts(getState());
+  // Sandeep Kumar's notes are outstanding (t-a3)
+  NOTE_FIELDS.forEach((f) => updateNote('a3', f.key, `${f.label} text.`));
+  setRisk('a3', { category: 'low' });
+  saveNotes('a3');
+  render(<PendingTasksScreen onBack={jest.fn()} onOpenTask={jest.fn()} />);
+  const after = selectTaskCounts(getState());
+  expect(after.note).toBe(before.note - 1);
+  expect(after.prescription).toBe(before.prescription + 1);
+  expect(screen.getByTestId('task-count-note')).toHaveTextContent(String(after.note));
+  expect(selectTasks(getState()).find((t) => t.id === 't-a3')!.category).toBe('prescription');
 });

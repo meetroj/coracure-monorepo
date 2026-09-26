@@ -1,26 +1,22 @@
-import { typeStyles, fontWeight } from '../../../../../libs/typography/src';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
-import { colors, radius, spacing, typography } from '../../theme/brand';
+import { colors, radius, spacing } from '../../theme/brand';
+import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
-import {
-  careResources,
-  CARE_CONDITIONS,
-  NOTE_MAX,
-  type CareResource,
-} from '../../data/followup';
+import { Screen, Button } from '../../components/ui';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { confirmDiscard } from '../../components/confirm';
+import { careResources, CARE_CONDITIONS, NOTE_MAX, type CareResource } from '../../data/followup';
 
 /**
  * Care Hub Recommendations — DOC-FUP-04 / DR-15-06.
  *
  * Opened from the advice step of the write-up, so the picks belong to one
- * consultation. Only published, clinically reviewed content can be selected:
- * anything else renders locked rather than hidden, so the doctor can see it
- * exists and why it cannot be sent. Deselecting removes the recommendation —
- * it never deletes the underlying resource.
+ * consultation. Only published, clinically reviewed content can be selected;
+ * anything awaiting review renders locked, so the doctor can see it exists and
+ * why it cannot be sent. Saving with nothing selected clears the
+ * recommendations — it never deletes a resource.
  */
 
 type Tab = 'tool' | 'education';
@@ -33,15 +29,7 @@ const TABS: { key: Tab; label: string; icon: IconName }[] = [
 /** How many cards show before "View more". */
 const PAGE = 6;
 
-const ResourceCard = ({
-  resource,
-  selected,
-  onToggle,
-}: {
-  resource: CareResource;
-  selected: boolean;
-  onToggle: () => void;
-}) => {
+const ResourceCard = ({ resource, selected, onToggle }: { resource: CareResource; selected: boolean; onToggle: () => void }) => {
   const locked = !resource.reviewed;
   return (
     <Pressable
@@ -51,12 +39,7 @@ const ResourceCard = ({
       accessibilityRole="checkbox"
       accessibilityState={{ checked: selected, disabled: locked }}
       accessibilityLabel={resource.title}
-      style={({ pressed }) => [
-        s.card,
-        selected && s.cardOn,
-        locked && s.cardLocked,
-        pressed && !locked && s.pressed,
-      ]}
+      style={({ pressed }) => [s.card, selected && s.cardOn, locked && s.cardLocked, pressed && !locked && s.pressed]}
     >
       <View style={s.cardTop}>
         <View style={s.cardIcon}>
@@ -66,21 +49,20 @@ const ResourceCard = ({
           <Icon name="lock" size={14} color={colors.inkFaint} />
         ) : selected ? (
           <View style={s.tick}>
-            <Icon name="check" size={11} color={colors.white} />
+            <Icon name="check" size={12} weight={3} color={colors.white} />
           </View>
         ) : (
           <View style={s.tickEmpty} />
         )}
       </View>
-      <Text style={[typeStyles.body, s.cardTitle]} numberOfLines={2}>{resource.title}</Text>
-      <Text style={[typeStyles.body, s.cardBlurb]} numberOfLines={3}>{resource.blurb}</Text>
-      {locked && <Text style={[typeStyles.body, s.lockedNote]}>Awaiting review</Text>}
-      {/* Consent-gated material says so on the card, not after the fact. */}
-      {resource.requiresConsent && (
-        <Text style={[typeStyles.body, s.consentNote]}>
-          Requires patient consent before sharing
-        </Text>
-      )}
+      <Text style={s.cardTitle} numberOfLines={2}>
+        {resource.title}
+      </Text>
+      <Text style={s.cardBlurb} numberOfLines={3}>
+        {resource.blurb}
+      </Text>
+      {locked && <Text style={s.lockedNote}>Awaiting review</Text>}
+      {resource.requiresConsent && <Text style={s.consentNote}>Requires patient consent before sharing</Text>}
     </Pressable>
   );
 };
@@ -90,14 +72,18 @@ export const CareHubScreen = ({
   onSave,
   initialSelected = [],
   initialNote = '',
+  patientName,
+  onDirtyChange,
 }: {
   onBack: () => void;
   onSave: (ids: string[], note: string) => void;
+  /** Reports unsaved picks so the route can ask before they are dropped — on Back, swipe or Android back. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Existing picks, so reopening the screen edits rather than starts over. */
   initialSelected?: string[];
   initialNote?: string;
+  patientName?: string;
 }) => {
-  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('tool');
   const [condition, setCondition] = useState<string>(CARE_CONDITIONS[0]);
   const [expanded, setExpanded] = useState(false);
@@ -112,268 +98,171 @@ export const CareHubScreen = ({
 
   const visible = expanded ? list : list.slice(0, PAGE);
   const chosen = careResources.filter((r) => selected.includes(r.id));
+  const dirty =
+    note.trim() !== initialNote.trim() ||
+    selected.length !== initialSelected.length ||
+    selected.some((x) => !initialSelected.includes(x));
 
   const toggle = (r: CareResource) => {
     if (!r.reviewed) return;
     setSelected((v) => (v.includes(r.id) ? v.filter((x) => x !== r.id) : [...v, r.id]));
   };
 
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  // the route guards removal when it listens; on its own the screen asks itself
+  const back = () => (dirty && !onDirtyChange ? confirmDiscard(onBack, 'your picks') : onBack());
+
   return (
-    <View style={s.root}>
-      <ScrollView
-        style={s.flex}
-        contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.sm }]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* ---------------------------------- bar ---------------------------------- */}
-        <View style={s.bar}>
-          <Pressable
-            testID="back"
-            onPress={onBack}
-            hitSlop={8}
-            style={s.barBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Icon name="arrowLeft" size={19} color={colors.ink} />
-          </Pressable>
-          <View style={s.barLogo}>
-            <LogoWide width={104} height={26} />
-          </View>
-          <Pressable hitSlop={8} style={s.barBtn} accessibilityRole="button" accessibilityLabel="Notifications">
-            <Icon name="bell" size={18} color={colors.ink} />
-            <View style={s.barDot} />
-          </Pressable>
-        </View>
-
-        <View style={s.titleWrap}>
-          <Text style={[typeStyles.body, s.title]}>Care Hub Recommendation</Text>
-          <Text style={[typeStyles.body, s.subtitle]}>
-            Select self-help tools and education modules to recommend to your patient.
-          </Text>
-        </View>
-
-        {/* ------------------------------- conditions ------------------------------ */}
-        <Text style={[typeStyles.body, s.fieldLabel]}>Filter by Condition</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.condRow}
-        >
-          {CARE_CONDITIONS.map((cnd) => {
-            const on = condition === cnd;
-            return (
-              <Pressable
-                key={cnd}
-                testID={`cond-${cnd}`}
-                onPress={() => { setCondition(cnd); setExpanded(false); }}
-                style={[s.cond, on && s.condOn]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-              >
-                {cnd !== CARE_CONDITIONS[0] && (
-                  <Icon name="tag" size={12} color={on ? colors.white : colors.inkMuted} />
-                )}
-                <Text style={[typeStyles.body, s.condText, on && s.condTextOn]}>{cnd}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* ---------------------------------- tabs --------------------------------- */}
-        <View style={s.tabs}>
-          {TABS.map((t) => {
-            const on = tab === t.key;
-            return (
-              <Pressable
-                key={t.key}
-                testID={`care-tab-${t.key}`}
-                onPress={() => { setTab(t.key); setExpanded(false); }}
-                style={[s.tab, on && s.tabOn]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-              >
-                <Icon name={t.icon} size={15} color={on ? colors.surfie : colors.inkFaint} />
-                <Text style={[typeStyles.body, s.tabText, on && s.tabTextOn]}>{t.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* ---------------------------------- grid --------------------------------- */}
-        {visible.length === 0 ? (
-          <View style={s.empty}>
-            <Text style={[typeStyles.body, s.emptyText]}>
-              No published resources for this condition yet.
-            </Text>
-          </View>
-        ) : (
-          <View style={s.grid}>
-            {visible.map((r) => (
-              <ResourceCard
-                key={r.id}
-                resource={r}
-                selected={selected.includes(r.id)}
-                onToggle={() => toggle(r)}
-              />
-            ))}
-          </View>
-        )}
-
-        {list.length > PAGE && (
-          <Pressable
-            testID="care-more"
-            onPress={() => setExpanded((v) => !v)}
-            hitSlop={8}
-            style={s.more}
-            accessibilityRole="button"
-          >
-            <Text style={[typeStyles.body, s.moreText]}>
-              {expanded ? 'View fewer' : `View more ${tab === 'tool' ? 'tools' : 'modules'}`}
-            </Text>
-            <Icon name={expanded ? 'chevronDown' : 'chevronDown'} size={14} color={colors.surfie} />
-          </Pressable>
-        )}
-
-        {/* -------------------------------- selected ------------------------------- */}
-        <Text style={[typeStyles.body, s.fieldLabel]}>Selected Items ({chosen.length})</Text>
-        {chosen.length === 0 ? (
-          <View style={s.noneCard}>
-            <Text style={[typeStyles.body, s.noneText]}>
-              Nothing selected yet. Tap a card above to recommend it.
-            </Text>
-          </View>
-        ) : (
-          // One swipeable line inside a card — a long list scrolls sideways
-          // rather than stacking and pushing the note off screen.
-          <View style={s.chosenCard}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.chosenRow}
+    <Screen
+      testID="care-hub"
+      background={colors.white}
+      header={
+        <ScreenHeader
+          onBack={back}
+          title="Care Hub Recommendation"
+          subtitle={`Select self-help tools and education modules to recommend${patientName ? ` to ${patientName}` : ''}.`}
+        />
+      }
+      footer={
+        <Button
+          testID="save-recommendations"
+          label={chosen.length === 0 && initialSelected.length > 0 ? 'Clear recommendations' : `Save Recommendations${chosen.length ? ` (${chosen.length})` : ''}`}
+          onPress={() => onSave(selected, note.trim())}
+          disabled={!dirty && chosen.length === 0}
+        />
+      }
+    >
+      <Text style={s.fieldLabel}>Filter by condition</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.condRow}>
+        {CARE_CONDITIONS.map((cnd) => {
+          const on = condition === cnd;
+          return (
+            <Pressable
+              key={cnd}
+              testID={`cond-${cnd}`}
+              onPress={() => {
+                setCondition(cnd);
+                setExpanded(false);
+              }}
+              hitSlop={{ top: 4, bottom: 4 }}
+              style={[s.cond, on && s.condOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
             >
-              {chosen.map((r) => (
-                <View key={r.id} style={s.chosen}>
-                  <Icon name={r.icon} size={13} color={colors.surfie} />
-                  <Text style={[typeStyles.body, s.chosenText]} numberOfLines={1}>{r.title}</Text>
-                  <Pressable
-                    testID={`remove-${r.id}`}
-                    onPress={() => setSelected((v) => v.filter((x) => x !== r.id))}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove ${r.title}`}
-                  >
-                    <Icon name="close" size={13} color={colors.inkMuted} />
-                  </Pressable>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* ---------------------------------- note --------------------------------- */}
-        <View style={s.noteCard}>
-          <View style={s.noteHead}>
-            <View style={s.noteIcon}>
-              <Icon name="message" size={13} color={colors.surfie} />
-            </View>
-            <View style={s.flex}>
-              <Text style={[typeStyles.body, s.noteTitle]}>
-                Note to Patient <Text style={s.noteOptional}>(optional)</Text>
-              </Text>
-              <Text style={[typeStyles.body, s.noteHint]}>
-                Add a short note to personalise these recommendations.
-              </Text>
-            </View>
-          </View>
-          <View style={s.noteBox}>
-            <TextInput
-              testID="care-note"
-              value={note}
-              onChangeText={(t) => setNote(t.slice(0, NOTE_MAX))}
-              multiline
-              placeholder="These resources can help you manage stress, improve sleep quality, and strengthen your support system."
-              placeholderTextColor={colors.inkFaint}
-              style={[typeStyles.body, s.noteInput]}
-            />
-            <Text style={[typeStyles.body, s.noteCount]}>{note.length}/{NOTE_MAX}</Text>
-          </View>
-        </View>
+              {cnd !== CARE_CONDITIONS[0] && <Icon name="tag" size={12} color={on ? colors.white : colors.inkMuted} />}
+              <Text style={[s.condText, on && s.condTextOn]}>{cnd}</Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
-      {/* --------------------------------- footer -------------------------------- */}
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-        <Pressable
-          testID="save-recommendations"
-          onPress={() => onSave(selected, note.trim())}
-          disabled={chosen.length === 0}
-          style={[s.cta, chosen.length === 0 && s.ctaOff]}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: chosen.length === 0 }}
-        >
-          <Text style={[typeStyles.body, s.ctaText]}>Save Recommendations</Text>
-          <View style={s.ctaArrow}>
-            <Icon name="arrowRight" size={17} color={colors.ink} />
-          </View>
-        </Pressable>
+      <View style={s.tabs}>
+        {TABS.map((t) => {
+          const on = tab === t.key;
+          return (
+            <Pressable
+              key={t.key}
+              testID={`care-tab-${t.key}`}
+              onPress={() => {
+                setTab(t.key);
+                setExpanded(false);
+              }}
+              style={[s.tab, on && s.tabOn]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+            >
+              <Icon name={t.icon} size={15} color={on ? colors.surfie : colors.inkFaint} />
+              <Text style={[s.tabText, on && s.tabTextOn]}>{t.label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
-    </View>
+
+      {visible.length === 0 ? (
+        <View style={s.empty}>
+          <Text style={s.emptyText}>No published resources for this condition yet.</Text>
+        </View>
+      ) : (
+        <View style={s.grid}>
+          {visible.map((r) => (
+            <ResourceCard key={r.id} resource={r} selected={selected.includes(r.id)} onToggle={() => toggle(r)} />
+          ))}
+        </View>
+      )}
+
+      {list.length > PAGE && (
+        <Pressable testID="care-more" onPress={() => setExpanded((v) => !v)} hitSlop={8} style={s.more} accessibilityRole="button">
+          <Text style={s.moreText}>{expanded ? 'Show fewer' : `View more ${tab === 'tool' ? 'tools' : 'modules'}`}</Text>
+          <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={14} color={colors.surfie} />
+        </Pressable>
+      )}
+
+      <Text style={s.fieldLabel}>Selected Items ({chosen.length})</Text>
+      {chosen.length === 0 ? (
+        <View style={s.noneCard}>
+          <Text style={s.noneText}>Nothing selected. Tap a card above to recommend it.</Text>
+        </View>
+      ) : (
+        <View style={s.chosenCard}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chosenRow}>
+            {chosen.map((r) => (
+              <View key={r.id} style={s.chosen}>
+                <Icon name={r.icon} size={13} color={colors.surfie} />
+                <Text style={s.chosenText} numberOfLines={1}>
+                  {r.title}
+                </Text>
+                <Pressable
+                  testID={`remove-${r.id}`}
+                  onPress={() => setSelected((v) => v.filter((x) => x !== r.id))}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${r.title}`}
+                >
+                  <Icon name="close" size={14} color={colors.inkMuted} />
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      <View style={s.noteCard}>
+        <Text style={s.noteTitle}>
+          Note to patient <Text style={s.noteOptional}>(optional)</Text>
+        </Text>
+        <Text style={s.noteHint}>Add a short note to personalise these recommendations.</Text>
+        <View style={s.noteBox}>
+          <TextInput
+            testID="care-note"
+            value={note}
+            onChangeText={(t) => setNote(t.slice(0, NOTE_MAX))}
+            multiline
+            placeholder="e.g. Start with the breathing exercise each evening."
+            placeholderTextColor={colors.inkFaint}
+            style={s.noteInput}
+            accessibilityLabel="Note to patient"
+          />
+          <Text style={s.noteCount}>
+            {note.length}/{NOTE_MAX}
+          </Text>
+        </View>
+      </View>
+    </Screen>
   );
 };
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.white },
-  flex: { flex: 1 },
-  content: { paddingBottom: spacing.xl },
+  pressed: { opacity: 0.75 },
+  fieldLabel: { ...typeStyles.label, color: colors.ink, paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.sm },
 
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  barBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  barLogo: { flex: 1, alignItems: 'center' },
-  barDot: {
-    position: 'absolute',
-    top: 7,
-    right: 8,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.paris,
-  },
-
-  titleWrap: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
-  title: { fontFamily: typography.heading.family, fontSize: 22, lineHeight: 28, fontWeight: fontWeight.semibold, color: colors.ink },
-  subtitle: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: 4 },
-
-  fieldLabel: {
-    ...typeStyles.label,
-    color: colors.ink,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-
-  /* condition chips */
   condRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 2 },
   cond: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.surface.line,
@@ -383,21 +272,14 @@ const s = StyleSheet.create({
   condText: { ...typeStyles.caption, color: colors.inkMuted },
   condTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
 
-  /* tabs */
-  tabs: {
-    flexDirection: 'row',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface.line,
-  },
+  tabs: { flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.surface.line },
   tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: spacing.md,
+    minHeight: 44,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
@@ -405,18 +287,10 @@ const s = StyleSheet.create({
   tabText: { ...typeStyles.bodySmall, color: colors.inkFaint },
   tabTextOn: { color: colors.surfie, fontWeight: fontWeight.semibold },
 
-  /* resource grid — two per row, wrapping */
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.lg },
   card: {
-    // Two columns: half the row minus half the gap.
     width: '48.5%',
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
     backgroundColor: colors.white,
@@ -424,7 +298,6 @@ const s = StyleSheet.create({
   },
   cardOn: { borderColor: colors.paris, backgroundColor: colors.surface.mintSoft },
   cardLocked: { backgroundColor: colors.surface.page },
-  pressed: { opacity: 0.75 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   cardIcon: {
     width: 34,
@@ -434,34 +307,19 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tick: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.paris,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tickEmpty: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: colors.surface.inputBorder,
-  },
-  cardTitle: { ...typeStyles.cardTitle, color: colors.ink, marginTop: spacing.sm },
+  tick: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.paris, alignItems: 'center', justifyContent: 'center' },
+  tickEmpty: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.surface.inputBorder },
+  cardTitle: { ...typeStyles.cardTitle, fontSize: 14, color: colors.ink, marginTop: spacing.sm },
   cardBlurb: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 3 },
-  lockedNote: { ...typeStyles.caption, fontSize: 10, color: colors.warn, marginTop: 4 },
-  consentNote: { ...typeStyles.caption, fontSize: 10, color: colors.warn, marginTop: 4 },
+  lockedNote: { ...typeStyles.caption, fontSize: 11, color: colors.warn, marginTop: 4 },
+  consentNote: { ...typeStyles.caption, fontSize: 11, color: colors.warn, marginTop: 4 },
 
-  more: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: spacing.md },
+  more: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44, marginTop: spacing.sm },
   moreText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  empty: { marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.lg, borderRadius: 14, backgroundColor: colors.surface.page },
+  empty: { marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surface.page },
   emptyText: { ...typeStyles.bodySmall, color: colors.inkMuted, textAlign: 'center' },
 
-  /* selected chips */
-  // Minimal radius on the container; chips sit white on the mint field.
   chosenCard: {
     marginHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
@@ -475,36 +333,26 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.surface.line,
     backgroundColor: colors.white,
-    maxWidth: 200,
+    maxWidth: 220,
   },
   chosenText: { ...typeStyles.caption, color: colors.ink, flexShrink: 1 },
-  noneCard: { marginHorizontal: spacing.lg, padding: spacing.md, borderRadius: 14, backgroundColor: colors.surface.page },
+  noneCard: { marginHorizontal: spacing.lg, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface.page },
   noneText: { ...typeStyles.caption, color: colors.inkMuted },
 
-  /* note */
   noteCard: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
     padding: spacing.md,
-    borderRadius: 14,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.surface.line,
     backgroundColor: colors.white,
-  },
-  noteHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  noteIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   noteTitle: { ...typeStyles.cardTitle, color: colors.ink },
   noteOptional: { ...typeStyles.caption, color: colors.inkMuted },
@@ -517,36 +365,8 @@ const s = StyleSheet.create({
     backgroundColor: colors.white,
     padding: spacing.md,
   },
-  noteInput: { ...typeStyles.bodySmall, color: colors.ink, minHeight: 56, textAlignVertical: 'top', padding: 0 },
-  noteCount: { ...typeStyles.caption, fontSize: 10, color: colors.inkFaint, alignSelf: 'flex-end', marginTop: 4 },
-
-  /* footer */
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.surface.line,
-  },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfie,
-  },
-  ctaOff: { backgroundColor: colors.inkFaint },
-  ctaText: { ...typeStyles.button, flex: 1, textAlign: 'center', color: colors.white },
-  ctaArrow: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.paris,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  noteInput: { ...typeStyles.input, color: colors.ink, minHeight: 64, textAlignVertical: 'top', padding: 0 },
+  noteCount: { ...typeStyles.caption, fontSize: 11, color: colors.inkFaint, alignSelf: 'flex-end', marginTop: 4 },
 });
 
 export default CareHubScreen;

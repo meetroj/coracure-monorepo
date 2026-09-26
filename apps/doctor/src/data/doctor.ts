@@ -4,10 +4,29 @@
  * Role scope: a doctor sees only their own cases and assigned patients.
  * There is no patient discovery and no doctor self-registration — doctors are
  * created and approved by an administrator.
+ *
+ * The fixtures describe one coherent day on the demo clock (11:45 AM, see
+ * `calendar.ts`): consultations before it are done, the next one starts at
+ * noon, and every count on screen is derived from these records rather than
+ * authored beside them.
  */
 import type { ImageSourcePropType } from 'react-native';
 
 import type { ProfessionalType } from './clinical';
+import { patientById } from './patients';
+import {
+  DEMO_NOW_MINUTES,
+  TODAY,
+  clockToMinutes,
+  dayOffset,
+  fmtDate,
+  fmtDayMonth,
+  fmtMonthYear,
+  fmtWeekday,
+  minutesToClock,
+  relativeDay,
+  toISODate,
+} from './calendar';
 
 /* ------------------------------ availability ------------------------------ */
 
@@ -19,16 +38,16 @@ export type LiveStatus = ManualStatus | AutoStatus;
 
 export const MANUAL_STATUSES: { key: ManualStatus; label: string }[] = [
   { key: 'available', label: 'Available Now' },
-  { key: 'offline', label: 'Offline' },
+  { key: 'scheduledOnly', label: 'Scheduled Only' },
   { key: 'paused', label: 'Busy' },
-  { key: 'scheduledOnly', label: 'Schedule Appointments' },
+  { key: 'offline', label: 'Offline' },
 ];
 
 export const STATUS_LABEL: Record<LiveStatus, string> = {
   available: 'Available Now',
   offline: 'Offline',
   paused: 'Busy',
-  scheduledOnly: 'Schedule Appointments',
+  scheduledOnly: 'Scheduled Only',
   requestPending: 'Request Pending',
   inConsultation: 'In Consultation',
   completingNotes: 'Completing Notes',
@@ -49,10 +68,10 @@ export const STATUS_META: Record<
   LiveStatus,
   { description: string; icon: 'dot' | 'pause' | 'calendar' | 'clock' | 'video' | 'document'; bg: string; fg: string }
 > = {
-  offline: { description: "You are hidden from patients. No instant or scheduled requests will reach you.", icon: 'dot', bg: '#EFF3F1', fg: '#8A9995' },
+  offline: { description: 'You are hidden from patients. No instant or scheduled requests will reach you.', icon: 'dot', bg: '#EFF3F1', fg: '#8A9995' },
   available: { description: 'You are ready to consult now. Instant requests can reach you immediately.', icon: 'dot', bg: '#E7F7F0', fg: '#34D499' },
   paused: { description: 'You will stop receiving new requests until you switch back to Available.', icon: 'pause', bg: '#FDF4E5', fg: '#E0972B' },
-  scheduledOnly: { description: 'Only pre-booked appointments within your chosen hours will reach you. Instant requests stay off.', icon: 'calendar', bg: '#E7F7F0', fg: '#0E766C' },
+  scheduledOnly: { description: 'Only appointments booked into your weekly schedule will reach you. Instant requests stay off.', icon: 'calendar', bg: '#E7F7F0', fg: '#0E766C' },
   requestPending: { description: 'A consultation request is waiting for your response.', icon: 'clock', bg: '#EAF1FC', fg: '#3E6DB5' },
   inConsultation: { description: 'A consultation is currently in progress.', icon: 'video', bg: '#F0EDFB', fg: '#6B5BB5' },
   completingNotes: { description: 'Your prescription or case summary is still pending.', icon: 'document', bg: '#FDF0E5', fg: '#D97B2E' },
@@ -85,7 +104,18 @@ export type PaymentState = 'paid' | 'refunded' | 'notPaid';
 
 export type Appointment = {
   id: string;
+  patientId: string;
+  /** The clinical record this appointment opens. */
+  consultationId: string;
+  /** Days from today: 0 today, negative past, positive upcoming. */
+  dayOffset: number;
+  /** "Today", "Tomorrow", "Fri, 24 May". */
+  dayLabel: string;
+  /** "15 May 2026". */
+  dateLabel: string;
   time: string;
+  /** Minutes past midnight, for ordering and countdowns. */
+  minutes: number;
   initials: string;
   name: string;
   age: number;
@@ -97,6 +127,106 @@ export type Appointment = {
   bucket: 'today' | 'upcoming' | 'past';
 };
 
+const appt = (
+  id: string,
+  patientId: string,
+  consultationId: string,
+  offset: number,
+  time: string,
+  mode: ConsultMode,
+  state: AppointmentState,
+  payment: PaymentState,
+  concern: string
+): Appointment => {
+  const pt = patientById(patientId);
+  if (!pt) throw new Error(`Unknown patient ${patientId}`);
+  const date = dayOffset(offset);
+  return {
+    id,
+    patientId,
+    consultationId,
+    dayOffset: offset,
+    dayLabel: relativeDay(date),
+    dateLabel: fmtDate(date),
+    time,
+    minutes: clockToMinutes(time),
+    initials: pt.initials,
+    name: pt.name,
+    age: pt.age,
+    gender: pt.gender,
+    mode,
+    state,
+    payment,
+    concern,
+    bucket: offset === 0 ? 'today' : offset > 0 ? 'upcoming' : 'past',
+  };
+};
+
+export const appointments: Appointment[] = [
+  /* today — the demo clock reads 11:45 AM */
+  appt('a5', 'PT-10462', 'CON-10462', 0, '08:00 AM', 'inPerson', 'noShow', 'notPaid', 'Sleep disturbance and irritability'),
+  appt('a3', 'PT-10460', 'CON-10460', 0, '09:00 AM', 'inPerson', 'completed', 'paid', 'Low mood and loss of interest'),
+  appt('a2', 'PT-10459', 'CON-10459', 0, '10:30 AM', 'audio', 'completed', 'paid', 'Medication side effects and daytime drowsiness'),
+  appt('a1', 'PT-10482', 'CON-10482', 0, '12:00 PM', 'video', 'confirmed', 'paid', 'Anxiety, restlessness and difficulty sleeping'),
+  appt('a4', 'PT-10461', 'CON-10461', 0, '02:15 PM', 'video', 'cancelled', 'refunded', 'Panic episodes with racing thoughts'),
+  appt('a6', 'PT-10548', 'CON-10483', 0, '05:30 PM', 'audio', 'confirmed', 'paid', 'Low mood follow-up'),
+
+  /* upcoming */
+  appt('a7', 'PT-10470', 'CON-10490', 1, '09:30 AM', 'video', 'upcoming', 'paid', 'Anxiety review'),
+  appt('a8', 'PT-10471', 'CON-10491', 2, '11:00 AM', 'video', 'upcoming', 'paid', 'Medication review after dose change'),
+
+  /* past — earlier consultations, most recent first */
+  appt('a9', 'PT-10472', 'CON-10479', -1, '03:00 PM', 'inPerson', 'completed', 'paid', 'Sleep and mood review'),
+  appt('a24', 'PT-10475', 'CON-10472', -1, '10:00 AM', 'video', 'completed', 'paid', 'Anxiety with stress at work'),
+  appt('a25', 'PT-10476', 'CON-10473', -1, '12:30 PM', 'audio', 'completed', 'paid', 'Low mood and early waking'),
+  appt('a26', 'PT-10477', 'CON-10474', -1, '06:00 PM', 'video', 'completed', 'paid', 'Alcohol use — relapse prevention'),
+  appt('a27', 'PT-10478', 'CON-10475', -1, '07:30 PM', 'audio', 'completed', 'paid', 'Poor sleep and worry'),
+  appt('a23', 'PT-10474', 'CON-10471', -2, '04:00 PM', 'video', 'completed', 'paid', 'Exam-related anxiety'),
+  appt('a22', 'PT-10473', 'CON-10470', -3, '11:30 AM', 'inPerson', 'completed', 'paid', 'Low mood after job loss'),
+  appt('a21', 'PT-10469', 'CON-10469', -4, '10:00 AM', 'video', 'completed', 'paid', 'Panic symptoms while commuting'),
+  appt('a20', 'PT-10468', 'CON-10468', -5, '05:00 PM', 'inPerson', 'completed', 'paid', 'Alcohol use — cutting down'),
+  appt('a12', 'PT-10461', 'CON-10449', -6, '04:00 PM', 'video', 'completed', 'paid', 'Panic episodes and poor sleep'),
+  appt('a19', 'PT-10467', 'CON-10467', -7, '09:30 AM', 'video', 'completed', 'paid', 'Sleep difficulty and low energy'),
+  appt('a18', 'PT-10466', 'CON-10466', -7, '12:00 PM', 'audio', 'completed', 'paid', 'Anxiety with physical tension'),
+  appt('a14', 'PT-10548', 'CON-10444', -8, '05:00 PM', 'audio', 'completed', 'paid', 'Low mood and poor motivation'),
+  appt('a17', 'PT-10465', 'CON-10465', -8, '10:30 AM', 'inPerson', 'completed', 'paid', 'Irritability and poor sleep'),
+  appt('a13', 'PT-10460', 'CON-10441', -9, '12:00 PM', 'inPerson', 'completed', 'paid', 'Low mood and fatigue'),
+  appt('a16', 'PT-10464', 'CON-10464', -9, '03:30 PM', 'video', 'completed', 'paid', 'Persistent low mood'),
+  appt('a15', 'PT-10463', 'CON-10463', -10, '10:00 AM', 'video', 'completed', 'paid', 'Worsening anxiety and low mood'),
+  appt('a11', 'PT-10482', 'CON-10431', -12, '11:00 AM', 'video', 'completed', 'paid', 'Anxiety and difficulty sleeping'),
+];
+
+export const appointmentById = (id: string | undefined): Appointment | undefined =>
+  id ? appointments.find((a) => a.id === id) : undefined;
+
+/** Consultations that actually took place (or were missed), newest first. */
+export const heldAppointments = () =>
+  appointments
+    .filter((a) => a.state === 'completed' || a.state === 'noShow')
+    .sort((x, y) => y.dayOffset - x.dayOffset || y.minutes - x.minutes);
+
+/** The next appointment still to start today, on the demo clock. */
+export const nextAppointmentFor = (list: Appointment[] = appointments): Appointment | undefined =>
+  list
+    .filter((a) => a.dayOffset === 0 && a.state === 'confirmed' && a.minutes >= DEMO_NOW_MINUTES)
+    .sort((x, y) => x.minutes - y.minutes)[0];
+
+/** Minutes from the demo clock to the appointment; negative once it has started. */
+export const minutesUntil = (a: Appointment) =>
+  a.dayOffset * 24 * 60 + (a.minutes - DEMO_NOW_MINUTES);
+
+/** A patient's earlier consultations, most recent first. */
+export const previousConsultations = (a: Appointment) =>
+  appointments
+    .filter(
+      (x) =>
+        x.patientId === a.patientId &&
+        x.id !== a.id &&
+        x.state === 'completed' &&
+        (x.dayOffset < a.dayOffset || (x.dayOffset === a.dayOffset && x.minutes < a.minutes))
+    )
+    .sort((x, y) => y.dayOffset - x.dayOffset || y.minutes - x.minutes);
+
 /* -------------------------- appointment detail ---------------------------- */
 
 export type IntakeRow = {
@@ -106,14 +236,12 @@ export type IntakeRow = {
   value: string;
 };
 
-/** Abstract preview only — a clinical file is never thumbnailed for real. */
-export type UploadedDoc = { id: string; title: string; uploaded: string; lines: number[] };
-
 export type AppointmentDetail = {
   patientId: string;
   /** Clinical record identifier. Everything in Module 9 links to this. */
   consultationId: string;
-  appointmentId: string;
+  /** The booking reference shown on the appointment. */
+  appointmentRef: string;
   dateLabel: string;
   /** Patient-reported, in their words. Never a diagnosis. */
   concern: string;
@@ -122,49 +250,42 @@ export type AppointmentDetail = {
   severity: string;
   totalConsultations: number;
   intake: IntakeRow[];
-  documents: UploadedDoc[];
   consent: { version: string; time: string };
-  past?: { dateLabel: string; time: string; title: string; note: string };
+  past?: { appointmentId: string; dateLabel: string; time: string; title: string; note: string };
   payment: { state: string; txnId: string; method: string };
-  /** Minutes until the slot opens; drives the footer sub-label. */
-  startsInMinutes: number;
 };
 
-const DOC_LINES = {
-  text: [1, 0.82, 0.9, 0.6, 0.86],
-  notes: [0.9, 0.7, 0.95, 0.55],
-  report: [0.8, 0.95, 0.65, 0.88, 0.72],
-};
-
-const detailById: Record<string, AppointmentDetail> = {
+/** Patient-reported intake, authored where the booking form captured more detail. */
+const intakeById: Record<string, Partial<AppointmentDetail> & { medication?: string; allergies?: string; other?: string }> = {
   a1: {
-    patientId: 'PT-10482',
-    consultationId: 'CON-10482',
-    appointmentId: 'APT-240515-0930',
-    dateLabel: '15 May 2024',
-    concern: 'Anxiety and difficulty sleeping',
-    concernDetail:
-      'Persistent restlessness, racing thoughts at night and poor sleep for two weeks.',
-    duration: '2 weeks',
+    concernDetail: 'Restlessness and racing thoughts at night are back, with poor sleep over the last week.',
+    duration: '3 weeks',
     severity: 'Moderate',
-    totalConsultations: 3,
-    intake: [
-      { key: 'dur', icon: 'calendar', label: 'Duration', value: '2 weeks' },
-      { key: 'sev', icon: 'heart', label: 'Severity', value: 'Moderate' },
-      { key: 'med', icon: 'prescription', label: 'Medication', value: 'None' },
-      { key: 'alg', icon: 'alertTriangle', label: 'Allergies', value: 'None known' },
-      { key: 'oth', icon: 'document', label: 'Other', value: 'Fatigue and poor concentration.' },
-    ],
-    documents: [
-      { id: 'd1', title: 'Previous Prescription', uploaded: 'Uploaded 14 May', lines: DOC_LINES.text },
-      { id: 'd2', title: 'Sleep Report', uploaded: 'Uploaded 14 May', lines: DOC_LINES.report },
-      { id: 'd3', title: 'Symptoms Journal', uploaded: 'Uploaded 13 May', lines: DOC_LINES.notes },
-    ],
-    consent: { version: 'v2.1', time: '09:20 AM' },
-    past: { dateLabel: '28 Apr 2024', time: '11:00 AM', title: 'Video follow-up', note: 'Sleep-hygiene guidance.' },
-    payment: { state: 'Paid', txnId: 'CC2404287193', method: 'Online' },
-    startsInMinutes: 15,
+    medication: 'Escitalopram 5 mg, once daily',
+    allergies: 'None known',
+    other: 'Fatigue and poor concentration at work.',
   },
+  a2: {
+    concernDetail: 'Feels drowsy through the day since the dose was increased last week.',
+    duration: '1 week',
+    severity: 'Mild',
+    medication: 'Sertraline 100 mg, once daily',
+    allergies: 'Penicillin',
+    other: 'Still managing work but needs afternoon naps.',
+  },
+  a6: {
+    concernDetail: 'Mood still low most days; missed a few check-ins this week.',
+    duration: '4 weeks',
+    severity: 'Moderate',
+    medication: 'Sertraline 50 mg, once daily',
+    allergies: 'None known',
+  },
+};
+
+const PAST_TITLE: Record<ConsultMode, string> = {
+  video: 'Video consultation',
+  audio: 'Audio consultation',
+  inPerson: 'In-person visit',
 };
 
 /**
@@ -172,51 +293,69 @@ const detailById: Record<string, AppointmentDetail> = {
  * usable screen rather than a blank one: identifiers derive from the
  * appointment and the intake falls back to the presenting concern.
  */
-export const detailFor = (a: Appointment): AppointmentDetail =>
-  detailById[a.id] ?? {
-    patientId: `PT-104${a.id.slice(1).padStart(2, '0')}`,
-    consultationId: `CON-104${a.id.slice(1).padStart(2, '0')}`,
-    appointmentId: `APT-240515-${a.time.replace(/[: ]/g, '').slice(0, 4)}`,
-    dateLabel: '15 May 2024',
+export const detailFor = (a: Appointment): AppointmentDetail => {
+  const seed = intakeById[a.id] ?? {};
+  const previous = previousConsultations(a);
+  const last = previous[0];
+  const stamp = toISODate(dayOffset(a.dayOffset)).slice(2).replace(/-/g, '');
+  const totalConsultations =
+    appointments.filter((x) => x.patientId === a.patientId && x.state !== 'cancelled').length;
+  return {
+    patientId: a.patientId,
+    consultationId: a.consultationId,
+    appointmentRef: `APT-${stamp}-${String(a.minutes).padStart(4, '0')}`,
+    dateLabel: a.dateLabel,
     concern: a.concern,
-    concernDetail: a.concern,
-    duration: 'Not recorded',
-    severity: 'Not recorded',
-    totalConsultations: 1,
+    concernDetail: seed.concernDetail ?? a.concern,
+    duration: seed.duration ?? 'Not recorded',
+    severity: seed.severity ?? 'Not recorded',
+    totalConsultations,
     intake: [
-      { key: 'dur', icon: 'calendar', label: 'Duration', value: 'Not recorded' },
-      { key: 'sev', icon: 'heart', label: 'Severity', value: 'Not recorded' },
-      { key: 'med', icon: 'prescription', label: 'Medication', value: 'None' },
-      { key: 'alg', icon: 'alertTriangle', label: 'Allergies', value: 'None known' },
-      { key: 'oth', icon: 'document', label: 'Other', value: a.concern },
+      { key: 'dur', icon: 'calendar', label: 'Duration', value: seed.duration ?? 'Not recorded' },
+      { key: 'sev', icon: 'heart', label: 'Severity', value: seed.severity ?? 'Not recorded' },
+      { key: 'med', icon: 'prescription', label: 'Medication', value: seed.medication ?? 'None reported' },
+      { key: 'alg', icon: 'alertTriangle', label: 'Allergies', value: seed.allergies ?? 'None known' },
+      { key: 'oth', icon: 'document', label: 'Other', value: seed.other ?? a.concern },
     ],
-    documents: [],
-    consent: { version: 'v2.1', time: a.time },
-    past: undefined,
+    consent: { version: 'v2.1', time: minutesToClock(Math.max(0, a.minutes - 40)) },
+    past: last
+      ? {
+          appointmentId: last.id,
+          dateLabel: last.dateLabel,
+          time: last.time,
+          title: PAST_TITLE[last.mode],
+          note: last.concern,
+        }
+      : undefined,
     payment: {
       state: a.payment === 'paid' ? 'Paid' : a.payment === 'refunded' ? 'Refunded' : 'Not paid',
-      txnId: `CC2405${a.id.slice(1).padStart(4, '0')}`,
+      txnId: `CC${stamp}${a.id.slice(1).padStart(4, '0')}`,
       method: 'Online',
     },
-    startsInMinutes: 15,
   };
+};
 
 /* --------------------------------- cases ---------------------------------- */
 
 export type CaseState = 'complete' | 'pending' | 'followUp' | 'noShow';
 
+/**
+ * A case is one held consultation. It is derived from the appointment and its
+ * clinical record (see `state/selectors.ts`), never authored separately, so the
+ * list cannot disagree with the record behind it.
+ */
 export type PatientCase = {
   id: string;
-  caseId: string;
-  /**
-   * The consultation this case belongs to. DR-11-01 keys a past item to its
-   * consultation, and every clinical screen is addressed by it — so the link is
-   * explicit here rather than inferred by matching names or list position.
-   */
+  /** The consultation this case belongs to. */
   appointmentId: string;
+  patientId: string;
+  /** The consultation reference, e.g. CON-10482. */
+  caseId: string;
   initials: string;
   name: string;
   dateLabel: string;
+  dayOffset: number;
+  minutes: number;
   age: number;
   gender: 'Male' | 'Female';
   concern: string;
@@ -228,88 +367,8 @@ export type PatientCase = {
   summarySubmitted: boolean;
 };
 
-export const isClinicallyComplete = (c: PatientCase) =>
+export const isClinicallyComplete = (c: Pick<PatientCase, 'prescriptionFinalised' | 'summarySubmitted'>) =>
   c.prescriptionFinalised && c.summarySubmitted;
-
-/* ------------------------------ case detail ------------------------------- */
-
-/**
- * The full consultation record behind a case (DR-11-01).
- *
- * Every block is a summary of what another module owns — notes, prescription,
- * summary, follow-up, check-ins, clarification. This screen holds none of that
- * itself; it links out to the module that does.
- */
-export type CaseDetail = {
-  /** Short human reference shown in the title, e.g. "D-17". */
-  ref: string;
-  mode: string;
-  paid: boolean;
-  audit: { createdBy: string; createdAt: string; updatedAt: string };
-  notes: { excerpt: string; primaryDiagnosis: string } | null;
-  prescription: { medicines: number; supplements: number; names: string[] } | null;
-  summary: string | null;
-  followUp: { dateLabel: string; mode: string } | null;
-  checkins: { count: number; latest: string; status: string } | null;
-  /** `withInitials` identifies the expert on the thread, for the row avatar. */
-  clarification: { messages: number; latest: string; withInitials: string } | null;
-  closedAt: string | null;
-};
-
-const caseDetailById: Record<string, Partial<CaseDetail>> = {
-  c1: {
-    audit: {
-      createdBy: 'Dr. Arjun Mehta',
-      createdAt: '15 May 2024, 08:58 AM',
-      updatedAt: '15 May 2024, 09:45 AM',
-    },
-    notes: {
-      excerpt: 'Patient reported chest discomfort and shortness of breath on exertion for the past 3 days.',
-      primaryDiagnosis: 'Stable Angina',
-    },
-    prescription: {
-      medicines: 3,
-      supplements: 1,
-      names: ['Tab. Ecosprin 150', 'Tab. Atorvastatin 40', 'Tab. Metoprolol 25'],
-    },
-    summary:
-      'Cardiovascular evaluation suggests stable angina. ECG normal. Advised lifestyle modification and medication adherence.',
-    followUp: { dateLabel: '22 May 2024, 11:30 AM', mode: 'Video Consultation' },
-    checkins: { count: 2, latest: '18 May 2024, 08:20 AM', status: 'Stable' },
-    clarification: { messages: 2, latest: '16 May 2024, 02:15 PM', withInitials: 'AM' },
-    closedAt: '15 May 2024, 09:45 AM',
-  },
-};
-
-/**
- * Detail for any case. A case without an authored record still opens a usable
- * screen: blocks the doctor has not written yet resolve to `null` and render as
- * "not recorded" rather than as fabricated content.
- */
-export const caseDetailFor = (c: PatientCase): CaseDetail => {
-  const seed = caseDetailById[c.id] ?? {};
-  const appt = appointments.find((a) => a.id === c.appointmentId);
-  return {
-    // Short doctor-facing reference, derived from the case so it is stable and
-    // predictable rather than a slice of the longer COR- identifier.
-    ref: `D-${c.id.slice(1).padStart(2, '0')}`,
-    mode: appt ? modeLabel[appt.mode] : 'Consultation',
-    paid: appt ? appt.payment === 'paid' : false,
-    audit: seed.audit ?? {
-      createdBy: doctor.name,
-      createdAt: c.dateLabel,
-      updatedAt: c.dateLabel,
-    },
-    notes: seed.notes ?? null,
-    // only a finalised prescription is part of the record
-    prescription: c.prescriptionFinalised ? seed.prescription ?? null : null,
-    summary: c.summarySubmitted ? seed.summary ?? null : null,
-    followUp: seed.followUp ?? null,
-    checkins: seed.checkins ?? null,
-    clarification: seed.clarification ?? null,
-    closedAt: isClinicallyComplete(c) ? seed.closedAt ?? c.dateLabel : null,
-  };
-};
 
 /* ------------------------------- schedule --------------------------------- */
 
@@ -321,8 +380,10 @@ export type DaySchedule = {
   ranges: TimeRange[];
   modes: ConsultMode[];
 };
-export type ScheduleException = { id: string; dateLabel: string; note: string };
-export type Leave = { id: string; dateLabel: string; reason: string };
+/** A single date with custom hours, replacing the weekly pattern for that day. */
+export type ScheduleOverride = { id: string; date: string; from: string; to: string };
+/** A blocked date. `date` is ISO so it sorts and validates without parsing labels. */
+export type Leave = { id: string; date: string; reason: string };
 
 /* --------------------------------- doctor --------------------------------- */
 
@@ -330,9 +391,9 @@ export type Doctor = {
   name: string;
   /** Drives prescribing permission across every clinical surface. */
   professionalType: ProfessionalType;
-  /** Fallback for the avatar whenever `photo` is absent or fails to load. */
+  /** The avatar fallback, and the only avatar while no photo is on file. */
   initials: string;
-  /** Bundled asset in development; a remote URI once profiles come from the API. */
+  /** A remote URI once profiles come from the API. */
   photo?: ImageSourcePropType;
   speciality: string;
   qualification: string;
@@ -348,17 +409,13 @@ export type Doctor = {
   bio: string;
 };
 
-/* ------------------------------- fixtures --------------------------------- */
-
+/** The signed-in doctor. Every "me" reference in the fixtures resolves here. */
 export const doctor: Doctor = {
-  name: 'Dr. Sydney Sweeney',
+  name: 'Dr. Arjun Mehta',
   professionalType: 'psychiatrist',
-  initials: 'SS',
-  // Square, face-centred crop of assets/profile.jpg — the source portrait is
-  // 452×678, so a circular avatar would centre-crop below the face.
-  photo: require('../assets/profile-avatar.jpg'),
+  initials: 'AM',
   speciality: 'Psychiatrist',
-  qualification: 'MBBS, MD',
+  qualification: 'MBBS, MD (Psychiatry)',
   yearsExperience: 8,
   registrationNo: 'MCI 12-45892',
   specialisations: ['Adult Psychiatry', 'Sleep Medicine'],
@@ -367,25 +424,21 @@ export const doctor: Doctor = {
   consultationMinutes: 30,
   bankVerified: true,
   documentsApproved: true,
-  bio: 'Dedicated psychiatrist with 8+ years of experience in diagnosing and treating complex mental health conditions. Passionate about preventive care and helping patients lead healthier, calmer lives.',
+  bio: 'Psychiatrist with 8+ years of experience in anxiety, mood and sleep disorders. Focused on clear explanations, shared decisions and steady follow-up between consultations.',
 };
 
-export const todaySummary = {
-  appointments: 18,
-  completed: 12,
-  upcoming: 4,
-  noShow: 1,
-  pendingSummaries: 1,
-};
-
-export const clinicalTasks = {
-  caseSummaries: 2,
-  prescriptionDrafts: 3,
-  incompleteNotes: 1,
-  followUpResponses: 4,
-};
-
-export const followUpAlerts = { highPriority: 2, dueToday: 5 };
+/**
+ * The consultation lengths a doctor can offer. Profile › Consultation duration
+ * and Availability › Appointment settings both edit the same stored value, so
+ * both offer exactly this list.
+ */
+export const CONSULTATION_DURATIONS: readonly { minutes: number; hint: string }[] = [
+  { minutes: 15, hint: 'Short follow-ups' },
+  { minutes: 20, hint: 'Medication reviews' },
+  { minutes: 30, hint: 'Standard consultation' },
+  { minutes: 45, hint: 'Longer assessments' },
+  { minutes: 60, hint: 'First psychiatric evaluation' },
+];
 
 /* -------------------------------- earnings -------------------------------- */
 
@@ -394,57 +447,28 @@ export type EarningsPeriodKey = 'daily' | 'weekly' | 'monthly';
 /** One column of the activity chart. */
 export type EarningsBar = { label: string; value: number };
 
-export type EarningsRow = {
-  id: string;
-  initials: string;
-  name: string;
-  mode: string;
-  dayLabel: string;
-  time: string;
-  amount: number;
-  state: 'Confirmed' | 'Processing';
-};
-
 export type EarningsPeriod = {
   key: EarningsPeriodKey;
   tab: string;
-  /** The date-stepper caption. */
+  /** The date caption under the selector. */
   rangeLabel: string;
-  totalLabel: string;
   total: number;
   consultations: number;
-  paid: number;
-  processing: number;
-  chartTitle: string;
-  /** Scope pill beside the chart title; the monthly view has none. */
-  chartScope?: string;
   bars: EarningsBar[];
   /** Label of the bar carrying the callout. */
   highlight: string;
   axisMax: number;
   axisStep: number;
-  listTitle: string;
-  rows: EarningsRow[];
-  /** Same period, one cycle back — only set where a month-over-month comparison is shown. */
+  /** Same period, one cycle back — only set where a comparison is shown. */
   previousTotal?: number;
   previousConsultations?: number;
 };
 
 /**
  * The doctor keeps the whole consultation fee: gross equals net and the
- * platform deduction is zero. That is a commercial fact, not a placeholder —
- * `platformDeduction` stays in the model so the breakdown can show the ₹0
- * explicitly rather than hiding the line.
+ * platform deduction is zero. That is a commercial fact, not a placeholder.
  */
 export const platformDeduction = 0;
-
-/** Manual, so the payout carries a state rather than a guaranteed date. */
-export const nextPayout = {
-  amount: 18450,
-  expectedLabel: 'Expected 20 May',
-  state: 'Processing' as const,
-  note: 'Payouts are processed manually by CoraCure.',
-};
 
 export type PayoutState = 'Pending' | 'Processed' | 'Paid';
 
@@ -453,266 +477,118 @@ export type PayoutRecord = {
   dateLabel: string;
   forLabel: string;
   amount: number;
+  consultations: number;
   state: PayoutState;
+  reference: string;
 };
 
-/** Most recent first — the pending one at the top mirrors `nextPayout`. */
-export const payoutHistory: PayoutRecord[] = [
-  { id: 'p1', dateLabel: '05 May 2024', forLabel: 'Payout for Apr 2024', amount: 124800, state: 'Paid' },
-  { id: 'p2', dateLabel: '05 Apr 2024', forLabel: 'Payout for Mar 2024', amount: 110400, state: 'Processed' },
-  { id: 'p3', dateLabel: '05 Mar 2024', forLabel: 'Payout for Feb 2024', amount: 98600, state: 'Paid' },
-];
+const paidConsultations = () =>
+  appointments.filter((a) => a.state === 'completed' && a.payment === 'paid');
 
-const dailyRows: EarningsRow[] = [
-  { id: 'e1', initials: 'RS', name: 'Rahul Sharma', mode: 'Video', dayLabel: 'Today', time: '09:00 AM', amount: 699, state: 'Confirmed' },
-  { id: 'e2', initials: 'AP', name: 'Anita Patel', mode: 'Audio', dayLabel: 'Today', time: '10:30 AM', amount: 699, state: 'Confirmed' },
-  { id: 'e3', initials: 'SK', name: 'Sandeep Kumar', mode: 'In-person', dayLabel: 'Today', time: '12:00 PM', amount: 699, state: 'Confirmed' },
-  { id: 'e4', initials: 'NP', name: 'Neha Pillai', mode: 'Video', dayLabel: 'Today', time: '02:15 PM', amount: 699, state: 'Processing' },
-];
-
-export const earningsPeriods: Record<EarningsPeriodKey, EarningsPeriod> = {
-  daily: {
-    key: 'daily', tab: 'Daily', rangeLabel: 'Today, 15 May',
-    totalLabel: "Today's earnings", total: 8450, consultations: 12,
-    paid: 5660, processing: 2790,
-    chartTitle: 'Earnings by time', chartScope: 'Today',
-    bars: [
-      { label: '8 AM', value: 620 },
-      { label: '10 AM', value: 1580 },
-      { label: '12 PM', value: 2097 },
-      { label: '2 PM', value: 1180 },
-      { label: '4 PM', value: 690 },
-      { label: '6 PM', value: 1420 },
-    ],
-    highlight: '12 PM', axisMax: 3000, axisStep: 1000,
-    listTitle: "Today's consultations", rows: dailyRows,
-  },
-  weekly: {
-    key: 'weekly', tab: 'Weekly', rangeLabel: '13–19 May',
-    totalLabel: "This week's earnings", total: 18450, consultations: 27,
-    paid: 11470, processing: 6980,
-    chartTitle: 'Daily earnings', chartScope: '13–19 May',
-    bars: [
-      { label: 'Mon', value: 3050 },
-      { label: 'Tue', value: 2680 },
-      { label: 'Wed', value: 4195 },
-      { label: 'Thu', value: 3140 },
-      { label: 'Fri', value: 2040 },
-      { label: 'Sat', value: 3420 },
-      { label: 'Sun', value: 2680 },
-    ],
-    highlight: 'Wed', axisMax: 8000, axisStep: 2000,
-    listTitle: 'Recent consultations',
-    rows: [
-      dailyRows[0],
-      dailyRows[1],
-      { ...dailyRows[2], id: 'e3w', dayLabel: 'Tue' },
-      { ...dailyRows[3], id: 'e4w', dayLabel: 'Mon', time: '04:15 PM', state: 'Confirmed' },
-    ],
-  },
-  monthly: {
-    key: 'monthly', tab: 'Monthly', rangeLabel: 'May 2024',
-    totalLabel: "This month's earnings", total: 42120, consultations: 61,
-    paid: 23670, processing: 18450,
-    chartTitle: 'Weekly earnings',
-    bars: [
-      { label: 'W1', value: 7100 },
-      { label: 'W2', value: 10150 },
-      { label: 'W3', value: 12580 },
-      { label: 'W4', value: 8000 },
-    ],
-    highlight: 'W3', axisMax: 20000, axisStep: 5000,
-    listTitle: 'Recent earnings',
-    rows: [
-      dailyRows[0],
-      dailyRows[1],
-      { ...dailyRows[2], id: 'e3m', dayLabel: '15 May' },
-      { ...dailyRows[3], id: 'e4m', dayLabel: '14 May', time: '04:15 PM' },
-    ],
-    previousTotal: 35700,
-    previousConsultations: 52,
-  },
+/** Rounds an axis ceiling up to a readable step. */
+const axisFor = (max: number) => {
+  const step = max <= 1500 ? 500 : max <= 4000 ? 1000 : max <= 10000 ? 2500 : 5000;
+  return { axisStep: step, axisMax: Math.max(step, Math.ceil(max / step) * step) };
 };
+
+const earningsFor = (key: EarningsPeriodKey, fee: number): EarningsPeriod => {
+  const held = paidConsultations();
+  if (key === 'daily') {
+    const today = held.filter((a) => a.dayOffset === 0);
+    const slots = [8, 10, 12, 14, 16, 18];
+    const bars = slots.map((h) => ({
+      label: h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : `${h} AM`,
+      value: today.filter((a) => a.minutes >= h * 60 && a.minutes < (h + 2) * 60).length * fee,
+    }));
+    const peak = bars.reduce((m, b) => (b.value > m.value ? b : m), bars[0]);
+    return {
+      key,
+      tab: 'Daily',
+      rangeLabel: `Today, ${fmtDayMonth(TODAY)}`,
+      total: today.length * fee,
+      consultations: today.length,
+      bars,
+      highlight: peak.label,
+      ...axisFor(Math.max(...bars.map((b) => b.value))),
+    };
+  }
+  if (key === 'weekly') {
+    // Monday-start week containing today
+    const mondayOffset = -((TODAY.getDay() + 6) % 7);
+    const days = Array.from({ length: 7 }, (_, i) => mondayOffset + i);
+    const bars = days.map((off) => ({
+      label: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][days.indexOf(off)],
+      value: held.filter((a) => a.dayOffset === off).length * fee,
+    }));
+    const inWeek = held.filter((a) => a.dayOffset >= mondayOffset && a.dayOffset <= 0);
+    const prevWeek = held.filter((a) => a.dayOffset >= mondayOffset - 7 && a.dayOffset < mondayOffset);
+    const peak = bars.reduce((m, b) => (b.value > m.value ? b : m), bars[0]);
+    return {
+      key,
+      tab: 'Weekly',
+      rangeLabel: `${fmtDayMonth(dayOffset(mondayOffset))} – ${fmtDayMonth(dayOffset(mondayOffset + 6))}`,
+      total: inWeek.length * fee,
+      consultations: inWeek.length,
+      bars,
+      highlight: peak.label,
+      previousTotal: prevWeek.length * fee,
+      previousConsultations: prevWeek.length,
+      ...axisFor(Math.max(...bars.map((b) => b.value))),
+    };
+  }
+  // monthly: the current calendar month, split into weeks of seven days
+  const firstOffset = -(TODAY.getDate() - 1);
+  const inMonth = held.filter((a) => a.dayOffset >= firstOffset && a.dayOffset <= 0);
+  const bars = [0, 1, 2, 3, 4]
+    .map((w) => ({
+      label: `W${w + 1}`,
+      value:
+        held.filter((a) => a.dayOffset >= firstOffset + w * 7 && a.dayOffset < firstOffset + (w + 1) * 7 && a.dayOffset <= 0)
+          .length * fee,
+    }))
+    .filter((b, i) => i < 4 || b.value > 0);
+  const peak = bars.reduce((m, b) => (b.value > m.value ? b : m), bars[0]);
+  return {
+    key,
+    tab: 'Monthly',
+    rangeLabel: fmtMonthYear(TODAY),
+    total: inMonth.length * fee,
+    consultations: inMonth.length,
+    bars,
+    highlight: peak.label,
+    ...axisFor(Math.max(...bars.map((b) => b.value))),
+  };
+};
+
+export const earningsPeriodsFor = (fee: number): Record<EarningsPeriodKey, EarningsPeriod> => ({
+  daily: earningsFor('daily', fee),
+  weekly: earningsFor('weekly', fee),
+  monthly: earningsFor('monthly', fee),
+});
 
 /**
- * Dashboard summary. Derived, so the card and the Earnings screen cannot
- * drift apart.
+ * Monthly payouts, most recent first. Each settles the previous month's
+ * consultations on the 5th; the current month's earnings are still accruing.
  */
-export const earnings = {
-  today: earningsPeriods.daily.total,
-  week: earningsPeriods.weekly.total,
-};
+export const payoutHistory: PayoutRecord[] = Array.from({ length: 8 }, (_, i) => {
+  const settle = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 5);
+  const period = new Date(TODAY.getFullYear(), TODAY.getMonth() - i - 1, 1);
+  const consultations = [178, 164, 171, 152, 149, 158, 141, 136][i];
+  const settledThisMonth = settle.getTime() <= TODAY.getTime();
+  const state: PayoutState = i === 0 ? (settledThisMonth ? 'Processed' : 'Pending') : 'Paid';
+  return {
+    id: `p${i + 1}`,
+    dateLabel: fmtDate(settle),
+    forLabel: `Payout for ${fmtMonthYear(period)}`,
+    amount: consultations * 699,
+    consultations,
+    state,
+    reference: `PO-${settle.getFullYear()}${String(settle.getMonth() + 1).padStart(2, '0')}-${4100 + i}`,
+  };
+});
 
-/* ----------------------------- follow-up alerts ---------------------------- */
-
-/** Clinical urgency of a check-in response. Drives colour and grouping. */
-export type AlertSeverity = 'redFlag' | 'amber' | 'routine';
-/** Workflow state, shown as the three top tabs. */
-export type AlertBucket = 'needsReview' | 'monitoring' | 'resolved';
-
-export type FollowUpAlert = {
-  id: string;
-  name: string;
-  initials: string;
-  /** Which day of the seven-day check-in schedule this response came from. */
-  day: number;
-  ago: string;
-  severity: AlertSeverity;
-  /** Red flags surface in their own "Urgent" group above everything else. */
-  urgent: boolean;
-  title: string;
-  /** The patient's own words. Shown quoted, never paraphrased. */
-  response: string;
-  caseId: string;
-  pathway: string;
-  bucket: AlertBucket;
-  primaryAction: string;
-  secondaryAction: string;
-};
-
-export const followUpAlertList: FollowUpAlert[] = [
-  {
-    id: 'f1', name: 'Rahul Sharma', initials: 'RS', day: 3, ago: '10 min ago',
-    severity: 'redFlag', urgent: true, title: 'Feels unsafe',
-    response: 'I do not feel safe being alone tonight.',
-    caseId: 'CC-1284', pathway: 'Anxiety pathway', bucket: 'needsReview',
-    primaryAction: 'Review now', secondaryAction: 'Call patient',
-  },
-  {
-    id: 'f2', name: 'Meera Joshi', initials: 'MJ', day: 5, ago: '28 min ago',
-    severity: 'redFlag', urgent: true, title: 'Severe worsening reported',
-    response: 'My symptoms have become much worse since yesterday.',
-    caseId: 'CC-1276', pathway: 'Depression pathway', bucket: 'needsReview',
-    primaryAction: 'Review now', secondaryAction: 'View case',
-  },
-  {
-    id: 'f3', name: 'Anita Verma', initials: 'AV', day: 2, ago: '1 hr ago',
-    severity: 'amber', urgent: false, title: 'Medication side effects',
-    response: 'Feeling dizzy and nauseous after the morning dose.',
-    caseId: 'CC-1281', pathway: 'Medication follow-up', bucket: 'needsReview',
-    primaryAction: 'Review', secondaryAction: 'Message',
-  },
-  {
-    id: 'f4', name: 'Sameer Khan', initials: 'SK', day: 4, ago: '2 hrs ago',
-    severity: 'amber', urgent: false, title: 'Sleep worsening',
-    response: 'I slept less than three hours last night.',
-    caseId: 'CC-1279', pathway: 'Sleep pathway', bucket: 'needsReview',
-    primaryAction: 'Review', secondaryAction: 'View case',
-  },
-  {
-    id: 'f5', name: 'Neha Singh', initials: 'NS', day: 7, ago: '3 hrs ago',
-    severity: 'routine', urgent: false, title: 'New report uploaded',
-    response: 'I have uploaded the sleep diary you requested.',
-    caseId: 'CC-1268', pathway: 'Follow-up', bucket: 'needsReview',
-    primaryAction: 'Open report', secondaryAction: 'Reply',
-  },
-  {
-    id: 'f6', name: 'Kabir Shah', initials: 'KS', day: 6, ago: '5 hrs ago',
-    severity: 'amber', urgent: false, title: 'Mood dip continuing',
-    response: 'Still low most days, but no worse than last week.',
-    caseId: 'CC-1272', pathway: 'Depression pathway', bucket: 'monitoring',
-    primaryAction: 'Review', secondaryAction: 'View case',
-  },
-  {
-    id: 'f7', name: 'Riya Kapoor', initials: 'RK', day: 4, ago: '7 hrs ago',
-    severity: 'routine', urgent: false, title: 'Adherence confirmed',
-    response: 'Taking the medication exactly as prescribed.',
-    caseId: 'CC-1264', pathway: 'Medication follow-up', bucket: 'monitoring',
-    primaryAction: 'Review', secondaryAction: 'View case',
-  },
-  {
-    id: 'f8', name: 'Priya Singh', initials: 'PS', day: 2, ago: '9 hrs ago',
-    severity: 'routine', urgent: false, title: 'Appetite improving',
-    response: 'Eating better than I was at the start of the week.',
-    caseId: 'CC-1259', pathway: 'Anxiety pathway', bucket: 'monitoring',
-    primaryAction: 'Review', secondaryAction: 'View case',
-  },
-  {
-    id: 'f9', name: 'Rohit Desai', initials: 'RD', day: 7, ago: 'Yesterday',
-    severity: 'amber', urgent: false, title: 'Side effects settled',
-    response: 'The dizziness stopped after the dose was lowered.',
-    caseId: 'CC-1251', pathway: 'Medication follow-up', bucket: 'resolved',
-    primaryAction: 'View case', secondaryAction: 'Reopen',
-  },
-  {
-    id: 'f10', name: 'Kavita Nair', initials: 'KN', day: 7, ago: '2 days ago',
-    severity: 'routine', urgent: false, title: 'Check-in complete',
-    response: 'Feeling much steadier now, thank you.',
-    caseId: 'CC-1248', pathway: 'Sleep pathway', bucket: 'resolved',
-    primaryAction: 'View case', secondaryAction: 'Reopen',
-  },
-];
-
-/* --------------------------- pending clinical tasks ------------------------ */
-
-/** Where a task sits against its deadline. Drives the accent and the grouping. */
-/** What kind of unfinished work this is. Drives the chips and the accent. */
-export type TaskCategory = 'summary' | 'prescription' | 'note' | 'followUp';
-
-export const TASK_CATEGORY_LABEL: Record<TaskCategory, string> = {
-  summary: 'Summaries',
-  prescription: 'Prescriptions',
-  note: 'Notes',
-  followUp: 'Follow-ups',
-};
-
-export type ClinicalTask = {
-  id: string;
-  category: TaskCategory;
-  /** What the doctor still owes, named the same way for each category. */
-  title: string;
-  patient: string;
-  /** The clinical record the debt belongs to. */
-  caseId: string;
-  /** The consultation this came out of. Psychiatry-first, never general medicine. */
-  specialty: string;
-  /** How long it has been sitting. The default order runs longest first. */
-  pendingFor: string;
-  openedOn: string;
-};
-
-const TASK_TITLE: Record<TaskCategory, string> = {
-  summary: 'Pending Case Summary',
-  prescription: 'Prescription Draft',
-  note: 'Incomplete Notes',
-  followUp: 'Unread Follow-up Response',
-};
-
-const task = (
-  id: string,
-  category: TaskCategory,
-  patient: string,
-  caseId: string,
-  specialty: string,
-  pendingFor: string,
-  openedOn: string
-): ClinicalTask => ({ id, category, title: TASK_TITLE[category], patient, caseId, specialty, pendingFor, openedOn });
-
-/**
- * The worklist, oldest debt first. Eighteen items across four categories —
- * 6 summaries, 5 prescriptions, 4 notes and 3 follow-ups — so every count on
- * the screen is derived rather than authored twice.
- */
-export const clinicalTaskList: ClinicalTask[] = [
-  task('t1', 'summary', 'Rahul Sharma', 'CON-10482', 'Psychiatry Consultation', '14d 22h', '30 Apr'),
-  task('t2', 'prescription', 'Anita Patel', 'CON-10459', 'Psychiatry Consultation', '13d 18h', '1 May'),
-  task('t3', 'note', 'Sandeep Kumar', 'CON-10460', 'Counselling Session', '12d 20h', '2 May'),
-  task('t4', 'followUp', 'Neha Pillai', 'CON-10461', 'Psychology Session', '11d 15h', '3 May'),
-  task('t5', 'prescription', 'Arjun Kapoor', 'CON-10462', 'De-addiction Follow-up', '10d 16h', '4 May'),
-  task('t6', 'summary', 'Meera Joshi', 'CON-10463', 'Psychiatry Consultation', '9d 21h', '5 May'),
-  task('t7', 'note', 'Kabir Shah', 'CON-10464', 'Psychology Session', '8d 19h', '6 May'),
-  task('t8', 'summary', 'Sameer Khan', 'CON-10465', 'Counselling Session', '7d 23h', '7 May'),
-  task('t9', 'prescription', 'Divya Nair', 'CON-10466', 'Psychiatry Consultation', '6d 18h', '8 May'),
-  task('t10', 'followUp', 'Neha Singh', 'CON-10467', 'Psychology Session', '5d 20h', '9 May'),
-  task('t11', 'note', 'Rohit Verma', 'CON-10468', 'De-addiction Follow-up', '4d 17h', '10 May'),
-  task('t12', 'summary', 'Priya Menon', 'CON-10469', 'Psychiatry Consultation', '3d 22h', '11 May'),
-  task('t13', 'prescription', 'Imran Qureshi', 'CON-10470', 'Psychiatry Consultation', '2d 19h', '12 May'),
-  task('t14', 'summary', 'Ananya Rao', 'CON-10471', 'Counselling Session', '1d 21h', '13 May'),
-  task('t15', 'note', 'Vikram Desai', 'CON-10472', 'Psychology Session', '22h', '14 May'),
-  task('t16', 'prescription', 'Riya Kapoor', 'CON-10473', 'Psychiatry Consultation', '18h', '14 May'),
-  task('t17', 'followUp', 'Farhan Sheikh', 'CON-10474', 'De-addiction Follow-up', '9h', '15 May'),
-  task('t18', 'summary', 'Lakshmi Iyer', 'CON-10475', 'Psychology Session', '4h', '15 May'),
-];
+/** Manual payouts carry a state rather than a guaranteed date. */
+export const payoutNote = 'Payouts are processed manually by CoraCure on the 5th of each month.';
 
 /* -------------------------------- feedback -------------------------------- */
 
@@ -744,8 +620,7 @@ export type Review = {
   tags: ReviewTag[];
   /**
    * Surfaces the "Report concern" action. Reserved for reviews a doctor may
-   * reasonably contest — it is not shown on every review, because a low rating
-   * on its own is not grounds for a report.
+   * reasonably contest — a low rating on its own is not grounds for a report.
    */
   reportable?: boolean;
 };
@@ -753,8 +628,6 @@ export type Review = {
 export const feedback = {
   rating: 4.8,
   reviews: 126,
-  /** Month-on-month movement, shown as the insight row. */
-  ratingDelta: 0.2,
   /** Share of reviews at each star level; ordered 5 → 1. */
   distribution: [
     { stars: 5, percent: 82 },
@@ -763,13 +636,6 @@ export const feedback = {
     { stars: 2, percent: 1 },
     { stars: 1, percent: 0 },
   ],
-  /** Tag counts across all reviews — descriptive, never ranked or gamified. */
-  appreciation: [
-    { tag: 'Clear explanations' as ReviewTag, count: 94, icon: 'message' as const },
-    { tag: 'Listens carefully' as ReviewTag, count: 88, icon: 'heart' as const },
-    { tag: 'Helpful guidance' as ReviewTag, count: 76, icon: 'document' as const },
-    { tag: 'On time' as ReviewTag, count: 69, icon: 'clock' as const },
-  ],
 };
 
 export const reviews: Review[] = [
@@ -777,9 +643,9 @@ export const reviews: Review[] = [
     id: 'r1',
     label: 'Verified patient',
     stars: 5,
-    dateLabel: '14 May 2024',
+    dateLabel: fmtDate(dayOffset(-1)),
     mode: 'Video consultation',
-    body: 'Dr. Mehta listened patiently and explained the treatment plan in a very clear way.',
+    body: 'The doctor listened patiently and explained the treatment plan in a very clear way.',
     tags: ['Clear explanations', 'Listens carefully'],
   },
   {
@@ -787,7 +653,7 @@ export const reviews: Review[] = [
     initials: 'RS',
     label: 'Patient R.S.',
     stars: 5,
-    dateLabel: '12 May 2024',
+    dateLabel: fmtDate(dayOffset(-3)),
     mode: 'Follow-up',
     body: 'The follow-up was reassuring and all my questions were answered without rushing.',
     tags: ['Helpful guidance', 'On time'],
@@ -796,7 +662,7 @@ export const reviews: Review[] = [
     id: 'r3',
     label: 'Verified patient',
     stars: 4,
-    dateLabel: '9 May 2024',
+    dateLabel: fmtDate(dayOffset(-6)),
     mode: 'Audio consultation',
     body: 'Good consultation and practical advice. The call started a few minutes late.',
     tags: ['Helpful guidance'],
@@ -806,7 +672,7 @@ export const reviews: Review[] = [
     initials: 'AP',
     label: 'Patient A.P.',
     stars: 5,
-    dateLabel: '6 May 2024',
+    dateLabel: fmtDate(dayOffset(-9)),
     mode: 'Video consultation',
     body: 'Very professional and calm. I felt comfortable discussing my concerns.',
     tags: ['Listens carefully'],
@@ -815,7 +681,7 @@ export const reviews: Review[] = [
     id: 'r5',
     label: 'Verified patient',
     stars: 3,
-    dateLabel: '2 May 2024',
+    dateLabel: fmtDate(dayOffset(-13)),
     mode: 'Video consultation',
     body: 'Consultation was helpful, but I would have liked more time for questions.',
     tags: [],
@@ -823,43 +689,7 @@ export const reviews: Review[] = [
   },
 ];
 
-export const appointments: Appointment[] = [
-  { id: 'a1', time: '09:00 AM', initials: 'RS', name: 'Rahul Sharma', age: 32, gender: 'Male', mode: 'video', state: 'confirmed', payment: 'paid', concern: 'Anxiety, restlessness and difficulty sleeping', bucket: 'today' },
-  { id: 'a2', time: '10:30 AM', initials: 'AP', name: 'Anita Patel', age: 34, gender: 'Female', mode: 'audio', state: 'confirmed', payment: 'paid', concern: 'Medication side effects and daytime drowsiness', bucket: 'today' },
-  { id: 'a3', time: '12:00 PM', initials: 'SK', name: 'Sandeep Kumar', age: 40, gender: 'Male', mode: 'inPerson', state: 'completed', payment: 'paid', concern: 'Low mood and loss of interest', bucket: 'today' },
-  { id: 'a4', time: '02:15 PM', initials: 'NP', name: 'Neha Pillai', age: 28, gender: 'Female', mode: 'video', state: 'cancelled', payment: 'refunded', concern: 'Panic episodes with racing thoughts', bucket: 'today' },
-  { id: 'a5', time: '04:00 PM', initials: 'AK', name: 'Arjun Kapoor', age: 38, gender: 'Male', mode: 'inPerson', state: 'noShow', payment: 'notPaid', concern: 'Sleep disturbance and irritability', bucket: 'today' },
-  { id: 'a6', time: '05:30 PM', initials: 'PS', name: 'Priya Singh', age: 35, gender: 'Female', mode: 'audio', state: 'confirmed', payment: 'paid', concern: 'Low mood follow-up', bucket: 'today' },
-  { id: 'a7', time: '09:30 AM', initials: 'MV', name: 'Meera Verma', age: 36, gender: 'Female', mode: 'video', state: 'upcoming', payment: 'paid', concern: 'Anxiety review', bucket: 'upcoming' },
-  { id: 'a8', time: '11:00 AM', initials: 'RD', name: 'Rohit Desai', age: 49, gender: 'Male', mode: 'video', state: 'upcoming', payment: 'paid', concern: 'Medication review after dose change', bucket: 'upcoming' },
-  { id: 'a9', time: '03:00 PM', initials: 'KN', name: 'Kavita Nair', age: 57, gender: 'Female', mode: 'inPerson', state: 'completed', payment: 'paid', concern: 'Sleep and mood review', bucket: 'past' },
-];
-
-export const nextAppointment = {
-  /** The appointment this card stands for, so its CTAs can open the real one. */
-  appointmentId: 'a1',
-  initials: 'RS',
-  name: 'Rahul Sharma',
-  age: 32,
-  gender: 'Male' as const,
-  concern: 'Anxiety, restlessness and difficulty sleeping',
-  time: '10:00 AM',
-  dayLabel: 'Today',
-  payment: 'Paid',
-  mode: 'Video Call',
-  inMinutes: 15,
-};
-
-export const cases: PatientCase[] = [
-  { id: 'c1', appointmentId: 'a1', caseId: 'COR-12458', initials: 'RS', name: 'Rahul Sharma', dateLabel: '15 May · 09:00 AM', age: 32, gender: 'Male', concern: 'Anxiety, restlessness and difficulty sleeping', state: 'complete', docsDone: 3, docsTotal: 3, prescriptionFinalised: true, summarySubmitted: true },
-  { id: 'c2', appointmentId: 'a2', caseId: 'COR-12459', initials: 'AP', name: 'Anita Patel', dateLabel: '15 May · 10:30 AM', age: 34, gender: 'Female', concern: 'Medication side effects and daytime drowsiness', state: 'followUp', docsDone: 2, docsTotal: 3, prescriptionFinalised: true, summarySubmitted: false },
-  { id: 'c3', appointmentId: 'a3', caseId: 'COR-12460', initials: 'SK', name: 'Sandeep Kumar', dateLabel: '15 May · 12:00 PM', age: 40, gender: 'Male', concern: 'Low mood and loss of interest', state: 'complete', docsDone: 3, docsTotal: 3, prescriptionFinalised: true, summarySubmitted: true },
-  { id: 'c4', appointmentId: 'a4', caseId: 'COR-12461', initials: 'NP', name: 'Neha Pillai', dateLabel: '15 May · 02:15 PM', age: 28, gender: 'Female', concern: 'Panic episodes with racing thoughts', state: 'pending', docsDone: 1, docsTotal: 3, prescriptionFinalised: false, summarySubmitted: false },
-  { id: 'c5', appointmentId: 'a5', caseId: 'COR-12462', initials: 'AK', name: 'Arjun Kapoor', dateLabel: '15 May · 04:00 PM', age: 38, gender: 'Male', concern: 'Sleep disturbance and irritability', state: 'noShow', docsDone: 0, docsTotal: 3, prescriptionFinalised: false, summarySubmitted: false },
-  { id: 'c6', appointmentId: 'a6', caseId: 'COR-12463', initials: 'PS', name: 'Priya Singh', dateLabel: '15 May · 05:30 PM', age: 35, gender: 'Female', concern: 'Low mood follow-up', state: 'complete', docsDone: 3, docsTotal: 3, prescriptionFinalised: true, summarySubmitted: true },
-];
-
-export const TOTAL_CASES = 52;
+/* ------------------------------- schedule --------------------------------- */
 
 export const initialSchedule: DaySchedule[] = [
   { day: 'Monday', short: 'Mon', enabled: true, ranges: [{ from: '09:00 AM', to: '01:00 PM' }, { from: '04:00 PM', to: '07:00 PM' }], modes: ['video', 'audio'] },
@@ -871,37 +701,43 @@ export const initialSchedule: DaySchedule[] = [
   { day: 'Sunday', short: 'Sun', enabled: false, ranges: [], modes: ['video'] },
 ];
 
-export const scheduleExceptions: ScheduleException[] = [
-  { id: 'e1', dateLabel: '24 May', note: 'Custom hours' },
-  { id: 'e2', dateLabel: '28 May', note: 'Custom hours' },
-  { id: 'e3', dateLabel: '30 May', note: 'Custom hours' },
+export const initialOverrides: ScheduleOverride[] = [
+  { id: 'o1', date: toISODate(dayOffset(9)), from: '09:00 AM', to: '02:00 PM' },
+  { id: 'o2', date: toISODate(dayOffset(13)), from: '04:00 PM', to: '08:00 PM' },
+  { id: 'o3', date: toISODate(dayOffset(15)), from: '09:00 AM', to: '01:00 PM' },
 ];
 
-export const leaves: Leave[] = [
-  { id: 'l1', dateLabel: '5 Jun', reason: 'Personal leave' },
-  { id: 'l2', dateLabel: '15 Jun', reason: 'Personal leave' },
+export const initialLeave: Leave[] = [
+  { id: 'l1', date: toISODate(dayOffset(21)), reason: 'Personal leave' },
+  { id: 'l2', date: toISODate(dayOffset(31)), reason: 'CME workshop' },
 ];
+
+/** "Fri, 24 May" for an ISO date. */
+export const scheduleDateLabel = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return fmtWeekday(new Date(y, m - 1, d));
+};
 
 /* ------------------------- verification fixtures -------------------------- */
 
 export const pendingItems: VerificationItem[] = [
   { key: 'reg', icon: 'idCard', title: 'Medical registration', body: 'Your medical registration is under review.', state: 'underReview' },
-  { key: 'id', icon: 'shieldCheck', title: 'Proof of identity', body: 'Your identity has been verified.', state: 'verified' },
-  { key: 'addr', icon: 'inPerson', title: 'Practice address', body: 'Your practice address is under review.', state: 'underReview' },
-  { key: 'bank', icon: 'wallet', title: 'Bank details', body: 'Your payout account is under review.', state: 'underReview' },
+  { key: 'id', icon: 'shieldCheck', title: 'Proof of identity', body: 'Your identity document is under review.', state: 'underReview' },
+  { key: 'qual', icon: 'document', title: 'Qualifications', body: 'Your degree certificates are under review.', state: 'underReview' },
+  { key: 'exp', icon: 'inPerson', title: 'Experience', body: 'Your employment proof is under review.', state: 'underReview' },
 ];
 
 export const rejectedItems: VerificationItem[] = [
   { key: 'reg', icon: 'idCard', title: 'Medical registration', body: 'Upload a clear and valid registration certificate', state: 'issue', issueLabel: 'Document unclear' },
   { key: 'id', icon: 'shieldCheck', title: 'Proof of identity', body: 'Ensure your name matches your government-issued ID', state: 'issue', issueLabel: 'Name mismatch' },
-  { key: 'addr', icon: 'inPerson', title: 'Practice address', body: 'Verify your clinic or hospital address', state: 'issue', issueLabel: 'Not verified' },
+  { key: 'qual', icon: 'document', title: 'Qualifications', body: 'Your degree certificates have been verified', state: 'verified' },
 ];
 
 export const approvedItems: VerificationItem[] = [
   { key: 'reg', icon: 'idCard', title: 'Medical registration', body: 'Your medical registration has been verified', state: 'verified' },
   { key: 'id', icon: 'shieldCheck', title: 'Proof of identity', body: 'Your government-issued ID has been verified', state: 'verified' },
-  { key: 'profile', icon: 'document', title: 'Professional profile', body: 'Your professional details are verified', state: 'verified' },
-  { key: 'practice', icon: 'inPerson', title: 'Practice details', body: 'Your clinic or hospital details are verified', state: 'verified' },
+  { key: 'qual', icon: 'document', title: 'Qualifications', body: 'Your degree certificates have been verified', state: 'verified' },
+  { key: 'exp', icon: 'inPerson', title: 'Experience', body: 'Your employment history has been verified', state: 'verified' },
 ];
 
 export const modeLabel: Record<ConsultMode, string> = {
@@ -929,6 +765,7 @@ export const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
  * consultation does not open until payment and consent clear.
  */
 export type InstantRequest = {
+  patientId: string;
   initials: string;
   name: string;
   age: number;
@@ -942,17 +779,20 @@ export type InstantRequest = {
   respondWithin: number;
 };
 
+const requester = patientById('PT-10480')!;
+
 export const instantRequest: InstantRequest = {
-  initials: 'RS',
-  name: 'Rahul Sharma',
-  age: 32,
-  gender: 'Male',
+  patientId: requester.id,
+  initials: requester.initials,
+  name: requester.name,
+  age: requester.age,
+  gender: requester.gender,
   speciality: 'Psychiatry',
-  concern: 'Anxiety and difficulty sleeping',
+  concern: 'Sudden anxiety with a racing heart since this morning',
   mode: 'video',
   languages: 'English / Hindi',
   approxMinutes: 30,
-  respondWithin: 24,
+  respondWithin: 30,
 };
 
 /** The order is fixed: consultation opens only after payment and consent. */
@@ -961,3 +801,6 @@ export const INSTANT_STEPS = [
   'Patient completes payment',
   'Consent verified and consultation opens',
 ];
+
+/** Today's date in the long form used on documents. */
+export const todayLabel = fmtDate(TODAY);
