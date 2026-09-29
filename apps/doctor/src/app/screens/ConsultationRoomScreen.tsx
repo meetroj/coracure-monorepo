@@ -132,6 +132,7 @@ const InCallChat = ({ visible, threadId, onClose }: { visible: boolean; threadId
             style={s.chatInput}
             multiline
             accessibilityLabel="Message"
+            underlineColorAndroid="transparent"
           />
           <Pressable
             testID="room-chat-send"

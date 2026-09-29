@@ -22,8 +22,9 @@ import { spacing } from '@coracure/brand';
  */
 const BG = {
   splash: require('../assets/bg/splash (2).png'),
-  auth: require('../assets/bg/auth (5).png'),
-  otp: require('../assets/bg/otp.png'),
+  /* Regraded from `auth (5).png` / `otp.png`: the originals are white on white. */
+  auth: require('../assets/bg/auth.png'),
+  otp: require('../assets/bg/otp-visible.png'),
   appointments: require('../assets/bg/appointments.png'),
   appointmentDetails: require('../assets/bg/appoinment-details.png'),
   cancel: require('../assets/bg/cancel.png'),
@@ -39,12 +40,15 @@ export const ScreenBackground = ({
   name,
   scrolls = false,
   height = 320,
+  offsetY = 0,
 }: {
   name: ScreenBgName;
   /** Mount inside the scroll content so the art scrolls away with the header. */
   scrolls?: boolean;
   /** How far down the art reaches when scrolling. Ignored when pinned. */
   height?: number;
+  /** Shift the pinned art up (negative) or down, when its motifs sit too low. */
+  offsetY?: number;
 }) => {
   if (scrolls) {
     return (
@@ -54,14 +58,24 @@ export const ScreenBackground = ({
     );
   }
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Image source={BG[name]} style={s.art} resizeMode="cover" />
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, s.clip]}>
+      {/*
+        The offset goes on a wrapper View, never on the Image. Shifting BOTH
+        edges by the same amount keeps the art's size so it actually travels
+        (moving `top` alone only made the box taller and `cover` rescaled in
+        place) — but an Image sized by insets alone does not paint under
+        Fabric, so the Image itself keeps the explicit 100%/100% of `s.art`.
+      */}
+      <View style={[StyleSheet.absoluteFill, { top: offsetY, bottom: -offsetY }]}>
+        <Image source={BG[name]} style={s.art} resizeMode="cover" />
+      </View>
     </View>
   );
 };
 
 const s = StyleSheet.create({
   art: { width: '100%', height: '100%' },
+  clip: { overflow: 'hidden', backgroundColor: 'rgba(255,0,0,0.25)' }, // TEMP probe
   /**
    * Absolute *within the scroll content*, so it moves with it. The negative
    * insets cancel the content's horizontal padding so the art still bleeds to

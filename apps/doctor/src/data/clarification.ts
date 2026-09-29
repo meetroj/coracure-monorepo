@@ -80,6 +80,63 @@ export const GUIDANCE_AREAS = [
   'Referral advice',
 ];
 
+/**
+ * The expert panel a clarification can be routed to.
+ *
+ * Stands in for `GET /experts` until it is wired. The doctor picks the
+ * reviewer explicitly rather than the case going to an unnamed pool, so the
+ * referral says who is being asked.
+ */
+export type ExpertReviewer = {
+  id: string;
+  name: string;
+  speciality: string;
+  qualification: string;
+  years: number;
+  /** Typical turnaround, shown so the sender can set expectations. */
+  respondsIn: string;
+  available: boolean;
+};
+
+export const EXPERT_PANEL: ExpertReviewer[] = [
+  {
+    id: 'exp-kulkarni',
+    name: 'Dr. Anita Kulkarni',
+    speciality: 'Cardiology',
+    qualification: 'MD, DM (Cardiology)',
+    years: 18,
+    respondsIn: 'Usually within 4 hours',
+    available: true,
+  },
+  {
+    id: 'exp-rao',
+    name: 'Dr. Vikram Rao',
+    speciality: 'Orthopaedics',
+    qualification: 'MS (Orthopaedics)',
+    years: 15,
+    respondsIn: 'Usually within 6 hours',
+    available: true,
+  },
+  {
+    id: 'exp-fernandes',
+    name: 'Dr. Leena Fernandes',
+    speciality: 'Endocrinology',
+    qualification: 'MD, DM (Endocrinology)',
+    years: 12,
+    respondsIn: 'Usually within 8 hours',
+    available: true,
+  },
+  {
+    id: 'exp-banerjee',
+    name: 'Dr. Sandip Banerjee',
+    speciality: 'Neurology',
+    qualification: 'MD, DM (Neurology)',
+    years: 20,
+    respondsIn: 'Usually within 12 hours',
+    available: false,
+  },
+];
+
 export type ClarificationFile = { id: string; name: string; size: string };
 
 export type ClarificationDraft = {
@@ -100,6 +157,9 @@ export type ClarificationDraft = {
   guidanceArea: string;
   urgency: Urgency;
   speciality: string;
+  /** Which expert the case is addressed to. Empty until one is picked. */
+  expertId: string;
+  expertName: string;
   files: ClarificationFile[];
 };
 

@@ -66,7 +66,7 @@ export const AIAssistantScreen = () => {
 
   /** The one way out of this screen: a service, never an answer. */
   const goToService = (text: string) =>
-    navigation.navigate('FindDoctor', { serviceName: serviceFor(text) });
+    navigation.navigate('SelectSlot', { serviceName: serviceFor(text) });
 
   const recommended = DOCTORS[0];
 
@@ -76,16 +76,10 @@ export const AIAssistantScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Screen contentStyle={s.content}>
-        <FlowHeader
-          action="clock"
-          dot={false}
-          actionLabel="Past conversations"
-          onAction={() => navigation.navigate('Search')}
-        />
+        <FlowHeader />
 
         <View style={s.titleRow}>
           <Text style={s.title} accessibilityRole="header">AI Assistant</Text>
-          <Icon name="sparkles" size={24} color={colors.surfie} />
         </View>
         <Text style={s.lede}>Your smart health guide</Text>
 
@@ -106,6 +100,7 @@ export const AIAssistantScreen = () => {
               placeholderTextColor={colors.inkFaint}
               multiline
               accessibilityLabel="Describe your symptoms"
+              underlineColorAndroid="transparent"
             />
 
             <View style={s.inputActions}>
@@ -177,7 +172,7 @@ export const AIAssistantScreen = () => {
             <Pressable
               key={p.label}
               style={s.proChip}
-              onPress={() => navigation.navigate('FindDoctor', { serviceName: p.label })}
+              onPress={() => navigation.navigate('SelectSlot', { serviceName: p.label })}
               accessibilityRole="button"
               accessibilityLabel={p.label}
             >
@@ -197,14 +192,11 @@ export const AIAssistantScreen = () => {
             accessibilityRole="button"
             accessibilityLabel={`View ${recommended.name}`}
           >
-            <View>
-              <Image source={recommended.img} style={s.recPhoto} resizeMode="cover" />
-              <View style={s.onlineDot} />
-            </View>
+            <Image source={recommended.img} style={s.recPhoto} resizeMode="cover" />
 
             <View style={s.recText}>
+              <Text style={s.recName}>{recommended.name}</Text>
               <View style={s.recNameRow}>
-                <Text style={s.recName} numberOfLines={1}>{recommended.name}</Text>
                 <Icon name="checkCircle" size={13} color={colors.surfie} />
                 <Text style={s.recMatch}>{recommended.matchPercent}% Match</Text>
               </View>
@@ -503,17 +495,6 @@ const s = StyleSheet.create({
     borderRadius: 38,
     backgroundColor: colors.white,
   },
-  onlineDot: {
-    position: 'absolute',
-    right: 2,
-    bottom: 4,
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: colors.surfie,
-    borderWidth: 2,
-    borderColor: colors.white,
-  },
   recText: { flex: 1, gap: 1 },
   recNameRow: {
     flexDirection: 'row',
@@ -525,7 +506,6 @@ const s = StyleSheet.create({
     fontSize: typography.size.lg,
     fontWeight: '700',
     color: colors.ink,
-    flexShrink: 1,
   },
   recMatch: {
     fontFamily: typography.body.family,
@@ -698,6 +678,8 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexWrap: 'wrap',
+    rowGap: 6,
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
@@ -716,7 +698,7 @@ const s = StyleSheet.create({
   },
   urgentLabel: {
     fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
+    fontSize: typography.size.xs,
     color: colors.ink,
   },
   urgentDigits: {

@@ -205,6 +205,7 @@ export const HelpSupportScreen = ({
           style={s.searchInput}
           returnKeyType="search"
           accessibilityLabel="Search FAQs"
+          underlineColorAndroid="transparent"
         />
       </View>
 

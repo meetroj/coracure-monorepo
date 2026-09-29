@@ -54,7 +54,7 @@ export type AvailabilityState = {
 };
 
 export type AppState = {
-  session: { stage: 'login' | 'onboarding' | 'shell'; mobile: string };
+  session: { stage: 'intro' | 'login' | 'onboarding' | 'shell'; mobile: string };
   onboardingCompleted: boolean;
   /** What the doctor submitted for verification, when they did it this session. */
   submission?: RegistrationDraft;
@@ -82,7 +82,7 @@ export type AppState = {
 };
 
 export const initialState = (): AppState => ({
-  session: { stage: 'login', mobile: '' },
+  session: { stage: 'intro', mobile: '' },
   onboardingCompleted: false,
   verification: { status: 'notSubmitted', acknowledged: false },
   profile: { fee: doctor.consultationFee, changeRequests: [] },

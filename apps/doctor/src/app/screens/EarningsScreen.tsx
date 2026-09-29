@@ -310,7 +310,7 @@ const s = StyleSheet.create({
   chartBar: { width: 22, backgroundColor: colors.paris, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
   barOn: { backgroundColor: colors.surfie },
   barDot: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: colors.white, borderWidth: 2, borderColor: colors.surfie },
-  barTooltip: { position: 'absolute', backgroundColor: colors.ink, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 5 },
+  barTooltip: { position: 'absolute', backgroundColor: colors.surfie, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 5 },
   barTooltipText: { ...typeStyles.status, color: colors.white },
   xAxis: { flexDirection: 'row', marginTop: spacing.sm, paddingLeft: 34 },
   xLabel: { ...typeStyles.caption, fontSize: 11, flex: 1, textAlign: 'center', color: colors.inkMuted },

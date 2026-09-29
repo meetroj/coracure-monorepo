@@ -2,6 +2,7 @@ import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import DoctorLoginScreen from './screens/DoctorLoginScreen';
+import IntroScreen from './screens/IntroScreen';
 import OnboardingFlow from './screens/onboarding/OnboardingFlow';
 import AppShell from './AppShell';
 import ErrorBoundary from './ErrorBoundary';
@@ -9,10 +10,13 @@ import { PortalProvider } from '../components/Portal';
 import { ToastHost } from '../components/Toast';
 import { KeyboardDoneBar } from '../components/KeyboardDoneBar';
 import { useStore } from '../state/store';
-import { leaveOnboarding, signIn, submitRegistration } from '../state/actions';
+import { leaveIntro, leaveOnboarding, signIn, submitRegistration } from '../state/actions';
 
 /**
  * Doctor app root.
+ *
+ * A three-slide intro runs once before sign-in, then the stage moves to
+ * `login` for the rest of the session.
  *
  * Doctors are created by an administrator, so there is no self-registration.
  * Sign-in is a mobile number and a one-time code. A doctor whose details are
@@ -38,6 +42,7 @@ export const App = () => {
           {stage === 'login' && <DoctorLoginScreen onAuthenticated={signIn} />}
           {stage === 'onboarding' && <OnboardingFlow mobile={mobile} onSubmitted={submitRegistration} onExit={leaveOnboarding} />}
           {stage === 'shell' && <AppShell />}
+          {stage === 'intro' && <IntroScreen onDone={leaveIntro} />}
           <ToastHost />
           <KeyboardDoneBar />
         </PortalProvider>

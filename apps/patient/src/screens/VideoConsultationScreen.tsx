@@ -554,6 +554,7 @@ export const VideoConsultationScreen = () => {
                 placeholderTextColor={colors.inkFaint}
                 style={s.chatTextInput}
                 onSubmitEditing={handleSendMessage}
+                underlineColorAndroid="transparent"
               />
               <Pressable
                 style={[s.chatSendBtn, !chatInput.trim() && s.chatSendBtnDisabled]}

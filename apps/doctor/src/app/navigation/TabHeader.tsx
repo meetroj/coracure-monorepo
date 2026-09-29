@@ -2,7 +2,7 @@ import React, { useContext, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { NavigationContext } from '@react-navigation/native';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
+import { BrandLockup } from '../../components/BrandLockup';
 import { spacing } from '../../theme/brand';
 import { IconButton } from '../../components/ui';
 import { ActionSheet } from '../../components/BottomSheet';
@@ -38,7 +38,7 @@ export const TabHeader = () => {
         accessibilityLabel="CoraCure"
         style={s.logo}
       >
-        <LogoWide width={124} height={31} />
+        <BrandLockup height={31} />
       </Pressable>
 
       {navigation && (

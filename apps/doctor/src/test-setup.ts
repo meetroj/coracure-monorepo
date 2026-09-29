@@ -32,7 +32,8 @@ beforeEach(() => {
   const { tapGuard } = require('./components/ui');
   const { appointments, reviews } = require('./data/doctor');
 
-  resetStore();
+  // The app opens on the intro carousel; specs start from sign-in.
+  resetStore({ session: { stage: 'login', mobile: '' } });
   setLatency(0);
   clearFailures();
   __resetResourceCache();

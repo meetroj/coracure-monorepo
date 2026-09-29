@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
+import { BrandLockup } from '../../components/BrandLockup';
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Screen } from '../../components/ui';
@@ -40,7 +40,7 @@ export const PrescriptionPreviewScreen = ({ appointment, onBack }: { appointment
 
       <View style={s.page}>
         <View style={s.pageHead}>
-          <LogoWide width={110} height={28} />
+          <BrandLockup height={28} accessibilityLabel="Coracure" />
           <View style={s.pageDoctor}>
             <Text style={s.docName}>{doctor.name}</Text>
             <Text style={s.docMeta}>{doctor.qualification}</Text>

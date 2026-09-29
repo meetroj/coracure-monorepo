@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing, typography, radius } from '@coracure/brand';
 import { PillButton, Icon } from '@coracure/ui';
@@ -16,7 +17,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Consent'>;
 
 export const ConsentScreen = () => {
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const { loginAsDemo, refreshProfile } = useAuth();
+  const [footerH, setFooterH] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -46,24 +49,24 @@ export const ConsentScreen = () => {
     <View style={s.container}>
       <ScreenBackground name="auth" />
 
+      {/* Back arrow and brand stay pinned; only the consent text scrolls. */}
+      <View style={s.header}>
+        <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={12}>
+          <Icon name="arrowLeft" size={20} color={colors.ink} />
+        </Pressable>
+        <View style={s.brandRow}>
+          <LogoMark width={32} height={32} />
+          <Text style={s.brandName}>CoraCure</Text>
+        </View>
+        <View style={s.headerSpacer} />
+      </View>
+
       <ScrollView
         style={s.scrollView}
-        contentContainerStyle={s.scrollContent}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: footerH + spacing.md }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Top Header with Back Arrow & Brand */}
-        <View style={s.header}>
-          <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={12}>
-            <Icon name="arrowLeft" size={20} color={colors.ink} />
-          </Pressable>
-          <View style={s.brandRow}>
-            <LogoMark width={32} height={32} />
-            <Text style={s.brandName}>CoraCure</Text>
-          </View>
-          <View style={s.headerSpacer} />
-        </View>
-
         {/* Title Section */}
         <View style={s.titleSection}>
           <Text style={s.title}>Teleconsultation</Text>
@@ -147,18 +150,22 @@ export const ConsentScreen = () => {
           </View>
         </Pressable>
 
-        {/* Action Button & Decline */}
-        <View style={s.footer}>
-          <PillButton
-            label="Accept & Continue"
-            onPress={handleAccept}
-            loading={loading}
-          />
-          <Pressable onPress={handleDecline} style={s.declineBtn}>
-            <Text style={s.declineText}>Decline</Text>
-          </Pressable>
-        </View>
       </ScrollView>
+
+      {/* Pinned: the decision stays reachable however long the consent runs. */}
+      <View
+        style={[s.footer, { paddingBottom: insets.bottom || spacing.sm }]}
+        onLayout={(e) => setFooterH(e.nativeEvent.layout.height)}
+      >
+        <PillButton
+          label="Accept & Continue"
+          onPress={handleAccept}
+          loading={loading}
+        />
+        <Pressable onPress={handleDecline} style={s.declineBtn}>
+          <Text style={s.declineText}>Decline</Text>
+        </Pressable>
+      </View>
     </View>
   );
 };
@@ -174,15 +181,15 @@ const s = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    /* Clears the artwork sitting behind the header. */
-    paddingTop: spacing.xxl,
-    paddingBottom: spacing.xxl,
+    /* Clears the artwork sitting behind the pinned header. */
+    paddingTop: 120,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
   backBtn: {
     width: 40,
@@ -335,8 +342,12 @@ const s = StyleSheet.create({
     color: colors.inkFaint,
   },
   footer: {
-    gap: spacing.md,
+    gap: spacing.xs,
     alignItems: 'stretch',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    /* Opaque here painted a grey slab over the page artwork. */
+    backgroundColor: 'transparent',
   },
   declineBtn: {
     alignItems: 'center',

@@ -251,6 +251,7 @@ export const HelpSupportScreen = () => {
               placeholderTextColor={colors.inkFaint}
               value={complaintText}
               onChangeText={setComplaintText}
+              underlineColorAndroid="transparent"
             />
 
             <View style={s.modalActions}>

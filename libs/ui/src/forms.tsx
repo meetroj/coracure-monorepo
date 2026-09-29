@@ -104,6 +104,7 @@ export const TextField = ({
             setFocused(false);
             onBlur?.(e);
           }}
+          underlineColorAndroid="transparent"
         />
         {right}
       </View>
@@ -193,6 +194,7 @@ export const PhoneField = ({
           accessibilityHint={error ?? undefined}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          underlineColorAndroid="transparent"
         />
       </View>
     </Field>
@@ -326,6 +328,7 @@ export const OTPInput = ({
             textContentType={i === 0 ? 'oneTimeCode' : 'none'}
             autoComplete={i === 0 ? (Platform.OS === 'android' ? 'sms-otp' : 'one-time-code') : 'off'}
             accessibilityLabel={`Digit ${i + 1} of ${length}`}
+            underlineColorAndroid="transparent"
           />
         ))}
       </View>
@@ -467,6 +470,7 @@ export const DateOfBirthField = ({
           accessibilityHint={error ?? 'Enter as two digits day, two digits month, four digits year'}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          underlineColorAndroid="transparent"
         />
         {age !== null && (
           <View style={s.ageBadge}>

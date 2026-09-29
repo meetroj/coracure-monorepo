@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Image, ScrollView } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,7 +8,7 @@ import { Screen, Icon } from '@coracure/ui';
 import FlowHeader from '../components/FlowHeader';
 import GradientButton from '../components/GradientButton';
 import ScreenBackground from '../components/ScreenBackground';
-import { findDoctor } from '../data/doctors';
+import { findDoctor, poolFor } from '../data/doctors';
 import { upcomingDates } from '../utils/appointmentTime';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
@@ -25,15 +25,53 @@ const SLOTS = [
 /** The hold on a chosen slot, in seconds. The backend expires it server-side. */
 const HOLD_SECONDS = 5 * 60;
 
+/** How long each doctor in the pool stays on screen before the strip advances. */
+const CAROUSEL_MS = 2800;
+
 export const SelectSlotScreen = () => {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
-  const doctor = findDoctor(route.params?.doctorId);
+  /**
+   * Nobody is assigned on this screen. Coming from a service tile the strip is
+   * the pool that answers it, shown so the patient knows who is on call — the
+   * backend picks one when the payment clears. Coming from a doctor card there
+   * is a doctorId and the strip collapses to that one doctor.
+   */
+  const pickedId = route.params?.doctorId;
+  const pool = useMemo(
+    () => (pickedId ? [findDoctor(pickedId)] : poolFor(route.params?.serviceName)),
+    [pickedId, route.params?.serviceName],
+  );
+  /** Fee and duration belong to the service, not to whoever ends up assigned. */
+  const service = pool[0];
 
   const dates = useMemo(() => upcomingDates(7), []);
   const [dateIdx, setDateIdx] = useState(0);
   const [slot, setSlot] = useState<string | null>(null);
   const [heldFor, setHeldFor] = useState(HOLD_SECONDS);
+
+  /**
+   * The pool strip scrolls itself so the patient sees who is on call without
+   * swiping, and a drag takes over permanently — an auto-scroll that fights the
+   * finger is worse than none. Width comes from onLayout because the app is
+   * width-capped on tablets, so the window is not the strip.
+   */
+  const stripRef = useRef<ScrollView>(null);
+  const [stripWidth, setStripWidth] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    if (!autoScroll || pool.length < 2 || !stripWidth) return;
+    const id = setInterval(() => {
+      setShown((i) => {
+        const next = (i + 1) % pool.length;
+        stripRef.current?.scrollTo({ x: next * stripWidth, animated: true });
+        return next;
+      });
+    }, CAROUSEL_MS);
+    return () => clearInterval(id);
+  }, [autoScroll, pool.length, stripWidth]);
 
   // The countdown only runs once a slot is actually held.
   useEffect(() => {
@@ -56,21 +94,69 @@ export const SelectSlotScreen = () => {
       <Text style={s.title} accessibilityRole="header">Select a Slot</Text>
       <Text style={s.lede}>Choose a convenient date and time for your appointment.</Text>
 
-      {/* Who the slot is with */}
-      <View style={s.doctorCard}>
-        <View>
-          <Image source={doctor.img} style={s.doctorPhoto} resizeMode="cover" />
-          <View style={s.onlineDot} />
-        </View>
-        <View style={s.doctorText}>
-          <Text style={s.doctorName}>{doctor.name}</Text>
-          <Text style={s.doctorSpecialty}>{doctor.specialty}</Text>
-          <View style={s.ratingRow}>
-            <Icon name="star" size={15} color={colors.surfie} filled />
-            <Text style={s.ratingText}>{doctor.rating} ({doctor.reviews})</Text>
-          </View>
-        </View>
+      {/* The pool on call. Not a picker — the assignment happens after payment. */}
+      <View style={s.poolHead}>
+        <Icon name="shieldCheck" size={14} color={colors.surfie} />
+        <Text style={s.poolHeadText}>
+          {pool.length > 1
+            ? `${pool.length} specialists available for this service`
+            : 'Specialist available for this service'}
+        </Text>
       </View>
+
+      <ScrollView
+        ref={stripRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEnabled={pool.length > 1}
+        onLayout={(e) => setStripWidth(e.nativeEvent.layout.width)}
+        onScrollBeginDrag={() => setAutoScroll(false)}
+        onMomentumScrollEnd={(e) =>
+          stripWidth > 0 &&
+          setShown(Math.round(e.nativeEvent.contentOffset.x / stripWidth))
+        }
+        style={s.strip}
+        keyboardShouldPersistTaps="handled"
+      >
+        {pool.map((d) => (
+          <View key={d.id} style={[s.doctorCard, stripWidth > 0 && { width: stripWidth }]}>
+            <View>
+              <Image source={d.img} style={s.doctorPhoto} resizeMode="cover" />
+              {d.availableNow && <View style={s.onlineDot} />}
+            </View>
+            <View style={s.doctorText}>
+              <View style={s.doctorNameRow}>
+                <Text style={s.doctorName} numberOfLines={1}>{d.name}</Text>
+                {d.availableNow && (
+                  <View style={s.assignedPill}>
+                    <Text style={s.assignedPillText}>On duty</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={s.doctorSpecialty} numberOfLines={1}>{d.specialty}</Text>
+              <View style={s.ratingRow}>
+                <Icon name="star" size={15} color={colors.surfie} filled />
+                <Text style={s.ratingText}>{d.rating} ({d.reviews})</Text>
+              </View>
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      {pool.length > 1 && (
+        <View style={s.dots}>
+          {pool.map((d, i) => (
+            <View key={d.id} style={[s.dot, i === shown && s.dotOn]} />
+          ))}
+        </View>
+      )}
+
+      {pool.length > 1 && (
+        <Text style={s.poolNote}>
+          Your specialist is assigned from this pool once payment is confirmed.
+        </Text>
+      )}
 
       <Text style={s.sectionTitle}>Select Date</Text>
       <View style={s.dateStrip}>
@@ -150,7 +236,7 @@ export const SelectSlotScreen = () => {
           </View>
           <View>
             <Text style={s.statLabel}>Consultation Duration</Text>
-            <Text style={s.statValue}>{doctor.durationMins} mins</Text>
+            <Text style={s.statValue}>{service.durationMins} mins</Text>
           </View>
         </View>
         <View style={s.statRule} />
@@ -160,7 +246,7 @@ export const SelectSlotScreen = () => {
           </View>
           <View>
             <Text style={s.statLabel}>Consultation Fee</Text>
-            <Text style={s.statValue}>₹{doctor.fee}</Text>
+            <Text style={s.statValue}>₹{service.fee}</Text>
           </View>
         </View>
       </View>
@@ -181,9 +267,10 @@ export const SelectSlotScreen = () => {
         onPress={() =>
           navigation.navigate('BookingFlow', {
             step: 3,
-            doctorId: doctor.id,
-            serviceName: doctor.specialty,
-            fee: doctor.fee,
+            /* Undefined on the pool path — the doctor is assigned after payment. */
+            doctorId: pickedId,
+            serviceName: route.params?.serviceName ?? service.specialty,
+            fee: service.fee,
             slot: `${dates[dateIdx].dateStr}, ${slot}`,
           })
         }
@@ -212,6 +299,20 @@ const s = StyleSheet.create({
     lineHeight: 20,
   },
 
+  poolHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  poolHeadText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.sm,
+    fontWeight: '600',
+    color: colors.surfie,
+  },
+  strip: { flexGrow: 0 },
   doctorCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -221,9 +322,44 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surface.line,
     padding: spacing.md,
-    marginTop: spacing.lg,
-    marginBottom: spacing.lg,
     ...shadow.card,
+  },
+  doctorNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  assignedPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface.mintSoft,
+  },
+  assignedPillText: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xxs,
+    fontWeight: '700',
+    color: colors.surfie,
+  },
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.surface.line,
+  },
+  dotOn: { backgroundColor: colors.surfie, width: 16 },
+  poolNote: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.xs,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
   doctorPhoto: {
     width: 64,
@@ -244,6 +380,7 @@ const s = StyleSheet.create({
   },
   doctorText: { flex: 1, gap: 2 },
   doctorName: {
+    flexShrink: 1,
     fontFamily: typography.heading.family,
     fontSize: typography.size.lg,
     fontWeight: '700',
@@ -268,6 +405,7 @@ const s = StyleSheet.create({
   },
 
   sectionTitle: {
+    marginTop: spacing.lg,
     fontFamily: typography.heading.family,
     fontSize: typography.size.lg,
     fontWeight: '700',

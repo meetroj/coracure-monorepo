@@ -320,6 +320,7 @@ export const ReportsScreen = () => {
                 onChangeText={setNewFileName}
                 placeholder="e.g. Knee_MRI_Scan.pdf"
                 placeholderTextColor={colors.inkFaint}
+                underlineColorAndroid="transparent"
               />
             </View>
 

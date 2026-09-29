@@ -80,9 +80,9 @@ export const CareHubScreen = () => {
       <View style={s.headerBar}>
         <Pressable
           style={s.headerIconBtn}
-          onPress={() => navigation.navigate('MainTabs')}
+          onPress={() => navigation.goBack()}
           accessibilityRole="button"
-          accessibilityLabel="Go to Home"
+          accessibilityLabel="Go back"
         >
           <Icon name="arrowLeft" size={20} color={colors.ink} />
         </Pressable>

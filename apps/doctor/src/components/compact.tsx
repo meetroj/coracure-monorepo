@@ -141,6 +141,7 @@ export const Field = ({
       scrollEnabled={false}
       editable={editable}
       accessibilityLabel={accessibilityLabel ?? placeholder}
+      underlineColorAndroid="transparent"
     />
     {!!max && (
       <Text style={s.counter}>

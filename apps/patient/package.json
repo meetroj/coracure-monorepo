@@ -15,6 +15,7 @@
     "react-native-svg": "*",
     "react-native-safe-area-context": "*",
     "react-native-keychain": "*",
+    "react-native-image-picker": "*",
     "@testing-library/react-native": "*",
     "react-test-renderer": "*",
     "metro-config": "*"

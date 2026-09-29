@@ -242,6 +242,7 @@ export const CareHubScreen = ({
             placeholderTextColor={colors.inkFaint}
             style={s.noteInput}
             accessibilityLabel="Note to patient"
+            underlineColorAndroid="transparent"
           />
           <Text style={s.noteCount}>
             {note.length}/{NOTE_MAX}

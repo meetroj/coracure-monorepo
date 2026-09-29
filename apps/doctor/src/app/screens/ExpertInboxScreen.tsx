@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
+import { BrandLockup } from '../../components/BrandLockup';
 import { colors } from '../../theme/brand';
 import { Icon, type IconName } from '../../components/Icon';
 import { C } from '../../components/compact';
@@ -191,7 +191,7 @@ export const ExpertInboxScreen = ({
 
       {/* ── header ── */}
       <View style={[s.header, { paddingTop: insets.top + 4 }]}>
-        <LogoWide width={100} height={26} />
+        <BrandLockup height={26} accessibilityLabel="Coracure" />
         <View style={s.headerRight}>
           <Pressable onPress={onNotifications} hitSlop={8} accessibilityLabel="Notifications">
             <View>
@@ -353,6 +353,7 @@ export const ExpertInboxScreen = ({
                       placeholder="Type your response here..."
                       placeholderTextColor={C.muted}
                       multiline
+                      underlineColorAndroid="transparent"
                     />
                     <Text style={[typeStyles.body, s.counter]}>
                       {responseText.length}/{RESPONSE_MAX}

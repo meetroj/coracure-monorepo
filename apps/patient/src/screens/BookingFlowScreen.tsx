@@ -15,7 +15,7 @@ import { Icon, type IconName } from '@coracure/ui';
 import { ScreenBackground } from '../components/ScreenBackground';
 import { consultationsApi } from '@coracure/api';
 import { upcomingDates, appointmentTime } from '../utils/appointmentTime';
-import { findDoctor } from '../data/doctors';
+import { findDoctor, poolFor, type Doctor } from '../data/doctors';
 
 interface ServiceOption {
   id: string;
@@ -130,16 +130,18 @@ export const BookingFlowScreen = () => {
       const found = SERVICES.find((s) => s.id === initialParams.serviceId);
       if (found) return found;
     }
-    // Arriving from the slot screen: the doctor already fixed the service and fee.
+    // Arriving from the slot screen. A doctorId only exists if the patient
+    // opened a specific doctor's card; on the pool path there is none yet.
     if (initialParams.serviceName) {
-      const doctor = findDoctor(initialParams.doctorId);
+      const picked = initialParams.doctorId ? findDoctor(initialParams.doctorId) : null;
+      const ref = picked ?? poolFor(initialParams.serviceName)[0];
       return {
-        id: doctor.id,
+        id: picked?.id ?? initialParams.serviceId ?? initialParams.serviceName,
         name: initialParams.serviceName,
-        providerType: doctor.name,
-        duration: doctor.durationMins,
-        fee: initialParams.fee ?? doctor.fee,
-        desc: doctor.about,
+        providerType: picked?.name ?? 'Specialist assigned after payment',
+        duration: ref.durationMins,
+        fee: initialParams.fee ?? ref.fee,
+        desc: picked?.about ?? `A certified specialist from the ${initialParams.serviceName} pool will take this consultation.`,
         icon: 'stethoscope',
       };
     }
@@ -174,6 +176,17 @@ export const BookingFlowScreen = () => {
   // Step 5: Confirmed Consultation Record
   const [confirmedBooking, setConfirmedBooking] = useState<any>(null);
 
+  /**
+   * Nobody is assigned until the payment clears — that is the moment the
+   * backend takes a provider out of the pool. Opening a specific doctor's card
+   * is the one exception: that choice was already made upstream.
+   */
+  const [assignedDoctor, setAssignedDoctor] = useState<Doctor | null>(() =>
+    initialParams.doctorId ? findDoctor(initialParams.doctorId) : null
+  );
+  const assignFromPool = () =>
+    setAssignedDoctor((d) => d ?? poolFor(initialParams.serviceName ?? selectedService.name)[0]);
+
   const handleNextFromService = () => {
     setCurrentStep(2);
   };
@@ -205,9 +218,11 @@ export const BookingFlowScreen = () => {
           });
 
           setConfirmedBooking(newCons);
+          assignFromPool();
           setIsProcessingPayment(false);
           setCurrentStep(5);
         } catch {
+          assignFromPool();
           setIsProcessingPayment(false);
           setCurrentStep(5);
         }
@@ -217,7 +232,6 @@ export const BookingFlowScreen = () => {
     }
   };
 
-  const bookedDoctor = findDoctor(initialParams.doctorId);
   const consultationFee = selectedService.fee;
   const convenienceFee = 49;
   const subtotal = consultationFee + convenienceFee;
@@ -455,6 +469,7 @@ export const BookingFlowScreen = () => {
                   placeholder="Describe your symptoms or concern in your own words..."
                   placeholderTextColor={colors.inkFaint}
                   accessibilityLabel="Describe your main concern"
+                  underlineColorAndroid="transparent"
                 />
                 <Text style={s.intakeCount}>{chiefComplaint.length}/500</Text>
               </View>
@@ -658,17 +673,34 @@ export const BookingFlowScreen = () => {
             {/* Who, when, how */}
             <View style={s.reviewCard}>
               <View style={s.reviewDocRow}>
-                <View>
-                  <Image source={bookedDoctor.img} style={s.reviewPhoto} resizeMode="cover" />
-                  <View style={s.reviewOnlineDot} />
-                </View>
-                <View style={s.flex}>
-                  <Text style={s.reviewDocName}>{bookedDoctor.name}</Text>
-                  <Text style={s.reviewDocSpecialty}>{bookedDoctor.specialty}</Text>
-                  <Text style={s.reviewDocMeta}>
-                    {bookedDoctor.qualification} • {bookedDoctor.years}+ years experience
-                  </Text>
-                </View>
+                {assignedDoctor ? (
+                  <>
+                    <View>
+                      <Image source={assignedDoctor.img} style={s.reviewPhoto} resizeMode="cover" />
+                      <View style={s.reviewOnlineDot} />
+                    </View>
+                    <View style={s.flex}>
+                      <Text style={s.reviewDocName}>{assignedDoctor.name}</Text>
+                      <Text style={s.reviewDocSpecialty}>{assignedDoctor.specialty}</Text>
+                      <Text style={s.reviewDocMeta}>
+                        {assignedDoctor.qualification} • {assignedDoctor.years}+ years experience
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={s.reviewPoolIcon}>
+                      <Icon name="shieldCheck" size={24} color={colors.surfie} />
+                    </View>
+                    <View style={s.flex}>
+                      <Text style={s.reviewDocName}>Specialist assigned on payment</Text>
+                      <Text style={s.reviewDocSpecialty}>{selectedService.name}</Text>
+                      <Text style={s.reviewDocMeta}>
+                        A certified doctor is taken from the on-duty pool the moment this payment clears.
+                      </Text>
+                    </View>
+                  </>
+                )}
               </View>
 
               <View style={s.reviewRule} />
@@ -840,7 +872,7 @@ export const BookingFlowScreen = () => {
 
                 <View style={s.voucherDetailRow}>
                   <Text style={s.voucherField}>Assigned Doctor</Text>
-                  <Text style={s.voucherVal}>Dr. Richard Parker</Text>
+                  <Text style={s.voucherVal}>{assignedDoctor?.name ?? 'Being assigned'}</Text>
                 </View>
 
                 <View style={s.voucherDetailRow}>
@@ -883,7 +915,7 @@ export const BookingFlowScreen = () => {
 
             <Pressable
               style={s.secondaryOutlineBtn}
-              onPress={() => navigation.navigate('MainTabs')}
+              onPress={() => navigation.navigate('MainTabs', { tab: 'Home' })}
               accessibilityRole="button"
               accessibilityLabel="Go to Dashboard"
             >
@@ -939,6 +971,14 @@ const s = StyleSheet.create({
     borderColor: colors.surface.line,
     padding: spacing.lg,
     marginBottom: spacing.lg,
+  },
+  reviewPoolIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surface.mintSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reviewDocRow: {
     flexDirection: 'row',

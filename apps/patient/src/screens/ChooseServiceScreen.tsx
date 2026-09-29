@@ -32,7 +32,7 @@ export const ChooseServiceScreen = () => {
           <Pressable
             key={service.id}
             style={s.card}
-            onPress={() => navigation.navigate('FindDoctor', { serviceName: service.name })}
+            onPress={() => navigation.navigate('SelectSlot', { serviceName: service.name })}
             accessibilityRole="button"
             accessibilityLabel={service.name}
           >

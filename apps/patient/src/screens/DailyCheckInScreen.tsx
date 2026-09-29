@@ -202,6 +202,7 @@ export const DailyCheckInScreen = () => {
               placeholder="Other (please specify)"
               placeholderTextColor={colors.inkFaint}
               accessibilityLabel="Other symptom"
+              underlineColorAndroid="transparent"
             />
             <Icon name="plus" size={18} color={colors.inkFaint} />
           </View>
@@ -268,6 +269,7 @@ export const DailyCheckInScreen = () => {
               numberOfLines={3}
               maxLength={500}
               accessibilityLabel="Notes for your care team"
+              underlineColorAndroid="transparent"
             />
             <Text style={s.charCount}>{notes.length}/500</Text>
           </View>

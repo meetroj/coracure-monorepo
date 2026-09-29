@@ -9,6 +9,7 @@ import {
   Modal,
   ScrollView,
   ActivityIndicator,
+  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -293,16 +294,28 @@ export const Sheet = ({
   visible,
   onClose,
   title,
+  subtitle,
   children,
+  footer,
   maxHeightRatio = 0.75,
 }: {
   visible: boolean;
   onClose: () => void;
   title: string;
+  subtitle?: string;
   children: ReactNode;
+  /** Pinned under the scroll area — Apply / Clear actions belong here. */
+  footer?: ReactNode;
   maxHeightRatio?: number;
 }) => {
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  /**
+   * Capping the sheet itself, not the scroll area: a percentage maxHeight on a
+   * child of an auto-sized parent never resolves, so the sheet used to grow
+   * until it ran under the status bar.
+   */
+  const maxHeight = height * maxHeightRatio + insets.bottom;
   return (
     <Modal
       visible={visible}
@@ -312,23 +325,27 @@ export const Sheet = ({
       statusBarTranslucent
     >
       <Pressable style={s.sheetScrim} onPress={onClose} accessibilityLabel="Close" accessibilityRole="button" />
-      <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+      <View style={[s.sheet, { maxHeight, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
         <View style={s.sheetGrip} />
         <View style={s.sheetHead}>
-          <Text style={s.sheetTitle} accessibilityRole="header">
-            {title}
-          </Text>
+          <View style={s.sheetHeadText}>
+            <Text style={s.sheetTitle} accessibilityRole="header">
+              {title}
+            </Text>
+            {!!subtitle && <Text style={s.sheetSubtitle}>{subtitle}</Text>}
+          </View>
           <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
             <Icon name="close" size={20} color={colors.inkMuted} />
           </Pressable>
         </View>
         <ScrollView
-          style={{ maxHeight: `${Math.round(maxHeightRatio * 100)}%` }}
+          style={s.sheetScroll}
           contentContainerStyle={s.sheetBody}
           showsVerticalScrollIndicator={false}
         >
           {children}
         </ScrollView>
+        {footer}
       </View>
     </Modal>
   );
@@ -523,15 +540,25 @@ const s = StyleSheet.create({
   },
   sheetHead: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: spacing.md,
     paddingBottom: spacing.md,
+  },
+  sheetHeadText: { flex: 1 },
+  sheetSubtitle: {
+    fontFamily: typography.body.family,
+    fontSize: typography.size.sm,
+    color: colors.inkMuted,
+    marginTop: 2,
   },
   sheetTitle: {
     fontFamily: typography.heading.family,
     fontSize: typography.size.xl,
-    fontWeight: '800',
+    /* 800 read as heavy against the list beneath it. */
+    fontWeight: '600',
     color: colors.ink,
   },
+  sheetScroll: { flexShrink: 1 },
   sheetBody: { paddingBottom: spacing.md, gap: 2 },
 });

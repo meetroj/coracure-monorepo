@@ -140,6 +140,7 @@ export const ConsultationFeeScreen = ({
             returnKeyType="done"
             style={s.amountInput}
             accessibilityLabel="Consultation fee amount"
+            underlineColorAndroid="transparent"
           />
         </View>
         {error ? <Text style={s.error}>{error}</Text> : <Text style={s.help}>CoraCure does not deduct a platform fee — you keep the full amount.</Text>}
@@ -376,6 +377,7 @@ export const RequestChangesScreen = ({
           placeholderTextColor={colors.inkFaint}
           style={s.noteInput}
           accessibilityLabel="Change request details"
+          underlineColorAndroid="transparent"
         />
         <Text style={s.counter}>{note.length}/500</Text>
       </Card>

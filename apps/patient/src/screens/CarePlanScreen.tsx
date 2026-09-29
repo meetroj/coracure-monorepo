@@ -4,7 +4,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { colors, spacing, typography, radius, shadow } from '@coracure/brand';
-import { Screen, AppHeader, Button, Icon } from '@coracure/ui';
+import { Screen, Button, Icon } from '@coracure/ui';
 import LogoWide from '../assets/brand/logo-wide.svg';
 import GradientButton from '../components/GradientButton';
 import ScreenBackground from '../components/ScreenBackground';
@@ -66,24 +66,21 @@ export const CarePlanScreen = () => {
   return (
     <Screen contentStyle={s.container}>
       <ScreenBackground name="appointmentDetails" scrolls />
-      <AppHeader
-        logo={<LogoWide width={120} height={30} />}
-        right={
-          <Pressable
-            style={s.bell}
-            onPress={() => navigation.navigate('Notifications')}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <Icon name="bell" size={20} color={colors.ink} />
-            <View style={s.bellDot} />
-          </Pressable>
-        }
-      />
+      <View style={s.header}>
+        <LogoWide width={120} height={30} />
+        <Pressable
+          style={s.bell}
+          onPress={() => navigation.navigate('Notifications')}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+        >
+          <Icon name="bell" size={20} color={colors.ink} />
+          <View style={s.bellDot} />
+        </Pressable>
+      </View>
 
       <View style={s.headerWrap}>
-        <Text style={s.eyebrow}>Your Care Plan</Text>
         <Text style={s.pageTitle} accessibilityRole="header">Care Plan</Text>
         <Text style={s.pageSubtitle}>Personalized for you by</Text>
         <Text style={s.pageSubtitleName}>Dr. Richard Parker</Text>
@@ -129,7 +126,9 @@ export const CarePlanScreen = () => {
           </Text>
         </View>
         <View style={s.progressRing}>
-          <Text style={s.progressNumber}>{completedCount} of {tasks.length}</Text>
+          <Text style={s.progressNumber}>{completedCount}</Text>
+          <Text style={s.progressOf}>of</Text>
+          <Text style={s.progressNumber}>{tasks.length}</Text>
         </View>
       </View>
 
@@ -248,7 +247,13 @@ export const CarePlanScreen = () => {
 const s = StyleSheet.create({
   container: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
     paddingBottom: spacing.xxxl,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   bell: {
     width: 40,
@@ -271,24 +276,16 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.white,
   },
-  eyebrow: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-    color: colors.surfie,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
   headerWrap: {
     marginTop: spacing.xs,
     marginBottom: spacing.md,
   },
   pageTitle: {
     fontFamily: typography.heading.family,
-    fontSize: typography.size.xxl,
-    fontWeight: '600',
+    fontSize: 30,
+    fontWeight: '800',
     color: colors.ink,
+    letterSpacing: -0.6,
   },
   pageSubtitle: {
     fontFamily: typography.body.family,
@@ -395,9 +392,9 @@ const s = StyleSheet.create({
     marginTop: 2,
   },
   progressRing: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     borderWidth: 4,
     borderColor: colors.surfie,
     backgroundColor: colors.white,
@@ -407,10 +404,18 @@ const s = StyleSheet.create({
   },
   progressNumber: {
     fontFamily: typography.heading.family,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.surfie,
     textAlign: 'center',
+    lineHeight: 15,
+  },
+  progressOf: {
+    fontFamily: typography.body.family,
+    fontSize: 9,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    lineHeight: 11,
   },
   progressCount: {
     fontFamily: typography.heading.family,

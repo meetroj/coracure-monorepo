@@ -2,16 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
-import { colors, radius, spacing, typography } from '@coracure/brand';
+import { colors, radius, spacing, typography, breakpoint } from '@coracure/brand';
 import { Icon, Button, StatusPill, type IconName } from '@coracure/ui';
 import LogoWide from '../assets/brand/logo-wide.svg';
 import DrRichardImg from '../assets/dr-richard-parker.jpg';
 import DrArjunImg from '../assets/dr-arjun-mehta.jpg';
 import DrNehaImg from '../assets/dr-neha-sharma.jpg';
 import KneeJointImg from '../assets/knee-joint.jpg';
-import SleepScienceImg from '../assets/sleep-science.jpg';
-import MentalHealthImg from '../assets/mental-health.jpg';
 import { useAuth } from '../hooks/useAuth';
+import { doctorRecommendation, recommendedResources } from '../data/careResources';
 import { mockConsultationsStore } from '@coracure/api';
 
 /** Doctors behind each speciality tier. Reads from the catalogue once wired. */
@@ -39,11 +38,6 @@ const BLOG = {
   img: KneeJointImg,
 };
 
-const RECOMMENDED = [
-  { title: 'Sleep hygiene basics', by: 'Dr. Richard Parker', img: SleepScienceImg, screen: 'EducationLibrary' },
-  { title: 'Box breathing for pain', by: 'Dr. Richard Parker', img: MentalHealthImg, screen: 'SelfHelpTool' },
-];
-
 export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -53,8 +47,12 @@ export const DashboardScreen = () => {
   const [showInstantModal, setShowInstantModal] = useState(false);
 
   const next = mockConsultationsStore[0];
-  /** Card width for the snapping appointment rail: full width less the gutters. */
-  const cardWidth = width - spacing.lg * 2;
+  /**
+   * Card width for the snapping appointment rail: the column's width less the
+   * gutters. Clamped to the app column so the rail still snaps on a tablet,
+   * where the window is wider than the content the navigator centres.
+   */
+  const cardWidth = Math.min(width, breakpoint.appMaxWidth) - spacing.lg * 2;
 
   return (
     <View testID="dashboard" style={s.container}>
@@ -284,12 +282,14 @@ export const DashboardScreen = () => {
           {['Orthopedics', 'Cardiology', 'Neurology', 'Dermatology', 'Mental Health'].map((service, idx) => (
             <Pressable
               key={service}
-              style={[s.serviceChip, idx === 0 && s.serviceChipActive]}
-              onPress={() => navigation.navigate('FindDoctor', { serviceName: service })}
+              /* These navigate; none of them is a current selection. */
+              style={s.serviceChip}
+              /* No doctor list: the pool is assigned on the slot screen. */
+              onPress={() => navigation.navigate('SelectSlot', { serviceName: service })}
+              accessibilityRole="button"
+              accessibilityLabel={service}
             >
-              <Text style={[s.serviceChipText, idx === 0 && s.serviceChipTextActive]}>
-                {service}
-              </Text>
+              <Text style={s.serviceChipText}>{service}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -307,7 +307,7 @@ export const DashboardScreen = () => {
             <Pressable
               key={group.tier}
               style={s.tierCard}
-              onPress={() => navigation.navigate('FindDoctor', { serviceName: group.tier })}
+              onPress={() => navigation.navigate('SelectSlot', { serviceName: group.tier })}
               accessibilityRole="button"
               accessibilityLabel={group.tier}
             >
@@ -346,7 +346,7 @@ export const DashboardScreen = () => {
             <Pressable
               key={p.name}
               style={s.paraChip}
-              onPress={() => navigation.navigate('FindDoctor', { serviceName: p.name })}
+              onPress={() => navigation.navigate('SelectSlot', { serviceName: p.name })}
               accessibilityRole="button"
               accessibilityLabel={p.name}
             >
@@ -383,29 +383,32 @@ export const DashboardScreen = () => {
         {/* Resources & Recommendations — what the doctor picked from Care Hub */}
         <View style={s.sectionHeaderRow}>
           <Text style={s.sectionTitle}>Resources & Recommendations</Text>
-          <Pressable onPress={() => navigation.navigate('CareHub')}>
+          <Pressable onPress={() => navigation.navigate('RecommendedResources')}>
             <Text style={s.viewAllLink}>View All ›</Text>
           </Pressable>
         </View>
 
         <View style={s.recCard}>
           <View style={s.recHeaderRow}>
-            <Icon name="sparkles" size={15} color={colors.surfie} />
-            <Text style={s.recHeaderText}>Recommended by Dr. Richard Parker</Text>
+            <Text style={s.recHeaderText}>
+              Recommended by {doctorRecommendation.doctorName}
+            </Text>
           </View>
 
-          {RECOMMENDED.map((r) => (
+          {recommendedResources.slice(0, 3).map((r) => (
             <Pressable
-              key={r.title}
+              key={r.id}
               style={s.recRow}
-              onPress={() => navigation.navigate(r.screen)}
+              onPress={() => navigation.navigate('RecommendedResources')}
               accessibilityRole="button"
               accessibilityLabel={r.title}
             >
-              <Image source={r.img} style={s.recThumb} resizeMode="cover" />
+              <View style={s.recThumb}>
+                <Icon name={r.icon} size={18} color={colors.surfie} />
+              </View>
               <View style={s.flex}>
                 <Text style={s.recTitle} numberOfLines={1}>{r.title}</Text>
-                <Text style={s.recBy} numberOfLines={1}>{r.by}</Text>
+                <Text style={s.recBy} numberOfLines={1}>{r.meta}</Text>
               </View>
               <Icon name="chevronRight" size={16} color={colors.surfie} />
             </Pressable>
@@ -928,19 +931,11 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  serviceChipActive: {
-    backgroundColor: colors.successSoft,
-    borderColor: colors.surfie,
-  },
   serviceChipText: {
     fontFamily: typography.body.family,
     fontSize: 12,
     color: '#4B5563',
     fontWeight: '500',
-  },
-  serviceChipTextActive: {
-    color: colors.surfie,
-    fontWeight: '700',
   },
 
   /* ------------------------ super speciality ----------------------- */
@@ -1110,7 +1105,9 @@ const s = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#EEF8F5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   recTitle: {
     fontFamily: typography.body.family,

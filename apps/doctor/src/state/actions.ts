@@ -70,6 +70,10 @@ export const signIn = (mobile: string) => {
 export const signOut = () =>
   setState((s) => ({ ...s, session: { ...s.session, stage: 'login' }, activeCall: undefined }));
 
+/** Skip or finish the intro carousel; it is not shown again this session. */
+export const leaveIntro = () =>
+  setState((s) => ({ ...s, session: { ...s.session, stage: 'login' } }));
+
 export const leaveOnboarding = () => setState((s) => ({ ...s, session: { ...s.session, stage: 'login' } }));
 
 export const submitRegistration = (draft: RegistrationDraft) =>

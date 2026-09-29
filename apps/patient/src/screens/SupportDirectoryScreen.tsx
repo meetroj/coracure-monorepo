@@ -152,6 +152,7 @@ export const SupportDirectoryScreen = () => {
             onChangeText={setSearchQuery}
             placeholder="Search services, clinics or helplines..."
             placeholderTextColor={colors.inkFaint}
+            underlineColorAndroid="transparent"
           />
         </View>
 

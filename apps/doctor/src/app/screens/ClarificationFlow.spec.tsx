@@ -65,9 +65,25 @@ test('submitting needs the identifier confirmation, and asks first', () => {
 
   expect(screen.getByTestId('submit')).toBeDisabled();
   fireEvent.press(screen.getByTestId('confirm'));
+
+  // Choosing the reviewer is the final act: the button opens the panel, and
+  // picking a doctor is what asks to submit.
   fireEvent.press(screen.getByTestId('submit'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Submit to expert?', expect.any(String), expect.any(Array), expect.any(Object));
-  expect(props.onSubmit).toHaveBeenCalledWith(expect.objectContaining({ appointmentId: 'a2', title: 'Drowsiness after a dose increase' }));
+  fireEvent.press(screen.getByTestId('select-expert-exp-kulkarni'));
+  expect(Alert.alert).toHaveBeenLastCalledWith(
+    'Submit to Dr. Anita Kulkarni?',
+    expect.any(String),
+    expect.any(Array),
+    expect.any(Object),
+  );
+  expect(props.onSubmit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      appointmentId: 'a2',
+      title: 'Drowsiness after a dose increase',
+      expertId: 'exp-kulkarni',
+      expertName: 'Dr. Anita Kulkarni',
+    }),
+  );
 });
 
 test('an identifier typed into the case blocks sharing until it is removed', () => {

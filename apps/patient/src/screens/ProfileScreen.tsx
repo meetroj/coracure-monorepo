@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, typography, radius } from '@coracure/brand';
@@ -11,8 +11,6 @@ export const ProfileScreen = () => {
   const navigation = useNavigation<any>();
   const { user, signOut } = useAuth();
 
-  const [notifEnabled, setNotifEnabled] = useState(true);
-
   const fullName = user?.fullName || 'Alex Morgan';
   const mobile = user?.mobileNumber || '+91 98765 43210';
   const initials = fullName
@@ -21,25 +19,6 @@ export const ProfileScreen = () => {
     .join('')
     .substring(0, 2)
     .toUpperCase();
-
-  const handleDataDeletion = () => {
-    Alert.alert(
-      'Statutory Data Deletion',
-      'Under Indian medical records statutory regulations, completed consultation records and signed prescriptions cannot be erased and must be retained for audit. Personal demographics and device identifiers can be anonymized. Would you like to submit a data anonymization request?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit Request',
-          style: 'destructive',
-          onPress: () =>
-            Alert.alert(
-              'Request Registered',
-              'Your request (#DEL-2026-881) has been submitted to the CoraCure Data Governance Officer. You will receive an SMS confirmation.'
-            ),
-        },
-      ]
-    );
-  };
 
   const handleSignOutConfirm = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out from your CoraCure account?', [
@@ -52,13 +31,12 @@ export const ProfileScreen = () => {
     <View style={s.container}>
       {/* Top Header */}
       <View style={s.headerBar}>
-        <View style={{ width: 38 }} />
-
-        <LogoWide width={110} height={28} />
+        <LogoWide width={120} height={30} />
 
         <Pressable
           style={s.headerIconBtn}
           onPress={() => navigation.navigate('Notifications')}
+          hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel="Notifications"
         >
@@ -98,9 +76,7 @@ export const ProfileScreen = () => {
           <View style={s.cardGroup}>
             <Pressable
               style={s.rowItem}
-              onPress={() =>
-                Alert.alert('Personal Details', `Name: ${fullName}\nPhone: ${mobile}\nGender: ${user?.gender || 'Male'}\nDOB: ${user?.dateOfBirth || '1992-04-14'}`)
-              }
+              onPress={() => navigation.navigate('ProfileDetail', { section: 'personal' })}
               accessibilityRole="button"
               accessibilityLabel="Personal Details"
             >
@@ -118,9 +94,7 @@ export const ProfileScreen = () => {
 
             <Pressable
               style={s.rowItem}
-              onPress={() =>
-                Alert.alert('Language & Region', 'Preferred Language: English\nRegion: Delhi NCR (India)\nTimezone: IST (UTC+05:30)')
-              }
+              onPress={() => navigation.navigate('ProfileDetail', { section: 'language' })}
               accessibilityRole="button"
               accessibilityLabel="Language and Region"
             >
@@ -138,7 +112,7 @@ export const ProfileScreen = () => {
 
             <Pressable
               style={s.rowItem}
-              onPress={() => setNotifEnabled(!notifEnabled)}
+              onPress={() => navigation.navigate('ProfileDetail', { section: 'notifications' })}
               accessibilityRole="button"
               accessibilityLabel="Notifications setting"
             >
@@ -149,11 +123,7 @@ export const ProfileScreen = () => {
                 <Text style={s.rowTitle}>Notifications</Text>
                 <Text style={s.rowSub}>Manage push, SMS and appointment alerts</Text>
               </View>
-              <View style={[s.togglePill, notifEnabled && s.togglePillActive]}>
-                <Text style={[s.toggleText, notifEnabled && s.toggleTextActive]}>
-                  {notifEnabled ? 'Enabled' : 'Muted'}
-                </Text>
-              </View>
+              <Icon name="chevronRight" size={18} color={colors.inkFaint} />
             </Pressable>
           </View>
         </View>
@@ -240,7 +210,7 @@ export const ProfileScreen = () => {
           <View style={s.cardGroup}>
             <Pressable
               style={s.rowItem}
-              onPress={handleDataDeletion}
+              onPress={() => navigation.navigate('ProfileDetail', { section: 'dataDeletion' })}
               accessibilityRole="button"
               accessibilityLabel="Data Deletion Request"
             >
@@ -345,19 +315,18 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingTop: spacing.md,
+    marginBottom: spacing.md,
   },
   headerIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#F3F4F6',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.surface.line,
   },
   scrollView: {
     flex: 1,
@@ -486,24 +455,6 @@ const s = StyleSheet.create({
   rowSub: {
     fontSize: 11,
     color: colors.inkMuted,
-  },
-  togglePill: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  togglePillActive: {
-    backgroundColor: '#EEF8F5',
-  },
-  toggleText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.inkFaint,
-  },
-  toggleTextActive: {
-    color: colors.surfie,
-    fontWeight: '700',
   },
 });
 

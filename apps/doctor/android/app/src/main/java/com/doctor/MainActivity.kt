@@ -19,6 +19,9 @@ class MainActivity : ReactActivity() {
    * process death crashes, so the activity always starts clean.
    */
   override fun onCreate(savedInstanceState: Bundle?) {
+    // The activity launches under SplashTheme so the window is branded before
+    // React Native has drawn; swap back before the first frame.
+    setTheme(R.style.AppTheme)
     super.onCreate(null)
   }
 

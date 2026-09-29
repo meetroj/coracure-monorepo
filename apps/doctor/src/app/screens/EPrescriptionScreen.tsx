@@ -187,6 +187,7 @@ const EditableList = ({
             onSubmitEditing={add}
             returnKeyType="done"
             accessibilityLabel={addPlaceholder}
+            underlineColorAndroid="transparent"
           />
           <Pressable
             testID={`${testID}-add`}

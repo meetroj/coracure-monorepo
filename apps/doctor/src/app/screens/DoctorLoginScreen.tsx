@@ -16,7 +16,7 @@ import {
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import LogoWide from '../../assets/brand/logo-wide.svg';
+import { BrandLockup } from '../../components/BrandLockup';
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
@@ -224,7 +224,8 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface.mint} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface.mint}
+    />
       <View style={[styles.flex, { paddingTop: insets.top, paddingBottom: keyboard }]}>
         <ScrollView
           ref={scrollRef}
@@ -261,7 +262,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                     <Icon name="arrowLeft" size={19} color={colors.ink} />
                   </Pressable>
                 )}
-                <LogoWide width={124} height={31} accessibilityLabel="CoraCure" />
+                <BrandLockup height={31} accessibilityLabel="Coracure" />
               </View>
               <View style={styles.portalPill}>
                 <View style={styles.portalAvatar}>
@@ -327,6 +328,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                       selectTextOnFocus
                       textAlign="center"
                       accessibilityLabel={`Digit ${i + 1} of ${OTP_LENGTH}`}
+                      underlineColorAndroid="transparent"
                     />
                   ))}
                 </View>
@@ -392,6 +394,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                   <View style={styles.dialDivider} />
                   <TextInput
                     testID="phone-input"
+                    autoFocus
                     style={styles.input}
                     value={formattedPhone}
                     onChangeText={(raw) => setPhone(raw.replace(/\D/g, '').slice(0, PHONE_LENGTH))}
@@ -405,6 +408,7 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                     returnKeyType="done"
                     onSubmitEditing={requestCode}
                     accessibilityLabel="Mobile number"
+                    underlineColorAndroid="transparent"
                   />
                 </View>
 

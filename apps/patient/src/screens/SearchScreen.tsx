@@ -63,13 +63,14 @@ export const SearchScreen = () => {
     Linking.openURL(`tel:${clean}`);
   };
 
+  /**
+   * Same destination as an Explore Services chip on the dashboard: the slot
+   * screen, not straight into the booking flow. The patient never picks a
+   * provider — they pick a time and the backend assigns — so jumping past
+   * SelectSlot skipped the only step that is theirs to make.
+   */
   const handleBookService = (service: ServiceMatch) => {
-    navigation.navigate('BookingFlow', {
-      serviceId: service.id,
-      specialtyId: service.id,
-      serviceName: service.name,
-      fee: service.consultationFeeInr,
-    });
+    navigation.navigate('SelectSlot', { serviceName: service.name });
   };
 
   return (
@@ -82,7 +83,8 @@ export const SearchScreen = () => {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Icon name="arrowLeft" size={20} color={colors.ink} />
+          <Icon name="arrowLeft" size={20} color={colors.ink}
+        />
         </Pressable>
 
         <View style={s.searchField}>
@@ -97,6 +99,7 @@ export const SearchScreen = () => {
             autoFocus
             returnKeyType="search"
             onSubmitEditing={() => executeSearch(query)}
+            underlineColorAndroid="transparent"
           />
           {query.length > 0 && (
             <Pressable
@@ -246,7 +249,7 @@ export const SearchScreen = () => {
                       {/* Clinical Match Reason */}
                       {service.reason && (
                         <View style={s.reasonRow}>
-                          <Icon name="checkCircle" size={14} color="#059669" />
+                          <Icon name="checkCircle" size={14} color={colors.surfie} />
                           <Text style={s.reasonText}>{service.reason}</Text>
                         </View>
                       )}
@@ -505,9 +508,10 @@ const s = StyleSheet.create({
     gap: spacing.md,
   },
   matchesHeader: {
-    fontSize: 15,
+    fontFamily: typography.heading.family,
+    fontSize: 16,
     fontWeight: '700',
-    color: colors.ink,
+    color: '#111827',
   },
   noMatchBox: {
     alignItems: 'center',
@@ -525,29 +529,34 @@ const s = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
+  /**
+   * Home-screen vocabulary, not a second one: the same 18px white card, the
+   * same pill chips, the same mint accents and the brand type families. A
+   * service found by search should look like the service tiles on the home
+   * screen the patient just came from.
+   */
   serviceCard: {
     backgroundColor: colors.white,
-    borderRadius: radius.card,
+    borderRadius: 18,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
     elevation: 2,
     gap: 10,
   },
   serviceHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.md,
   },
   serviceIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EEF8F5',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.surface.mintSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -555,66 +564,78 @@ const s = StyleSheet.create({
     flex: 1,
   },
   serviceName: {
-    fontSize: 15,
+    fontFamily: typography.heading.family,
+    fontSize: 14,
     fontWeight: '700',
-    color: colors.ink,
+    color: '#111827',
   },
   providerType: {
+    fontFamily: typography.body.family,
     fontSize: 12,
     color: colors.surfie,
     fontWeight: '600',
-    marginTop: 1,
+    marginTop: 2,
   },
   feePill: {
-    backgroundColor: '#EEF8F5',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: colors.surface.mintSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
   },
   feeText: {
+    fontFamily: typography.heading.family,
     fontSize: 14,
     fontWeight: '700',
     color: colors.surfie,
   },
   serviceDesc: {
-    fontSize: 13,
-    color: '#4B5563',
-    lineHeight: 18,
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.inkMuted,
+    lineHeight: 17,
   },
   reasonRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F0FDF4',
-    padding: 8,
-    borderRadius: 8,
+    backgroundColor: colors.surface.mintSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: radius.md,
   },
   reasonText: {
+    fontFamily: typography.body.family,
     fontSize: 12,
-    color: '#166534',
-    fontWeight: '500',
+    color: colors.surfie,
+    fontWeight: '600',
+    flex: 1,
   },
   concernsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: spacing.sm,
   },
+  /** The home screen's service chip, to the pixel. */
   concernBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   concernBadgeText: {
-    fontSize: 11,
-    color: colors.inkMuted,
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: '#4B5563',
+    fontWeight: '500',
   },
   serviceFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: '#E5E7EB',
     paddingTop: spacing.sm,
     marginTop: 2,
   },
@@ -624,6 +645,7 @@ const s = StyleSheet.create({
     gap: 5,
   },
   availText: {
+    fontFamily: typography.body.family,
     fontSize: 12,
     color: colors.surfie,
     fontWeight: '600',
@@ -633,11 +655,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: colors.surfie,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
   },
   bookBtnText: {
+    fontFamily: typography.body.family,
     fontSize: 13,
     fontWeight: '700',
     color: colors.white,

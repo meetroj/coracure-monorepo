@@ -39,7 +39,7 @@ export const RescheduleAppointmentScreen = () => {
       Alert.alert(
         'Appointment Rescheduled',
         `Your appointment has been successfully moved to ${selectedDate} at ${selectedTime}.`,
-        [{ text: 'View Appointments', onPress: () => navigation.navigate('MainTabs') }]
+        [{ text: 'View Appointments', onPress: () => navigation.navigate('MainTabs', { tab: 'Appointments' }) }]
       );
     } catch (err: unknown) {
       const apiErr = err as ApiError;

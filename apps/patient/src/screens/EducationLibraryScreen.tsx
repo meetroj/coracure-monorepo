@@ -105,6 +105,7 @@ export const EducationLibraryScreen = () => {
             onChangeText={setSearchQuery}
             placeholder="Search guides, recovery topics, nutrition..."
             placeholderTextColor={colors.inkFaint}
+            underlineColorAndroid="transparent"
           />
           <View style={s.filterIconCircle}>
             <Icon name="filter" size={14} color={colors.white} />

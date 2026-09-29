@@ -683,7 +683,6 @@ export const OnboardingFlow = ({
         primaryLabel={continueLabel}
         onPrimary={() => advance('qualifications', 'experience')}
       >
-        {!hasAny && <Text style={s.empty}>No qualifications added yet. Start with your basic medical qualification.</Text>}
         {draft.qualifications.map((q) => (
           <EntryCard
             key={q.id}

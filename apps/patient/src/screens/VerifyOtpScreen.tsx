@@ -12,6 +12,16 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 
 type VerifyOtpScreenRouteProp = RouteProp<RootStackParamList, 'VerifyOtp'>;
 
+/* Fills the band under the CTA that was blank once the number pad opens. */
+const TIPS = [
+  { icon: 'phone', text: 'Make sure this is the number you signed up with.' },
+  {
+    icon: 'wifiOff',
+    text: 'A weak signal can hold the SMS back for a minute.',
+  },
+  { icon: 'headset', text: 'Still nothing? Support can verify you manually.' },
+] as const;
+
 export const VerifyOtpScreen = () => {
   const route = useRoute<VerifyOtpScreenRouteProp>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -64,79 +74,95 @@ export const VerifyOtpScreen = () => {
     <View style={styles.container}>
       <ScreenBackground name="otp" />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <View style={styles.brandRow}>
-            <LogoMark width={36} height={36} />
-            <View style={styles.brandTextCol}>
-              <Text style={styles.brandName}>CoraCure</Text>
-              <Text style={styles.brandTagline}>Care. Connected.</Text>
-            </View>
+      {/* Brand Header */}
+      <View style={styles.header}>
+        <View style={styles.brandRow}>
+          <LogoMark width={47} height={47} />
+          <View style={styles.brandTextCol}>
+            <Text style={styles.brandName}>CoraCure</Text>
+            <Text style={styles.brandTagline}>Care. Connected.</Text>
           </View>
         </View>
 
-        {/* Title & Subtitle */}
         <View style={styles.titleSection}>
           <Text style={styles.title}>Verify with OTP</Text>
           <Text style={styles.subtitle}>
             Enter the 6-digit code sent{'\n'}to your registered mobile number.
           </Text>
         </View>
+      </View>
 
-        {/* Masked Mobile Pill with Edit Icon */}
-        <Pressable onPress={() => navigation.goBack()} style={styles.phonePill}>
-          <Text style={styles.phoneFlag}>🇮🇳</Text>
-          <Text style={styles.phoneText}>{mobileNumber}</Text>
-          <Icon name="edit" size={15} color={colors.surfie} />
-        </Pressable>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* The code form stays vertically centred where it was; only the
+            heading moved up under the lockup. */}
+        <View style={styles.formArea}>
+          {/* Masked Mobile Pill with Edit Icon */}
+          <Pressable onPress={() => navigation.goBack()} style={styles.phonePill}>
+            <Text style={styles.phoneFlag}>🇮🇳</Text>
+            <Text style={styles.phoneText}>{mobileNumber}</Text>
+            <Icon name="edit" size={15} color={colors.surfie} />
+          </Pressable>
 
-        {error ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
+          {error ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {/* 6 OTP Boxes */}
+          <View style={styles.otpBoxWrapper}>
+            <OTPInput
+              value={otp}
+              onChange={(val) => setOtp(val)}
+              onComplete={(val) => onVerify(val)}
+            />
           </View>
-        ) : null}
 
-        {/* 6 OTP Boxes */}
-        <View style={styles.otpBoxWrapper}>
-          <OTPInput
-            value={otp}
-            onChange={(val) => setOtp(val)}
-            onComplete={(val) => onVerify(val)}
-          />
+          {/* Secure Verification Badge */}
+          <View style={styles.secureBadge}>
+            <Icon name="shieldCheck" size={14} color={colors.surfie} />
+            <Text style={styles.secureBadgeText}>Secure verification</Text>
+          </View>
+
+          {/* Resend Timer */}
+          <View style={styles.resendRow}>
+            {timer > 0 ? (
+              <Text style={styles.timerText}>
+                Resend code in 00:{timer.toString().padStart(2, '0')}
+              </Text>
+            ) : (
+              <Pressable onPress={onResend}>
+                <Text style={styles.resendLink}>Resend OTP</Text>
+              </Pressable>
+            )}
+          </View>
+
+          {/* Bottom Verify Button */}
+          <View style={styles.footer}>
+            <PillButton
+              label="Verify & Continue"
+              onPress={() => onVerify(otp || '123456')}
+              loading={isLoading}
+            />
+          </View>
         </View>
 
-        {/* Secure Verification Badge */}
-        <View style={styles.secureBadge}>
-          <Icon name="shieldCheck" size={14} color={colors.surfie} />
-          <Text style={styles.secureBadgeText}>Secure verification</Text>
-        </View>
-
-        {/* Resend Timer */}
-        <View style={styles.resendRow}>
-          {timer > 0 ? (
-            <Text style={styles.timerText}>
-              Resend code in 00:{timer.toString().padStart(2, '0')}
-            </Text>
-          ) : (
-            <Pressable onPress={onResend}>
-              <Text style={styles.resendLink}>Resend OTP</Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Bottom Verify Button */}
-        <View style={styles.footer}>
-          <PillButton
-            label="Verify & Continue"
-            onPress={() => onVerify(otp || '123456')}
-            loading={isLoading}
-          />
+        <View style={styles.tips}>
+          <View style={styles.tipsDivider} />
+          <Text style={styles.tipsTitle}>Code not arriving?</Text>
+          {TIPS.map((tip) => (
+            <View key={tip.text} style={styles.tipRow}>
+              <View style={styles.tipIcon}>
+                <Icon name={tip.icon} size={14} color={colors.surfie} />
+              </View>
+              <Text style={styles.tipText}>{tip.text}</Text>
+            </View>
+          ))}
         </View>
       </ScrollView>
     </View>
@@ -154,18 +180,20 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     /**
-     * Centred rather than top-aligned, and sitting slightly above the true
-     * middle: the heavier bottom padding lifts the block so it reads as
-     * centred once the CTA and fine print are counted.
+     * Top-aligned: the title sits directly under the brand lockup and the
+     * tips list carries the lower half, so nothing shifts when the number pad
+     * opens on mount.
      */
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xxxl * 2,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
   header: {
-    marginBottom: spacing.xl,
+    /* Pinned above the scroll area, so the title below it never scrolls up
+       past the brand lockup. */
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
   },
   brandRow: {
     flexDirection: 'row',
@@ -187,7 +215,11 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
   },
   titleSection: {
-    marginBottom: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  formArea: {
+    flex: 1,
+    justifyContent: 'center',
   },
   title: {
     fontFamily: typography.heading.family,
@@ -287,6 +319,44 @@ const styles = StyleSheet.create({
   footer: {
     gap: spacing.md,
     marginTop: spacing.md,
+  },
+  tips: {
+    marginTop: spacing.lg,
+  },
+  tipsDivider: {
+    height: 1,
+    backgroundColor: colors.surface.line,
+    marginBottom: spacing.md,
+  },
+  tipsTitle: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.inkMuted,
+    marginBottom: spacing.sm,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: spacing.sm,
+  },
+  tipIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#E6F3EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipText: {
+    flex: 1,
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.inkMuted,
   },
   skipLink: {
     alignItems: 'center',

@@ -12,25 +12,13 @@ export const PatientTabBar = ({ activeTab = 'CarePlan' }: { activeTab?: TabKey }
   const parentHasTabBar = useContext(ParentTabBarContext);
   if (parentHasTabBar) return null;
 
-  const handleTabPress = (tab: TabKey) => {
-    switch (tab) {
-      case 'Home':
-        navigation.navigate('MainTabs');
-        break;
-      case 'Appointments':
-        navigation.navigate('Appointments');
-        break;
-      case 'CarePlan':
-        navigation.navigate('CarePlan');
-        break;
-      case 'AIAssistant':
-        navigation.navigate('AIAssistant');
-        break;
-      case 'Profile':
-        navigation.navigate('Profile');
-        break;
-    }
-  };
+  /**
+   * Tabs always return to MainTabs and switch the tab there. Pushing the
+   * stand-alone copies of these screens instead stacked a second Appointments
+   * or Profile on top of the flow, so Back retraced the flow rather than
+   * landing on the tab the user had picked.
+   */
+  const handleTabPress = (tab: TabKey) => navigation.navigate('MainTabs', { tab });
 
   return (
     <View style={[s.tabBar, { paddingBottom: 10 }]}>

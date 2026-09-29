@@ -180,6 +180,7 @@ export const ClinicalTemplatesScreen = ({
           style={s.searchInput}
           returnKeyType="search"
           accessibilityLabel="Search templates"
+          underlineColorAndroid="transparent"
         />
         {query.length > 0 && (
           <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">

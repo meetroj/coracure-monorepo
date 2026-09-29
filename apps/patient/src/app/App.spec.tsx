@@ -30,14 +30,14 @@ describe('App boot', () => {
 
     // No session means nothing authenticated should have been attempted.
     expect(global.fetch).not.toHaveBeenCalled();
-    expect(screen.getByText('Get Started')).toBeTruthy();
+    expect(screen.getByText('Skip')).toBeTruthy();
   });
 
   it('routes Get Started into sign-in', async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText('Get Started'));
+    fireEvent.press(screen.getByLabelText('Skip'));
 
     await waitFor(() => expect(screen.getByTestId('login')).toBeTruthy());
     expect(screen.getByText('Welcome back')).toBeTruthy();
@@ -47,9 +47,10 @@ describe('App boot', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('welcome')).toBeTruthy());
 
-    // Onboarding's only route out is Get Started; the guard is what matters —
+    // Onboarding's only route out is Skip (or the arrow past the last slide);
+    // the guard is what matters —
     // no path from here reaches the dashboard without a session.
-    fireEvent.press(screen.getByLabelText('Get Started'));
+    fireEvent.press(screen.getByLabelText('Skip'));
 
     await waitFor(() => expect(screen.getByTestId('login')).toBeTruthy());
     expect(screen.queryByTestId('dashboard')).toBeNull();

@@ -121,6 +121,7 @@ export const FindDoctorScreen = () => {
           placeholderTextColor={colors.inkFaint}
           accessibilityLabel="Search doctors"
           returnKeyType="search"
+          underlineColorAndroid="transparent"
         />
         <View style={s.micCircle}>
           <Icon name="mic" size={16} color={colors.white} />

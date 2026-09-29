@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Adaptive launcher icon ground. The Coracure mark is two-tone green and
-         is only ever shown on white or on Surfie Green (brand guidelines). -->
-    <color name="ic_launcher_background">#FFFFFF</color>
+         is only ever shown on white or on Surfie Green (brand guidelines). The
+         doctor icon uses the Surfie disc with the mark knocked out in white. -->
+    <color name="ic_launcher_background">#0E766C</color>
 </resources>

@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Keyboard,
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   Pressable,
@@ -10,10 +11,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { pickImageFromLibrary } from '../utils/imagePicker';
 import { useNavigation } from '@react-navigation/native';
 
 import { colors, spacing, typography, radius } from '@coracure/brand';
-import { Icon } from '@coracure/ui';
+import { Icon, Sheet } from '@coracure/ui';
 import { profileApi } from '@coracure/api';
 import LogoMark from '../assets/brand/logo-mark.svg';
 import { useAuth } from '../hooks/useAuth';
@@ -41,7 +43,10 @@ const STATES = [
   'Delhi', 'Maharashtra', 'Karnataka', 'Tamil Nadu', 'Telangana',
   'Gujarat', 'Rajasthan', 'West Bengal', 'Uttar Pradesh', 'Kerala',
 ];
-const ALL_LANGUAGES = ['English', 'Hindi', 'Hinglish', 'Marathi', 'Tamil', 'Telugu', 'Bengali', 'Gujarati'];
+const ALL_LANGUAGES = [
+  'English', 'Hindi', 'Hinglish', 'Marathi', 'Kannada', 'Punjabi',
+  'Tamil', 'Telugu', 'Bengali', 'Gujarati', 'Malayalam', 'Urdu',
+];
 
 /* ----------------------------- small pieces ----------------------------- */
 
@@ -101,10 +106,314 @@ const Input = ({
       keyboardType={keyboardType ?? 'default'}
       maxLength={maxLength}
       style={s.input}
+      underlineColorAndroid="transparent"
     />
     {right}
   </View>
 );
+
+/**
+ * Multi-pick in the doctor app's shape: a one-line scrolling chip row with an
+ * "Add" control that opens a bottom sheet — search, the picked chips, a ticked
+ * list, and Clear all / Apply. The sheet holds the pick until Apply, so a
+ * mis-tap costs nothing.
+ */
+const MultiSelect = ({
+  values,
+  options,
+  onChange,
+  addLabel = 'Add',
+  sheetTitle,
+  sheetSubtitle,
+  searchPlaceholder = 'Search',
+}: {
+  values: string[];
+  options: string[];
+  onChange: (v: string[]) => void;
+  addLabel?: string;
+  sheetTitle: string;
+  sheetSubtitle?: string;
+  searchPlaceholder?: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [draft, setDraft] = useState<string[]>(values);
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
+  }, [options, query]);
+
+  const toggleDraft = (o: string) =>
+    setDraft((d) => (d.includes(o) ? d.filter((v) => v !== o) : [...d, o]));
+
+  const close = () => {
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <View style={s.selectWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.chipRow}
+        keyboardShouldPersistTaps="handled"
+      >
+        {values.map((v) => (
+          <View key={v} style={s.chip}>
+            <Text style={s.chipText}>{v}</Text>
+            <Pressable
+              onPress={() => onChange(values.filter((x) => x !== v))}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${v}`}
+            >
+              <Icon name="x" size={13} color={colors.surfie} />
+            </Pressable>
+          </View>
+        ))}
+        <Pressable
+          style={s.chipAdd}
+          onPress={() => {
+            Keyboard.dismiss();
+            setDraft(values);
+            setOpen(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={addLabel}
+        >
+          <Icon name="plus" size={13} color={colors.surfie} />
+          <Text style={s.chipAddText}>{addLabel}</Text>
+        </Pressable>
+      </ScrollView>
+
+      <Sheet
+        visible={open}
+        onClose={close}
+        title={sheetTitle}
+        subtitle={sheetSubtitle}
+        maxHeightRatio={0.55}
+        footer={
+          <View style={s.sheetFoot}>
+            <Pressable
+              onPress={() => setDraft([])}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Clear all"
+            >
+              <Text style={s.sheetClear}>Clear all</Text>
+            </Pressable>
+            <Pressable
+              style={s.sheetApply}
+              onPress={() => {
+                onChange(draft);
+                close();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Apply ${draft.length} selected`}
+            >
+              <Text style={s.sheetApplyText}>
+                {draft.length ? `Apply (${draft.length})` : 'Apply'}
+              </Text>
+            </Pressable>
+          </View>
+        }
+      >
+        <View style={s.sheetSearch}>
+          <Icon name="search" size={17} color={colors.inkMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={searchPlaceholder}
+            placeholderTextColor={colors.inkFaint}
+            style={s.sheetSearchInput}
+            accessibilityLabel={searchPlaceholder}
+            underlineColorAndroid="transparent"
+          />
+          {!!query && (
+            <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityLabel="Clear search">
+              <Icon name="x" size={16} color={colors.inkMuted} />
+            </Pressable>
+          )}
+        </View>
+
+        {draft.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.sheetPicked}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={s.sheetCount}>{draft.length} selected</Text>
+            {draft.map((v) => (
+              <Pressable
+                key={v}
+                style={s.chip}
+                onPress={() => toggleDraft(v)}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${v}`}
+              >
+                <Text style={s.chipText}>{v}</Text>
+                <Icon name="x" size={13} color={colors.surfie} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+
+        {list.map((o) => {
+          const on = draft.includes(o);
+          return (
+            <Pressable
+              key={o}
+              onPress={() => toggleDraft(o)}
+              style={[s.sheetRow, on && s.sheetRowOn]}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+            >
+              <View style={[s.sheetBox, on && s.sheetBoxOn]}>
+                {on && <Icon name="check" size={13} color={colors.white} />}
+              </View>
+              <Text style={[s.sheetRowText, on && s.sheetRowTextOn]}>{o}</Text>
+            </Pressable>
+          );
+        })}
+        {list.length === 0 && <Text style={s.sheetEmpty}>No match for “{query}”.</Text>}
+      </Sheet>
+    </View>
+  );
+};
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export const daysInMonth = (month: number, year: number) => new Date(year, month, 0).getDate();
+
+/**
+ * Date of birth picker. Three tap-to-scroll columns in the existing Sheet
+ * rather than `@react-native-community/datetimepicker` — a native module would
+ * mean a pod install and a Gradle rebuild for one field, and this behaves the
+ * same on both platforms.
+ */
+const DobSheet = ({
+  visible,
+  onClose,
+  value,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  /** Digits-only DDMMYYYY, or '' when nothing has been entered yet. */
+  value: string;
+  onApply: (digits: string) => void;
+}) => {
+  const thisYear = new Date().getFullYear();
+  const years = useMemo(() => Array.from({ length: 120 }, (_, i) => thisYear - i), [thisYear]);
+
+  const [day, setDay] = useState(1);
+  const [month, setMonth] = useState(1);
+  const [year, setYear] = useState(thisYear - 30);
+
+  // Re-seed from the field each time it opens, so Cancel really cancels.
+  useEffect(() => {
+    if (!visible || value.length !== 8) return;
+    setDay(parseInt(value.slice(0, 2), 10) || 1);
+    setMonth(parseInt(value.slice(2, 4), 10) || 1);
+    setYear(parseInt(value.slice(4, 8), 10) || thisYear - 30);
+  }, [visible, value, thisYear]);
+
+  const maxDay = daysInMonth(month, year);
+  // 31 Jan then switch to February: the day has to come back to 28/29.
+  const safeDay = Math.min(day, maxDay);
+  const days = Array.from({ length: maxDay }, (_, i) => i + 1);
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Date of Birth"
+      subtitle="Your doctor uses this to judge dosing and risk."
+      maxHeightRatio={0.6}
+      footer={
+        <View style={s.sheetFoot}>
+          <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Cancel">
+            <Text style={s.sheetClear}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={s.sheetApply}
+            onPress={() => {
+              onApply(pad(safeDay) + pad(month) + year);
+              onClose();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Apply date of birth"
+          >
+            <Text style={s.sheetApplyText}>
+              {pad(safeDay) + ' ' + MONTHS[month - 1].slice(0, 3) + ' ' + year}
+            </Text>
+          </Pressable>
+        </View>
+      }
+    >
+      <View style={s.dobCols}>
+        <View style={s.dobCol}>
+          <Text style={s.dobColLabel}>Day</Text>
+          <ScrollView style={s.dobList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {days.map((d) => (
+              <Pressable
+                key={d}
+                onPress={() => setDay(d)}
+                style={[s.dobItem, d === safeDay && s.dobItemOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: d === safeDay }}
+              >
+                <Text style={[s.dobItemText, d === safeDay && s.dobItemTextOn]}>{d}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={[s.dobCol, s.dobColWide]}>
+          <Text style={s.dobColLabel}>Month</Text>
+          <ScrollView style={s.dobList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {MONTHS.map((m, i) => (
+              <Pressable
+                key={m}
+                onPress={() => setMonth(i + 1)}
+                style={[s.dobItem, i + 1 === month && s.dobItemOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: i + 1 === month }}
+              >
+                <Text style={[s.dobItemText, i + 1 === month && s.dobItemTextOn]}>{m}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={s.dobCol}>
+          <Text style={s.dobColLabel}>Year</Text>
+          <ScrollView style={s.dobList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {years.map((y) => (
+              <Pressable
+                key={y}
+                onPress={() => setYear(y)}
+                style={[s.dobItem, y === year && s.dobItemOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: y === year }}
+              >
+                <Text style={[s.dobItemText, y === year && s.dobItemTextOn]}>{y}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Sheet>
+  );
+};
 
 /** Tap-to-open list, in place of a native picker (no extra dependency). */
 const Select = ({
@@ -228,9 +537,25 @@ export const ProfileSetupScreen = () => {
   // step 1
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [dob, setDob] = useState('');
+  const [dobOpen, setDobOpen] = useState(false);
   const [gender, setGender] = useState('');
   const [email, setEmail] = useState('');
   const [languages, setLanguages] = useState<string[]>([]);
+  const [photo, setPhoto] = useState<string | null>(null);
+
+  const pickPhoto = async () => {
+    Keyboard.dismiss();
+    try {
+      const res = await pickImageFromLibrary({ mediaType: 'photo', selectionLimit: 1, quality: 0.8 });
+      if (res.didCancel) return;
+      if (res.errorCode) return setError(res.errorMessage ?? 'Could not open your photos.');
+      const uri = res.assets?.[0]?.uri;
+      if (uri) setPhoto(uri);
+    } catch (e: any) {
+      /* Show what actually failed rather than a guess at why. */
+      setError(e?.message ?? 'Could not open your photos.');
+    }
+  };
 
   /**
    * Keyboard handling. Android resizes the window but does not reliably scroll
@@ -238,22 +563,64 @@ export const ProfileSetupScreen = () => {
    * its offset and focusing an input scrolls to it.
    */
   const scrollRef = useRef<ScrollView>(null);
-  const fieldTops = useRef<Record<string, number>>({});
+  const fieldTops = useRef<Record<string, { y: number; height: number }>>({});
+  /** The scroll viewport's full laid-out height. See `scrollToField`. */
+  const viewH = useRef(0);
+  const focusedField = useRef<string | null>(null);
+  /**
+   * The open keyboard's height, added to the scroll padding while it is up.
+   * Without it `scrollTo` clamps at the end of the content and the last few
+   * fields can never reach the top of the viewport — which is the whole
+   * mechanism by which a field escapes the keyboard.
+   */
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const rememberTop = (key: string) => (e: any) => {
-    fieldTops.current[key] = e.nativeEvent.layout.y;
+    const { y, height } = e.nativeEvent.layout;
+    fieldTops.current[key] = { y, height };
+  };
+  /**
+   * Bring the field to rest just above the keyboard rather than at the top of
+   * the page: scroll its bottom edge to the bottom of the visible viewport.
+   *
+   * What counts as "visible" differs by platform. iOS's `KeyboardAvoidingView`
+   * pads this view, so `onLayout` already reports the shrunken height. Android
+   * does not: the app targets SDK 36, so Android 15+ forces edge-to-edge, where
+   * `windowSoftInputMode="adjustResize"` no longer resizes the window — the IME
+   * comes in as an inset over a still-full-height window (verified: the window
+   * frame stays [0,0][1080,2400] with the keyboard up). So subtract the
+   * keyboard ourselves there, or every scroll lands a keyboard's-worth short
+   * and the focused field stays covered.
+   */
+  const scrollToField = (key: string | null) => {
+    const box = key === null ? undefined : fieldTops.current[key];
+    if (!box) return;
+    const view = viewH.current && viewH.current - (Platform.OS === 'android' ? kbHeight : 0);
+    const y = view ? box.y + box.height + 16 - view : box.y - 24;
+    scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: true });
   };
   const revealField = (key: string) => () => {
-    const y = fieldTops.current[key];
-    if (y === undefined) return;
-    scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true });
+    focusedField.current = key;
+    scrollToField(key);
   };
+  /* Re-run once the padding above has actually been laid out. */
+  useEffect(() => {
+    if (kbHeight) scrollToField(focusedField.current);
+  }, [kbHeight]);
   const goToStep = (next: 1 | 2 | 3) => {
     Keyboard.dismiss();
     setStep(next);
     // Otherwise the next step opens scrolled to wherever this one ended.
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   };
-  const [langQuery, setLangQuery] = useState('');
 
   // step 2
   const [address1, setAddress1] = useState('');
@@ -287,14 +654,6 @@ export const ProfileSetupScreen = () => {
     if (!h || !w || h <= 0) return '';
     return (w / (h * h)).toFixed(1);
   }, [height, weight]);
-
-  const langSuggestions = useMemo(
-    () =>
-      ALL_LANGUAGES.filter(
-        (l) => !languages.includes(l) && l.toLowerCase().includes(langQuery.trim().toLowerCase()),
-      ).slice(0, 4),
-    [languages, langQuery],
-  );
 
   /** DD / MM / YYYY as the user types; digits only underneath. */
   const onDobChange = (raw: string) => {
@@ -366,7 +725,10 @@ export const ProfileSetupScreen = () => {
       goToStep((step - 1) as 1 | 2);
       return;
     }
-    navigation.goBack();
+    // Sign-in resets the stack to this screen, so there is nothing to pop on
+    // step 1 and goBack() was a silent no-op.
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Welcome');
   };
 
   return (
@@ -377,7 +739,10 @@ export const ProfileSetupScreen = () => {
       <ScrollView
         ref={scrollRef}
         style={s.scrollView}
-        contentContainerStyle={s.scrollContent}
+        onLayout={(e) => {
+          viewH.current = e.nativeEvent.layout.height;
+        }}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: spacing.xl + kbHeight }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -400,15 +765,24 @@ export const ProfileSetupScreen = () => {
             <Text style={s.lede}>Tell us about yourself so we can create your patient profile.</Text>
 
             <View style={s.photoRow}>
-              <View style={s.photoCircle}>
-                <Icon name="camera" size={26} color={colors.surfie} />
-              </View>
+              <Pressable
+                style={s.photoCircle}
+                onPress={pickPhoto}
+                accessibilityRole="button"
+                accessibilityLabel="Add profile photo"
+              >
+                {photo ? (
+                  <Image source={{ uri: photo }} style={s.photoImage} resizeMode="cover" />
+                ) : (
+                  <Icon name="camera" size={26} color={colors.surfie} />
+                )}
+              </Pressable>
               <View style={s.flex}>
                 <Text style={s.photoTitle}>Profile Photo</Text>
-                <Text style={s.photoOptional}>Optional</Text>
+                <Text style={s.photoHint}>JPG or PNG</Text>
               </View>
-              <Pressable style={s.photoBtn} accessibilityRole="button">
-                <Text style={s.photoBtnText}>Add Photo</Text>
+              <Pressable style={s.photoBtn} onPress={pickPhoto} accessibilityRole="button">
+                <Text style={s.photoBtnText}>{photo ? 'Change' : 'Add Photo'}</Text>
               </Pressable>
             </View>
 
@@ -422,7 +796,25 @@ export const ProfileSetupScreen = () => {
                 onChangeText={onDobChange}
                 placeholder="DD / MM / YYYY"
                 keyboardType="numeric"
-                right={<Icon name="calendar" size={18} color={colors.inkMuted} />}
+                right={
+                  <Pressable
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setDobOpen(true);
+                    }}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel="Pick date of birth"
+                  >
+                    <Icon name="calendar" size={18} color={colors.inkMuted} />
+                  </Pressable>
+                }
+              />
+              <DobSheet
+                visible={dobOpen}
+                onClose={() => setDobOpen(false)}
+                value={dob.replace(/[^0-9]/g, '')}
+                onApply={onDobChange}
               />
             </Field>
 
@@ -451,58 +843,15 @@ export const ProfileSetupScreen = () => {
             </Field>
 
             <Field label="Preferred Language(s)" required onLayout={rememberTop('Preferred Language(s)')}>
-              <View style={s.inputWrap}>
-                <Icon name="search" size={17} color={colors.inkMuted} />
-                <TextInput
-                  value={langQuery}
-                  onChangeText={setLangQuery}
-                  placeholder="Search languages"
-                  placeholderTextColor={colors.inkFaint}
-                  style={[s.input, s.inputWithIcon]}
-                />
-              </View>
-
-              {!!langQuery && !!langSuggestions.length && (
-                <View style={s.selectList}>
-                  {langSuggestions.map((l) => (
-                    <Pressable
-                      key={l}
-                      onPress={() => {
-                        setLanguages((prev) => [...prev, l]);
-                        setLangQuery('');
-                      }}
-                      style={({ pressed }) => [s.selectRow, pressed && s.pressed]}
-                    >
-                      <Text style={s.selectRowText}>{l}</Text>
-                      <Icon name="plus" size={15} color={colors.surfie} />
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              <View style={s.chipRow}>
-                {languages.map((l) => (
-                  <View key={l} style={s.chip}>
-                    <Text style={s.chipText}>{l}</Text>
-                    <Pressable
-                      onPress={() => setLanguages((prev) => prev.filter((x) => x !== l))}
-                      hitSlop={8}
-                      accessibilityLabel={`Remove ${l}`}
-                    >
-                      <Icon name="x" size={14} color={colors.surfie} />
-                    </Pressable>
-                  </View>
-                ))}
-                <Pressable
-                  style={s.chipAdd}
-                  onPress={() => setLangQuery(' ')}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add a language"
-                >
-                  <Icon name="plus" size={13} color={colors.surfie} />
-                  <Text style={s.chipAddText}>Add</Text>
-                </Pressable>
-              </View>
+              <MultiSelect
+                values={languages}
+                options={ALL_LANGUAGES}
+                onChange={setLanguages}
+                addLabel="Add language"
+                sheetTitle="Preferred Language(s)"
+                sheetSubtitle="Select all languages you are comfortable consulting in"
+                searchPlaceholder="Search languages"
+              />
             </Field>
           </>
         )}
@@ -533,16 +882,21 @@ export const ProfileSetupScreen = () => {
                 onFocus={revealField('District')} />
             </Field>
 
-            <View style={s.row}>
-              <Field label="State" required style={s.flex} onLayout={rememberTop('State')}>
+            <View style={s.row} onLayout={rememberTop('State / PIN')}>
+              <Field label="State" required style={s.flex}>
                 <Select value={stateName} placeholder="Select state" options={STATES} onSelect={setStateName} />
               </Field>
-              <Field label="PIN Code" required style={s.flex} onLayout={rememberTop('PIN Code')}>
+              <Field label="PIN Code" required style={s.flex}>
                 <Input
                   value={pin}
-                  onChangeText={(v) => setPin(v.replace(/\D/g, '').slice(0, 6))}
+                  onChangeText={(v) => {
+                    const digits = v.replace(/\D/g, '').slice(0, 6);
+                    setPin(digits);
+                    // A numeric keypad has no return key, so a full PIN closes it.
+                    if (digits.length === 6) Keyboard.dismiss();
+                  }}
                   placeholder="Enter PIN code"
-                onFocus={revealField('PIN Code')}
+                  onFocus={revealField('State / PIN')}
                   keyboardType="numeric"
                   maxLength={6}
                 />
@@ -576,30 +930,32 @@ export const ProfileSetupScreen = () => {
               Help your doctor understand your health better. You can complete or update this section anytime.
             </Text>
 
-            <View style={s.row}>
-              <Field label="Blood Group" style={s.flex} onLayout={rememberTop('Blood Group')}>
+            <View style={s.row} onLayout={rememberTop('Blood Group / Height')}>
+              <Field label="Blood Group" style={s.flex}>
                 <Select value={bloodGroup} placeholder="Select" options={BLOOD_GROUPS} onSelect={setBloodGroup} />
               </Field>
-              <Field label="Height" style={s.flex} onLayout={rememberTop('Height')}>
+              <Field label="Height" style={s.flex}>
                 <Input
                   value={height}
                   onChangeText={(v) => setHeight(v.replace(/\D/g, '').slice(0, 3))}
                   placeholder="Height in cm"
+                  onFocus={revealField('Blood Group / Height')}
                   keyboardType="numeric"
                 />
               </Field>
             </View>
 
-            <View style={s.row}>
-              <Field label="Weight" style={s.flex} onLayout={rememberTop('Weight')}>
+            <View style={s.row} onLayout={rememberTop('Weight / BMI')}>
+              <Field label="Weight" style={s.flex}>
                 <Input
                   value={weight}
                   onChangeText={(v) => setWeight(v.replace(/\D/g, '').slice(0, 3))}
                   placeholder="Weight in kg"
+                  onFocus={revealField('Weight / BMI')}
                   keyboardType="numeric"
                 />
               </Field>
-              <Field label="BMI" style={s.flex} onLayout={rememberTop('BMI')}>
+              <Field label="BMI" style={s.flex}>
                 <View style={[s.inputWrap, s.inputWrapMuted]}>
                   <Text style={[s.input, !bmi && s.inputPlaceholder]}>
                     {bmi || 'Calculated automatically'}
@@ -621,6 +977,7 @@ export const ProfileSetupScreen = () => {
                   placeholder="Search or add condition"
                   placeholderTextColor={colors.inkFaint}
                   style={[s.input, s.inputWithIcon]}
+                  underlineColorAndroid="transparent"
                 />
                 <Pressable
                   onPress={() => setCondition('')}
@@ -662,6 +1019,7 @@ export const ProfileSetupScreen = () => {
                       returnKeyType="done"
                       onSubmitEditing={addMedicine}
                       blurOnSubmit
+                      underlineColorAndroid="transparent"
                     />
                   </View>
 
@@ -790,18 +1148,24 @@ const s = StyleSheet.create({
     backgroundColor: colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 32,
+  },
+  photoHint: {
+    fontFamily: typography.body.family,
+    fontSize: 12,
+    color: colors.inkMuted,
+    marginTop: 2,
   },
   photoTitle: {
     fontFamily: typography.heading.family,
     fontSize: 15,
     fontWeight: '700',
     color: colors.ink,
-  },
-  photoOptional: {
-    fontFamily: typography.body.family,
-    fontSize: 13,
-    color: colors.inkMuted,
-    marginTop: 1,
   },
   photoBtn: {
     paddingHorizontal: 18,
@@ -921,6 +1285,108 @@ const s = StyleSheet.create({
   selectRowTextOn: { color: colors.surfie, fontWeight: '700' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  sheetSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    height: 46,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surface.inputBorder,
+    backgroundColor: colors.white,
+    marginBottom: spacing.md,
+  },
+  sheetSearchInput: {
+    flex: 1,
+    fontFamily: typography.body.family,
+    fontSize: 15,
+    color: colors.ink,
+    padding: 0,
+  },
+  sheetPicked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  sheetCount: {
+    fontFamily: typography.body.family,
+    fontSize: 13,
+    color: colors.inkMuted,
+    marginRight: 2,
+  },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 13,
+    borderRadius: radius.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface.line,
+  },
+  sheetRowOn: {
+    backgroundColor: colors.successSoft,
+    borderBottomColor: 'transparent',
+  },
+  sheetBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.surface.inputBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetBoxOn: {
+    backgroundColor: colors.surfie,
+    borderColor: colors.surfie,
+  },
+  sheetRowText: {
+    fontFamily: typography.body.family,
+    fontSize: 15,
+    color: colors.ink,
+  },
+  sheetRowTextOn: { fontWeight: '700' },
+  sheetEmpty: {
+    fontFamily: typography.body.family,
+    fontSize: 14,
+    color: colors.inkMuted,
+    paddingVertical: spacing.lg,
+    textAlign: 'center',
+  },
+  sheetFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.surface.line,
+  },
+  sheetClear: {
+    fontFamily: typography.body.family,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.surfie,
+    paddingVertical: 12,
+  },
+  sheetApply: {
+    flex: 1,
+    maxWidth: 200,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfie,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetApplyText: {
+    fontFamily: typography.body.family,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
+  },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -953,6 +1419,36 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: colors.surfie,
   },
+
+  dobCols: { flexDirection: 'row', gap: spacing.sm },
+  dobCol: { flex: 1, gap: 6 },
+  dobColWide: { flex: 1.5 },
+  dobColLabel: {
+    fontFamily: typography.body.family,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.inkMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  dobList: {
+    height: 220,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    borderRadius: radius.md,
+  },
+  dobItem: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+  },
+  dobItemOn: { backgroundColor: '#EEF8F5' },
+  dobItemText: {
+    fontFamily: typography.body.family,
+    fontSize: 14,
+    color: colors.ink,
+  },
+  dobItemTextOn: { color: colors.surfie, fontWeight: '700' },
 
   segmented: {
     flexDirection: 'row',

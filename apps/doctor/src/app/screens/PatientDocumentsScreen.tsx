@@ -150,6 +150,7 @@ export const PatientDocumentsScreen = ({
               placeholder="Search documents"
               placeholderTextColor={colors.inkFaint}
               accessibilityLabel="Search documents"
+              underlineColorAndroid="transparent"
             />
           </View>
           <Pressable

@@ -150,6 +150,7 @@ export const CasesScreen = ({ onOpenCase }: { onOpenCase: (appointmentId: string
             placeholderTextColor={colors.inkFaint}
             returnKeyType="search"
             accessibilityLabel="Search cases"
+            underlineColorAndroid="transparent"
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">

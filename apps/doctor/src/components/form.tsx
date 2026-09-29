@@ -119,6 +119,7 @@ export const TextField = ({
           editable={editable}
           accessibilityLabel={label}
           style={[multiline ? s.inputTextMulti : s.inputText, s.bare]}
+          underlineColorAndroid="transparent"
         />
         {right}
       </View>
@@ -347,6 +348,7 @@ export const SelectField = ({
                 placeholderTextColor={colors.inkFaint}
                 style={[s.input, s.search, s.inputText]}
                 accessibilityLabel={`Search ${label.toLowerCase()}`}
+                underlineColorAndroid="transparent"
               />
             ) : undefined
           }
@@ -511,6 +513,7 @@ export const MultiSelectField = ({
             placeholderTextColor={colors.inkFaint}
             style={[s.input, s.search, s.inputText]}
             accessibilityLabel={searchPlaceholder}
+            underlineColorAndroid="transparent"
           />
         }
       >
@@ -711,6 +714,7 @@ export const DateField = ({
           maxLength={14}
           accessibilityLabel={label}
           style={[s.inputText, s.bare]}
+          underlineColorAndroid="transparent"
         />
         <Pressable
           testID={testID ? `${testID}-calendar` : undefined}

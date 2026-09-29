@@ -54,6 +54,7 @@ export const ChatListScreen = ({
           placeholder="Search by name or case"
           placeholderTextColor={colors.inkFaint}
           accessibilityLabel="Search messages"
+          underlineColorAndroid="transparent"
         />
       </View>
 

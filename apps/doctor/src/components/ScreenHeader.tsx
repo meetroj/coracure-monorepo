@@ -1,7 +1,7 @@
 import React, { type ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
-import LogoWide from '../assets/brand/logo-wide.svg';
+import { BrandLockup } from './BrandLockup';
 import { colors, radius, spacing } from '../theme/brand';
 import { typeStyles } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
@@ -129,7 +129,7 @@ export const ScreenHeader = ({
             )}
           </>
         ) : (
-          <LogoWide width={104} height={26} accessibilityLabel="CoraCure" />
+          <BrandLockup height={26} accessibilityLabel="Coracure" />
         )}
       </View>
       <View style={[s.side, s.sideRight]}>{right}</View>

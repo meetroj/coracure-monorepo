@@ -144,6 +144,7 @@ export const RescheduleModal = ({
                 onChangeText={setDate}
                 placeholder="e.g. 20 May 2024"
                 placeholderTextColor={colors.inkFaint}
+                underlineColorAndroid="transparent"
               />
 
               <Text style={s.inputLabel}>New time</Text>
@@ -168,6 +169,7 @@ export const RescheduleModal = ({
                 multiline
                 placeholder="e.g. Patient requested a different time slot"
                 placeholderTextColor={colors.inkFaint}
+                underlineColorAndroid="transparent"
               />
 
               <View style={s.cutoffNote}>
@@ -258,6 +260,7 @@ export const CancelModal = ({
                 multiline
                 placeholder="e.g. Doctor unavailable, patient requested cancellation…"
                 placeholderTextColor={colors.inkFaint}
+                underlineColorAndroid="transparent"
               />
               {!!error && <Text style={s.modalError}>{error}</Text>}
 

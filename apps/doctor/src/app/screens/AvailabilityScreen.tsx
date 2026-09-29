@@ -190,6 +190,7 @@ const TimeInput = ({
       returnKeyType="done"
       accessibilityLabel={label}
       style={[s.time, focused && s.timeFocused, invalid && s.timeInvalid]}
+      underlineColorAndroid="transparent"
     />
   );
 };
@@ -235,6 +236,7 @@ const EntryEditor = ({
             accessibilityLabel="Entry date"
             accessibilityHint="Year, month and day, for example 2026-10-12"
             style={s.editorText}
+            underlineColorAndroid="transparent"
           />
           <Pressable
             testID="entry-calendar"
@@ -263,6 +265,7 @@ const EntryEditor = ({
             accessibilityLabel="Entry details"
             accessibilityHint={exception ? 'Hours, for example 09:00 AM - 01:00 PM' : 'Reason for the time off'}
             style={s.editorText}
+            underlineColorAndroid="transparent"
           />
         </View>
         {!!editor?.error && <Text style={s.editorError}>{editor.error}</Text>}

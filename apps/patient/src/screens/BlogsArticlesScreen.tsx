@@ -1,15 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, typography, radius } from '@coracure/brand';
 import { Icon } from '@coracure/ui';
 import LogoWide from '../assets/brand/logo-wide.svg';
-import DrRichardImg from '../assets/dr-richard-parker.jpg';
-import DrNehaImg from '../assets/dr-neha-sharma.jpg';
-import KneeJointImg from '../assets/knee-joint.jpg';
-import MentalHealthImg from '../assets/mental-health.jpg';
-import SleepScienceImg from '../assets/sleep-science.jpg';
 import PatientTabBar from '../components/PatientTabBar';
+import { ARTICLES, type Article } from '../data/articles';
 
 const CATEGORIES = [
   'All',
@@ -20,56 +16,9 @@ const CATEGORIES = [
   'Mental Health',
 ];
 
-interface ArticleItem {
-  id: string;
-  category: string;
-  title: string;
-  author: string;
-  readTime: string;
-  thumbnail: any;
-}
-
-const ARTICLES: ArticleItem[] = [
-  {
-    id: '1',
-    category: 'REHABILITATION',
-    title: '10 Exercises To Strengthen Your Quads at Home',
-    author: 'Dr. Richard Parker',
-    readTime: '4 min read',
-    thumbnail: DrRichardImg,
-  },
-  {
-    id: '2',
-    category: 'MENTAL WELLNESS',
-    title: 'How Mental Health Impacts Physical Healing',
-    author: 'Dr. Neha Sharma',
-    readTime: '6 min read',
-    thumbnail: DrNehaImg,
-  },
-  {
-    id: '3',
-    category: 'CLINICAL SCIENCE',
-    title: 'The Role of Collagen in Joint Repair',
-    author: 'CoraCure Ortho Team',
-    readTime: '5 min read',
-    thumbnail: KneeJointImg,
-  },
-];
-
-const TRENDING_TOPICS = [
-  {
-    id: 't1',
-    title: 'Post-Op Physical Therapy',
-    reads: '1.2k reads',
-    thumbnail: SleepScienceImg,
-  },
-  {
-    id: 't2',
-    title: 'Joint Nutrition Guidelines',
-    reads: '980 reads',
-    thumbnail: MentalHealthImg,
-  },
-];
+const FEATURED = ARTICLES.find((a) => a.featured) as Article;
+const FEED = ARTICLES.filter((a) => !a.featured && !a.trending);
+const TRENDING_TOPICS = ARTICLES.filter((a) => a.trending);
 
 export const BlogsArticlesScreen = () => {
   const navigation = useNavigation<any>();
@@ -77,8 +26,8 @@ export const BlogsArticlesScreen = () => {
   const [selectedCat, setSelectedCat] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleArticlePress = (title: string, author: string) => {
-    Alert.alert(title, `Opening clinically reviewed article by ${author}...`);
+  const openArticle = (articleId: string) => {
+    navigation.navigate('ArticleDetail', { articleId });
   };
 
   return (
@@ -114,7 +63,7 @@ export const BlogsArticlesScreen = () => {
       >
         {/* Title */}
         <View style={s.titleWrap}>
-          <Text style={s.pageTitle}>Blogs & Articles 📖</Text>
+          <Text style={s.pageTitle}>Blogs & Articles</Text>
           <Text style={s.pageSubtitle}>
             Evidence-based clinical insights & recovery guides
           </Text>
@@ -128,6 +77,7 @@ export const BlogsArticlesScreen = () => {
             onChangeText={setSearchQuery}
             placeholder="Search articles, symptoms, topics..."
             placeholderTextColor={colors.inkFaint}
+            underlineColorAndroid="transparent"
           />
           <Pressable
             style={s.searchIconCircle}
@@ -166,14 +116,14 @@ export const BlogsArticlesScreen = () => {
         {/* Featured Hero Banner Card */}
         <Pressable
           style={s.featuredCard}
-          onPress={() => handleArticlePress('Knee Recovery 101: What To Expect In Month 1', 'Dr. Richard Parker')}
+          onPress={() => openArticle(FEATURED.id)}
           accessibilityRole="button"
-          accessibilityLabel="Featured Post: Knee Recovery 101"
+          accessibilityLabel={`Featured Post: ${FEATURED.title}`}
         >
           <View style={s.featuredRow}>
             <View style={s.featuredIconBox}>
               <Image
-                source={MentalHealthImg}
+                source={FEATURED.thumbnail}
                 style={s.featuredIconImg}
                 resizeMode="cover"
               />
@@ -182,11 +132,9 @@ export const BlogsArticlesScreen = () => {
               <View style={s.featuredBadgeWrap}>
                 <Text style={s.featuredBadgeText}>FEATURED POST</Text>
               </View>
-              <Text style={s.featuredTitle}>
-                Knee Recovery 101: What To Expect In Month 1
-              </Text>
+              <Text style={s.featuredTitle}>{FEATURED.title}</Text>
               <Text style={s.featuredMeta}>
-                By Dr. Richard Parker • 5 min read
+                By {FEATURED.author} • {FEATURED.readTime}
               </Text>
             </View>
           </View>
@@ -199,11 +147,11 @@ export const BlogsArticlesScreen = () => {
         </View>
 
         <View style={s.articlesList}>
-          {ARTICLES.map((item) => (
+          {FEED.map((item) => (
             <Pressable
               key={item.id}
               style={s.articleCard}
-              onPress={() => handleArticlePress(item.title, item.author)}
+              onPress={() => openArticle(item.id)}
               accessibilityRole="button"
               accessibilityLabel={item.title}
             >
@@ -234,7 +182,7 @@ export const BlogsArticlesScreen = () => {
               <Pressable
                 key={topic.id}
                 style={s.trendingCard}
-                onPress={() => handleArticlePress(topic.title, 'Clinical Staff')}
+                onPress={() => openArticle(topic.id)}
                 accessibilityRole="button"
                 accessibilityLabel={topic.title}
               >

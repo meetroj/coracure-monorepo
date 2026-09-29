@@ -30,6 +30,7 @@ export const FaqListScreen = ({ onBack }: { onBack: () => void }) => {
           style={s.searchInput}
           returnKeyType="search"
           accessibilityLabel="Search FAQs"
+          underlineColorAndroid="transparent"
         />
       </View>
       {matches.length === 0 ? (

@@ -160,6 +160,7 @@ export const SelfHelpToolScreen = () => {
             placeholderTextColor={colors.inkFaint}
             multiline
             numberOfLines={3}
+            underlineColorAndroid="transparent"
           />
         </View>
 

@@ -37,7 +37,7 @@ module.exports = {
     ),
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?|@react-navigation|react-native-keychain|react-native-svg|react-native-safe-area-context)/)',
+    'node_modules/(?!(.pnpm/.+/node_modules/)?(react-native|@react-native(-community)?|@react-navigation|react-native-keychain|react-native-svg|react-native-safe-area-context|react-native-image-picker)/)',
   ],
   coverageDirectory: '../../coverage/apps/patient'
 };

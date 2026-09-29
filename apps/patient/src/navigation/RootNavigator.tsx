@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, StyleSheet, Pressable, Text, Platform, BackHandler } from 'react-native';
+import { View, StyleSheet, Pressable, Text, Platform, BackHandler, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets, SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { NavigationContext, NavigationRouteContext } from '@react-navigation/native';
-import { colors } from '@coracure/brand';
+import { colors, breakpoint } from '@coracure/brand';
 import { useAuth } from '../hooks/useAuth';
 import SplashScreen from '../screens/SplashScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
@@ -25,9 +25,11 @@ import AIAssistantScreen from '../screens/AIAssistantScreen';
 import SelfHelpToolScreen from '../screens/SelfHelpToolScreen';
 import EducationLibraryScreen from '../screens/EducationLibraryScreen';
 import BlogsArticlesScreen from '../screens/BlogsArticlesScreen';
+import ArticleDetailScreen from '../screens/ArticleDetailScreen';
 import AppointmentsScreen from '../screens/AppointmentsScreen';
 import AppointmentDetailScreen from '../screens/AppointmentDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import ProfileDetailScreen, { type ProfileSection } from '../screens/ProfileDetailScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ReportsScreen from '../screens/ReportsScreen';
 import SearchScreen from '../screens/SearchScreen';
@@ -41,7 +43,8 @@ import CaregiverGuideScreen from '../screens/CaregiverGuideScreen';
 import SupportDirectoryScreen from '../screens/SupportDirectoryScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
 import LegalPolicyScreen from '../screens/LegalPolicyScreen';
-import { MainTabs } from './MainTabs';
+import RecommendedResourcesScreen from '../screens/RecommendedResourcesScreen';
+import { MainTabs, type MainTabKey } from './MainTabs';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -49,7 +52,7 @@ export type RootStackParamList = {
   VerifyOtp: { mobileNumber: string; challengeId: string };
   ProfileSetup: undefined;
   Consent: undefined;
-  MainTabs: undefined;
+  MainTabs: { tab?: MainTabKey } | undefined;
   RescheduleAppointment: { consultationId?: string } | undefined;
   CancelRefund: { consultationId?: string } | undefined;
   DeviceCheck: { consultationId?: string } | undefined;
@@ -61,13 +64,16 @@ export type RootStackParamList = {
   CheckInComplete: { status?: string } | undefined;
   BookFollowUp: { doctorName?: string; specialty?: string; fee?: number } | undefined;
   CareHub: undefined;
+  RecommendedResources: undefined;
   AIAssistant: undefined;
   SelfHelpTool: undefined;
   EducationLibrary: undefined;
   BlogsArticles: undefined;
+  ArticleDetail: { articleId?: string } | undefined;
   Appointments: undefined;
   AppointmentDetail: { consultationId?: string; doctorId?: string } | undefined;
   Profile: undefined;
+  ProfileDetail: { section: ProfileSection };
   Notifications: undefined;
   Reports: undefined;
   Search: undefined;
@@ -85,7 +91,7 @@ export type RootStackParamList = {
   ChooseService: undefined;
   FindDoctor: { serviceName?: string; concerns?: string[] } | undefined;
   DoctorProfile: { doctorId?: string } | undefined;
-  SelectSlot: { doctorId?: string } | undefined;
+  SelectSlot: { doctorId?: string; serviceName?: string } | undefined;
   InstantConsultRequest: { doctorId?: string } | undefined;
   CaregiverGuide: undefined;
   SupportDirectory: undefined;
@@ -101,6 +107,14 @@ interface StackEntry {
 
 export const RootNavigator = () => {
   const insets = useSafeAreaInsets();
+  /**
+   * Tablets, foldables and the desktop browser. Every screen here was drawn for
+   * a phone, so on a wide viewport the whole app is centred in a phone-plus
+   * column rather than stretched — one cap here covers the screens that use the
+   * shared `Screen` wrapper and the ones that roll their own layout alike.
+   */
+  const { width: viewportWidth } = useWindowDimensions();
+  const isWide = viewportWidth >= breakpoint.wide;
   const { isAuthenticated, isNewAccount, user, isLoading, signOut } = useAuth();
 
   const [stack, setStack] = useState<StackEntry[]>(() => {
@@ -267,6 +281,8 @@ export const RootNavigator = () => {
         return <BookFollowUpScreen />;
       case 'CareHub':
         return <CareHubScreen />;
+      case 'RecommendedResources':
+        return <RecommendedResourcesScreen />;
       case 'AIAssistant':
         return <AIAssistantScreen />;
       case 'SelfHelpTool':
@@ -275,12 +291,16 @@ export const RootNavigator = () => {
         return <EducationLibraryScreen />;
       case 'BlogsArticles':
         return <BlogsArticlesScreen />;
+      case 'ArticleDetail':
+        return <ArticleDetailScreen />;
       case 'Appointments':
         return <AppointmentsScreen />;
       case 'AppointmentDetail':
         return <AppointmentDetailScreen />;
       case 'Profile':
         return <ProfileScreen />;
+      case 'ProfileDetail':
+        return <ProfileDetailScreen />;
       case 'Notifications':
         return <NotificationsScreen />;
       case 'Reports':
@@ -365,7 +385,7 @@ export const RootNavigator = () => {
   return (
     <NavigationContext.Provider value={navigationValue as any}>
       <NavigationRouteContext.Provider value={routeValue}>
-        <View style={[s.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={[s.container, isWide && s.containerWide, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           {/* Subtle Top Preview Navigator Bar */}
           {Platform.OS === 'web' && <View style={s.previewBar}>
             <Pressable
@@ -411,7 +431,7 @@ export const RootNavigator = () => {
             </View>
           )}
 
-          <View style={s.screenWrapper} key={current.key}>
+          <View style={[s.screenWrapper, isWide && s.screenWrapperWide]} key={current.key}>
             <SafeAreaInsetsContext.Provider value={{ ...insets, top: 0 }}>
             {renderScreenContent()}
             </SafeAreaInsetsContext.Provider>
@@ -439,6 +459,14 @@ const s = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+  },
+  screenWrapperWide: {
+    maxWidth: breakpoint.appMaxWidth,
+    alignSelf: 'center',
+  },
+  /** The margins either side of the centred column read as page, not chrome. */
+  containerWide: {
+    backgroundColor: colors.surface.page,
   },
   previewBar: {
     flexDirection: 'row',

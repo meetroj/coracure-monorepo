@@ -23,9 +23,11 @@ import {
   GhostButton,
   SolidButton,
 } from '../../components/compact';
+import { BottomSheet } from '../../components/BottomSheet';
 import { useStore } from '../../state/store';
 import { selectCases, selectRecord, selectReferableCase } from '../../state/selectors';
 import {
+  EXPERT_PANEL,
   GUIDANCE_AREAS,
   URGENCIES,
   HISTORY_MAX,
@@ -52,6 +54,8 @@ const draftFromCase = (c: PatientCase, r: ConsultationRecord): ClarificationDraf
   appointmentId: c.appointmentId,
   patientName: c.name,
   patientId: c.patientId,
+  expertId: '',
+  expertName: '',
   consultationId: c.caseId,
   title: r.notes.complaint.trim() || c.concern,
   ageLabel: ageBand(c.age),
@@ -71,6 +75,9 @@ const draftFromClarification = (c: Clarification, pc: PatientCase | undefined): 
   appointmentId: c.appointmentId,
   patientName: pc?.name ?? '',
   patientId: pc?.patientId ?? '',
+  /* Routing, not shared clinical content: re-picked when editing. */
+  expertId: '',
+  expertName: '',
   consultationId: pc?.caseId ?? '',
   title: c.title,
   ageLabel: c.shared.ageLabel,
@@ -127,6 +134,21 @@ export const CreateClarificationScreen = ({
   }, []);
 
   const [step, setStep] = useState(0);
+  const [pickingExpert, setPickingExpert] = useState(false);
+
+  /** Picking the reviewer is the last act: confirm, then submit to them. */
+  const sendTo = (e: (typeof EXPERT_PANEL)[number]) => {
+    if (!draft) return;
+    setPickingExpert(false);
+    const addressed = { ...draft, expertId: e.id, expertName: e.name, speciality: e.speciality };
+    confirm({
+      title: `Submit to ${e.name}?`,
+      message:
+        'The de-identified case is shared with this reviewer. The patient does not see this discussion.',
+      confirmLabel: 'Submit',
+      onConfirm: () => onSubmit(addressed),
+    });
+  };
   const [draft, setDraft] = useState<ClarificationDraft | null>(start);
   const [confirmed, setConfirmed] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -187,24 +209,53 @@ export const CreateClarificationScreen = ({
             ) : (
               <SolidButton
                 testID="submit"
-                label="Submit to Expert"
+                label="Select Doctor"
                 // the identifier confirmation is a hard gate, not a nudge
                 disabled={!confirmed || flagged}
-                onPress={() =>
-                  draft &&
-                  confirm({
-                    title: 'Submit to expert?',
-                    message: 'The de-identified case is shared with an expert reviewer. The patient does not see this discussion.',
-                    confirmLabel: 'Submit',
-                    onConfirm: () => onSubmit(draft),
-                  })
-                }
+                onPress={() => setPickingExpert(true)}
               />
             )}
           </View>
         </View>
       }
     >
+      <BottomSheet
+        testID="expert-sheet"
+        visible={pickingExpert}
+        title="Select a doctor"
+        subtitle="The de-identified case goes to the reviewer you pick."
+        onClose={() => setPickingExpert(false)}
+      >
+        <View style={s.caseList}>
+          {EXPERT_PANEL.map((e) => (
+            <Pressable
+              key={e.id}
+              testID={`select-expert-${e.id}`}
+              disabled={!e.available}
+              onPress={() => sendTo(e)}
+              style={({ pressed }) => [s.caseOption, !e.available && s.expertOff, pressed && s.pressed]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !e.available }}
+              accessibilityLabel={`${e.name}, ${e.speciality}`}
+            >
+              <View style={s.caseAvatar}>
+                <Icon name="user" size={17} color={colors.surfie} />
+              </View>
+              <View style={s.flex}>
+                <Text style={s.caseName}>{e.name}</Text>
+                <Text style={s.caseMeta}>
+                  {e.speciality} • {e.years} yrs
+                </Text>
+                <Text style={s.expertMeta}>
+                  {e.available ? e.respondsIn : 'Unavailable right now'}
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={17} color={C.muted} />
+            </Pressable>
+          ))}
+        </View>
+      </BottomSheet>
+
       <View style={s.body}>
         {step === 0 && (
           <>
@@ -483,6 +534,8 @@ const s = StyleSheet.create({
 
   caseHelp: { ...typeStyles.caption, color: C.muted, marginTop: -2, marginBottom: spacing.sm },
   caseList: { gap: spacing.sm, marginBottom: spacing.md },
+  expertOff: { opacity: 0.45 },
+  expertMeta: { ...typeStyles.caption, color: C.muted, marginTop: 1 },
   caseOption: {
     flexDirection: 'row',
     alignItems: 'center',

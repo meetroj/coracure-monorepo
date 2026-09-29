@@ -163,6 +163,7 @@ export const NoteInput = ({
         style={[s.fieldText, { minHeight }]}
         accessibilityLabel={accessibilityLabel}
         textAlignVertical="top"
+        underlineColorAndroid="transparent"
       />
       <Text style={[s.counter, value.length >= max && s.counterOver]}>
         {value.length}/{max}

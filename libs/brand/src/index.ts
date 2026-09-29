@@ -175,6 +175,13 @@ export const breakpoint = {
   wide: 700,
   /** The measure a phone layout was designed at — never exceeded. */
   maxContentWidth: 520,
+  /**
+   * The whole app column on a tablet, foldable or desktop browser. These
+   * screens were drawn for a phone; stretching them to 1200pt turns every card
+   * into a letterbox, so the app is centred at phone-plus width instead and
+   * the viewport shows page colour either side.
+   */
+  appMaxWidth: 600,
 } as const;
 
 export const brand = { colors, gradient, radius, spacing, typography, shadow, breakpoint };

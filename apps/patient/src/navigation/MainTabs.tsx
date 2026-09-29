@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { colors, radius, spacing, typography } from '@coracure/brand';
 import { Icon, type IconName } from '@coracure/ui';
@@ -14,7 +15,16 @@ import { ParentTabBarContext } from '../components/PatientTabBar';
 export type MainTabKey = 'Home' | 'Appointments' | 'CarePlan' | 'AIAssistant' | 'Profile';
 
 export const MainTabs = () => {
-  const [activeTab, setActiveTab] = useState<MainTabKey>('Home');
+  /**
+   * The tab lives in this route's params, not in local state: only the top
+   * screen of the stack is mounted, so pushing any screen unmounts MainTabs and
+   * local state would reset to Home. Params survive, so Back returns to the tab
+   * the user actually left from.
+   */
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const activeTab: MainTabKey = route.params?.tab ?? 'Home';
+  const setActiveTab = (tab: MainTabKey) => navigation.setParams({ tab });
 
   return (
     <View style={s.container}>

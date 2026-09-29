@@ -149,6 +149,27 @@ export const DOCTORS: Doctor[] = [
 export const findDoctor = (id?: string) =>
   DOCTORS.find((d) => d.id === id) ?? DOCTORS[0];
 
+/**
+ * The pool that can answer a service, soonest-available first.
+ *
+ * The patient never picks a provider — the backend assigns one. Until
+ * `POST /consultations` does that server-side this holds the same rule on the
+ * client, so `poolFor(service)[0]` is the assignment and the rest of the list
+ * is only shown so the patient can see who the pool is.
+ *
+ * ponytail: names with no match (the paramedical roles carry no doctor in the
+ * mock catalogue) fall back to the whole list; drop the fallback once the real
+ * provider endpoint answers for them.
+ */
+export const poolFor = (serviceName?: string): Doctor[] => {
+  const pool = serviceName
+    ? DOCTORS.filter((d) => d.specialty === serviceName || d.services.includes(serviceName))
+    : [];
+  return (pool.length ? pool : DOCTORS)
+    .slice()
+    .sort((a, b) => Number(b.availableNow) - Number(a.availableNow));
+};
+
 /** The service catalogue the "Choose a Service" screen lists. */
 export type Service = {
   id: string;

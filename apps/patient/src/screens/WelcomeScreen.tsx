@@ -1,281 +1,197 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable, Image, ScrollView } from 'react-native';
-import { colors, typography, spacing, radius } from '@coracure/brand';
-import { PillButton, Icon } from '@coracure/ui';
-import LogoWide from '../assets/brand/logo-wide.svg';
-import ConsultationHeroImg from '../assets/consultation-hero.png';
+import React, { useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Image,
+  ScrollView,
+  useWindowDimensions,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+} from 'react-native';
+import { colors, typography, spacing } from '@coracure/brand';
+import { Icon } from '@coracure/ui';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useNavigation } from '@react-navigation/native';
-import { ScreenBackground } from '../components/ScreenBackground';
+import LogoWide from '../assets/brand/logo-wide.svg';
 
 type WelcomeScreenProp = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
 
+/**
+ * Three full-bleed slides. The heading is split so its middle line can carry
+ * the brand green, which is the one thing the mock does on every slide.
+ */
+const SLIDES = [
+  {
+    image: require('../assets/onboarding/onb1.png'),
+    lines: ['Find the', 'Right Doctor', 'for Your Health'],
+    body: 'Search trusted doctors, check profiles, ratings and book appointments with ease.',
+  },
+  {
+    image: require('../assets/onboarding/onb2.png'),
+    lines: ['Consult with', 'Trusted Doctors', 'Online'],
+    body: 'Get expert advice through secure video or chat consultations from the comfort of your home.',
+  },
+  {
+    image: require('../assets/onboarding/onb3.png'),
+    lines: ['Manage', 'Your Health', 'Easily'],
+    body: 'Keep track of your appointments, prescriptions, lab reports and more — all in one secure place.',
+  },
+];
+
 export const WelcomeScreen = () => {
   const navigation = useNavigation<WelcomeScreenProp>();
+  const { width } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const [index, setIndex] = useState(0);
 
-  const onGetStarted = () => {
-    navigation.navigate('Login');
+  const toSignIn = () => navigation.navigate('Login');
+
+  const onNext = () => {
+    if (index === SLIDES.length - 1) return toSignIn();
+    const next = index + 1;
+    setIndex(next);
+    scrollRef.current?.scrollTo({ x: next * width, animated: true });
   };
+
+  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) =>
+    setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
 
   return (
     <View testID="welcome" style={styles.container}>
-      <ScreenBackground name="auth" />
-      
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onMomentumEnd}
       >
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <LogoWide width={130} height={34} />
-        </View>
-
-        {/* Hero Title & Subtitle */}
-        <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Expert care,</Text>
-          <Text style={styles.heroHighlight}>anytime, anywhere.</Text>
-          <Text style={styles.supportCopy}>
-            Connect with trusted professionals, enjoy private consultations, and receive ongoing care tailored to you.
-          </Text>
-        </View>
-
-        {/* Hero Image Card with Floating Badges */}
-        <View style={styles.imageCardWrapper}>
-          <View style={styles.imageCard}>
-            <Image
-              source={ConsultationHeroImg}
-              style={styles.heroImage}
-              resizeMode="cover"
-            />
-
-            {/* Floating Badge 1: Trusted Professionals (top left) */}
-            <View style={styles.floatingBadgeTopLeft}>
-              <View style={styles.badgeIconCircle}>
-                <Icon name="shieldCheck" size={16} color={colors.surfie} />
-              </View>
-              <Text style={styles.badgeText}>Trusted Professionals</Text>
-            </View>
-
-            {/* Floating Badge 2: Easy Appointments (bottom right) */}
-            <View style={styles.floatingBadgeBottomRight}>
-              <View style={styles.badgeIconCircle}>
-                <Icon name="calendar" size={16} color={colors.surfie} />
-              </View>
-              <Text style={styles.badgeText}>Easy Appointments</Text>
+        {SLIDES.map((slide) => (
+          <View key={slide.lines[1]} style={[styles.slide, { width }]}>
+            <Image source={slide.image} style={styles.photo} resizeMode="cover" />
+            <View style={styles.scrim} />
+            <View style={styles.copy}>
+              <Text style={styles.heading}>{slide.lines[0]}</Text>
+              <Text style={[styles.heading, styles.headingAccent]}>{slide.lines[1]}</Text>
+              <Text style={styles.heading}>{slide.lines[2]}</Text>
+              <Text style={styles.body}>{slide.body}</Text>
             </View>
           </View>
-        </View>
-
-        {/* Stats Card: 200K+ Patients Trust Us | 50+ Specialties */}
-        <View style={styles.statsCard}>
-          <View style={styles.statCol}>
-            <View style={styles.statIconCircle}>
-              <Icon name="user" size={18} color={colors.surfie} />
-            </View>
-            <View style={styles.statInfo}>
-              <Text style={styles.statValue}>200K+</Text>
-              <Text style={styles.statLabel}>Patients Trust Us</Text>
-            </View>
-          </View>
-          
-          <View style={styles.statDivider} />
-
-          <View style={styles.statCol}>
-            <View style={styles.statIconCircle}>
-              <Icon name="heart" size={18} color={colors.surfie} />
-            </View>
-            <View style={styles.statInfo}>
-              <Text style={styles.statValue}>50+</Text>
-              <Text style={styles.statLabel}>Specialties</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Action Button & Skip */}
-        <View style={styles.footer}>
-          <PillButton label="Get Started" onPress={onGetStarted} />
-          
-        </View>
+        ))}
       </ScrollView>
+
+      <View style={styles.logo} pointerEvents="none">
+        <LogoWide width={132} height={34} />
+      </View>
+
+      <Pressable
+        style={styles.skip}
+        onPress={toSignIn}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Skip"
+      >
+        <Text style={styles.skipText}>Skip</Text>
+      </Pressable>
+
+      <View style={styles.footer}>
+        <View style={styles.dots}>
+          {SLIDES.map((slide, i) => (
+            <View key={slide.lines[1]} style={[styles.dot, i === index && styles.dotOn]} />
+          ))}
+        </View>
+
+        <Pressable
+          style={styles.nextBtn}
+          onPress={onNext}
+          accessibilityRole="button"
+          accessibilityLabel={index === SLIDES.length - 1 ? 'Get Started' : 'Next'}
+        >
+          <Icon name="arrowRight" size={22} color={colors.white} />
+        </Pressable>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7FBF9',
-    position: 'relative',
+  container: { flex: 1, backgroundColor: colors.white },
+  slide: { flex: 1 },
+  photo: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  /* A light veil over the photo — enough to sit the copy on, not enough to wash it out. */
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.14)' },
+  copy: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: 110,
+    paddingRight: spacing.xxxl * 2,
   },
-  scrollView: {
-    flex: 1,
+  heading: {
+    /*
+     * A white halo rather than a panel: the accent line lands on leaves and
+     * green upholstery on two of the three photos, where brand green on green
+     * disappears. Costs nothing and leaves the mock's layout alone.
+     */
+    textShadowColor: 'rgba(255,255,255,0.95)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+    fontFamily: typography.heading.family,
+    fontSize: 30,
+    fontWeight: '800',
+    lineHeight: 38,
+    color: '#111827',
   },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xxxl,
-    paddingBottom: spacing.xl,
+  headingAccent: { color: colors.surfie },
+  body: {
+    textShadowColor: 'rgba(255,255,255,0.95)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+    fontFamily: typography.body.family,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#374151',
+    marginTop: spacing.md,
   },
-  header: {
+  logo: {
+    position: 'absolute',
+    top: spacing.lg,
+    left: spacing.xl,
+  },
+  skip: {
+    position: 'absolute',
+    top: spacing.lg + 3,
+    right: spacing.md,
+    /* Room around the glyphs: hard against the edge the 'p' was being cut. */
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  skipText: {
+    fontFamily: typography.body.family,
+    fontSize: 14,
+    color: colors.inkMuted,
+    includeFontPadding: false,
+  },
+  footer: {
+    position: 'absolute',
+    left: spacing.xl,
+    right: spacing.xl,
+    bottom: spacing.xl,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
   },
-  heroSection: {
-    marginBottom: spacing.lg,
-  },
-  heroTitle: {
-    fontFamily: typography.heading.family,
-    fontWeight: '800',
-    fontSize: 32,
-    color: '#111827',
-    lineHeight: 38,
-  },
-  heroHighlight: {
-    fontFamily: typography.heading.family,
-    fontWeight: '800',
-    fontSize: 32,
-    color: colors.surfie,
-    lineHeight: 38,
-  },
-  supportCopy: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.sm,
-    color: colors.inkMuted,
-    lineHeight: 22,
-    marginTop: spacing.sm,
-  },
-  imageCardWrapper: {
-    marginBottom: spacing.lg,
-  },
-  imageCard: {
-    width: '100%',
-    height: 230,
-    borderRadius: 24,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: colors.surface.mintSoft,
-    borderWidth: 1,
-    borderColor: '#D1EAE0',
-    shadowColor: '#0E766C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  floatingBadgeTopLeft: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    backgroundColor: colors.white,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  floatingBadgeBottomRight: {
-    position: 'absolute',
-    bottom: 14,
-    right: 14,
-    backgroundColor: colors.white,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  badgeIconCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.surface.selected,
+  dots: { flexDirection: 'row', gap: 8 },
+  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#C9D3CF' },
+  dotOn: { backgroundColor: colors.surfie },
+  nextBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfie,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  badgeText: {
-    fontFamily: typography.body.family,
-    fontSize: typography.size.xs,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  statsCard: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  statCol: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  statIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface.selected,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statInfo: {
-    flex: 1,
-  },
-  statValue: {
-    fontFamily: typography.heading.family,
-    fontSize: typography.size.lg,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  statLabel: {
-    fontFamily: typography.body.family,
-    fontSize: 11,
-    color: colors.inkMuted,
-    marginTop: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: spacing.sm,
-  },
-  footer: {
-    gap: spacing.sm,
-    alignItems: 'stretch',
   },
 });
 
 export default WelcomeScreen;
-
-
-

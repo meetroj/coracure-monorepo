@@ -202,7 +202,7 @@ export const PrescriptionScreen = () => {
         />
         <Pressable
           style={s.shareBtn}
-          onPress={() => navigation.navigate('MainTabs')}
+          onPress={() => navigation.navigate('MainTabs', { tab: 'Home' })}
           accessibilityRole="button"
           accessibilityLabel="Done, return to home"
         >

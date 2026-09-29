@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography, shadow, gradient } from '@coracure/brand';
 import { Icon, type IconName } from './Icon';
 export { Icon, type IconName } from './Icon';
+export { Sheet } from './feedback';
 
 
 /* --------------------------------- screen --------------------------------- */

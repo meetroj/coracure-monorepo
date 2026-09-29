@@ -207,6 +207,7 @@ export const FeedbackScreen = () => {
               numberOfLines={4}
               maxLength={500}
               accessibilityLabel="Share your feedback"
+              underlineColorAndroid="transparent"
             />
             <Text style={s.charCount}>{comment.length}/500</Text>
           </View>

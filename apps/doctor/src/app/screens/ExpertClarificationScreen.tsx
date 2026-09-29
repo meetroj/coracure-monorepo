@@ -102,6 +102,8 @@ export const ExpertClarificationScreen = ({
               placeholder="Reply to the expert…"
               placeholderTextColor={colors.inkFaint}
               multiline
+              // Android draws a black underline on TextInput by default.
+              underlineColorAndroid="transparent"
               accessibilityLabel="Reply"
             />
             <Pressable
