@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "start": "react-native start",
+    "start": "node init && react-native start",
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "build:android": "react-native build-android"
+    "build:android": "node init && react-native build-android"
   },
   "dependencies": {
     "@react-native/metro-config": "*",
