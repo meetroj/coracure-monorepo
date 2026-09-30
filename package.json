@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
+    "build": "nx build admin",
     "doctor:start": "nx start doctor",
     "doctor:android": "nx run-android doctor",
     "doctor:ios": "nx run-ios doctor",
