@@ -18,6 +18,7 @@
       "@coracure/brand": ["./libs/brand/src/index.ts"],
       "@coracure/ui": ["./libs/ui/src/index.tsx"],
       "@coracure/api": ["./libs/api/src/index.ts"],
+      "@coracure/api/errors": ["./libs/api/src/errors.ts"],
       "@coracure/i18n": ["./libs/i18n/src/index.tsx"]
     }
   },

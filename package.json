@@ -10,7 +10,10 @@
     "patient:android": "nx run-android patient",
     "patient:ios": "nx run-ios patient",
     "patient:web": "vite --config apps/patient/vite.config.mts",
-    "patient:web:build": "vite build --config apps/patient/vite.config.mts"
+    "patient:web:build": "vite build --config apps/patient/vite.config.mts",
+    "admin:dev": "nx dev admin",
+    "admin:build": "nx build admin",
+    "admin:test": "nx test admin"
   },
   "private": true,
   "devDependencies": {
@@ -84,6 +87,7 @@
     "react-native-keychain": "^10.0.0",
     "react-native-razorpay": "^3.0.0",
     "react-native-safe-area-context": "^5.9.1",
-    "react-native-screens": "^4.28.0"
+    "react-native-screens": "^4.28.0",
+    "react-router-dom": "6.30.3"
   }
 }

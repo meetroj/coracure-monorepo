@@ -1,0 +1,513 @@
+/*
+ * The signed-in shell: sidebar, header, dashboard tiles, and the few
+ * module-specific pieces that are not general enough for the component kit.
+ *
+ * Same rule as everywhere else — every colour is a `var(--…)` written by
+ * `brand-css.ts` from `@coracure/brand`. No hex in this file.
+ */
+
+.shell {
+  display: grid;
+  /* `minmax(0, …)` for the same reason as the sign-in split: an `fr` track
+     refuses to shrink below its content and pushes the page sideways. */
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-lg) var(--space-md) var(--space-sm);
+  background: var(--c-white);
+  border-right: 1px solid var(--c-surface-line);
+  /* The nav is long; it scrolls on its own rather than the whole page. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar__brand {
+  display: block;
+  padding: 0 var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.sidebar__brand img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.sidebar__nav {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: var(--space-lg);
+  /*
+   * No scrollbar chrome. The spacing below is tuned so all 22 sections fit a
+   * normal desktop window without scrolling at all; on a short window the nav
+   * still scrolls, it just does not paint a track down the middle of the
+   * panel. Scroll-wheel, keyboard and touch all keep working.
+   */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar__nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.sidebar__group {
+  margin-bottom: var(--space-sm);
+}
+
+.sidebar__group h2 {
+  padding: 0 var(--space-sm);
+  margin: 0 0 2px;
+  font-family: var(--font-body);
+  font-size: var(--text-xxs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-ink-faint);
+}
+
+/*
+ * Navigation items are links, not buttons — only the active one gets a
+ * container. That is what keeps the sidebar light rather than turning every
+ * row into a chip.
+ */
+.sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  /* Tight enough that all 22 sections fit a desktop window without
+     scrolling, still a comfortable 30px target. */
+  padding: 5px var(--space-md);
+  font-size: var(--text-md);
+  color: var(--c-ink-muted);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar__link svg {
+  flex-shrink: 0;
+  color: var(--c-ink-faint);
+}
+
+.sidebar__link:hover {
+  color: var(--c-ink);
+  background: var(--c-soft-grey);
+}
+
+.sidebar__link.active {
+  color: var(--c-surfie);
+  font-weight: 600;
+  background: var(--c-surface-selected);
+}
+
+.sidebar__link.active svg {
+  color: var(--c-surfie);
+}
+
+/* ------------------------------ account menu ------------------------------ */
+
+/*
+ * The account block sits at the top right of the header — where a desktop
+ * admin looks for it — which also leaves the sidebar's full height for
+ * navigation.
+ */
+.account {
+  position: relative;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 260px;
+  padding: var(--space-xs) var(--space-sm);
+  font: inherit;
+  text-align: left;
+  color: var(--c-ink);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.profile:hover {
+  background: var(--c-soft-grey);
+}
+
+.profile__avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--c-white);
+  background: var(--c-surfie);
+  border-radius: var(--radius-pill);
+}
+
+.profile__text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+
+.profile__text strong,
+.profile__text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile__text strong {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.profile__text small {
+  font-size: var(--text-xs);
+  color: var(--c-ink-muted);
+}
+
+/* Opens downward from the header, anchored to its right edge. */
+.profile__menu {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: 0;
+  z-index: 40;
+  width: 260px;
+  padding: var(--space-md);
+  background: var(--c-white);
+  border: 1px solid var(--c-surface-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+}
+
+.profile__menu .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.profile__menu .formRow {
+  margin-bottom: var(--space-sm);
+}
+
+/* --------------------------------- header --------------------------------- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  height: var(--header-height);
+  padding: 0 var(--space-xxl);
+  background: var(--c-white);
+  border-bottom: 1px solid var(--c-surface-line);
+}
+
+/*
+ * Wayfinding, not the page's heading — the content below carries that. Small
+ * and quiet so it reads as "where you are" rather than duplicating the h1 a
+ * few pixels underneath it.
+ */
+.header__title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-ink-faint);
+}
+
+.header__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-left: auto;
+}
+
+.bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--c-ink-muted);
+  border-radius: var(--radius-sm);
+}
+
+.bell:hover {
+  color: var(--c-ink);
+  background: var(--c-soft-grey);
+}
+
+.bell__dot {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 17px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  color: var(--c-white);
+  background: var(--c-danger);
+  border-radius: var(--radius-pill);
+}
+
+.content {
+  flex: 1;
+  padding: var(--space-xxxl) var(--space-xxl);
+  /* Wide enough for a table, narrow enough to stay readable. */
+  max-width: 1240px;
+  width: 100%;
+}
+
+/* ------------------------------ dashboard tiles --------------------------- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-lg);
+}
+
+/*
+ * Equal height regardless of label length: the grid stretches every tile and
+ * the row definition pushes the go-link to the bottom of each one.
+ */
+.tile {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: var(--space-xs);
+  padding: var(--space-xl);
+  text-align: left;
+  font: inherit;
+  color: var(--c-ink);
+  background: var(--c-white);
+  border: 1px solid var(--c-surface-line);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.tile:hover {
+  border-color: var(--c-surfie);
+}
+
+.tile__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: var(--space-sm);
+  color: var(--c-surfie);
+  background: var(--c-surface-selected);
+  border-radius: var(--radius-pill);
+}
+
+.tile__icon--alarm {
+  color: var(--c-danger);
+  background: var(--c-danger-soft);
+}
+
+.tile__value {
+  font-family: var(--font-heading);
+  font-size: var(--text-xxxl);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.tile__label {
+  font-size: var(--text-md);
+  color: var(--c-ink-muted);
+}
+
+.tile__go {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--c-surfie);
+}
+
+/* ----------------------------- module specifics --------------------------- */
+
+.weekGrid {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.weekGrid__row {
+  display: grid;
+  grid-template-columns: 150px 130px auto 130px;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.weekGrid__row input[type="time"] {
+  width: auto;
+}
+
+.ruleList,
+.slotList,
+.endpoints,
+.thread {
+  list-style: none;
+  margin: var(--space-lg) 0 0;
+  padding: 0;
+}
+
+.ruleList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--c-surface-line);
+}
+
+.slotList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.slotList li {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-sm);
+  color: var(--c-surfie);
+  background: var(--c-surface-selected);
+  border-radius: var(--radius-pill);
+}
+
+.endpoints {
+  line-height: 1.9;
+}
+
+.endpoints li {
+  padding-left: var(--space-lg);
+  text-indent: calc(-1 * var(--space-lg));
+}
+
+/* Long free text in a cell must not stretch the column. */
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 46ch;
+}
+
+.jsonDump {
+  max-height: 420px;
+  overflow: auto;
+  padding: var(--space-lg);
+  font-size: var(--text-sm);
+  background: var(--c-soft-grey);
+  border-radius: var(--radius-sm);
+}
+
+/* ---------------------------- complaint thread ---------------------------- */
+
+.thread {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.thread__msg {
+  padding: var(--space-lg);
+  background: var(--c-surface-mint-soft);
+  border-left: 3px solid var(--c-cta);
+  border-radius: var(--radius-sm);
+}
+
+/* An internal note must never look like a message that went to the patient. */
+.thread__msg--internal {
+  background: var(--c-soft-grey);
+  border-left: 3px dashed var(--c-ink-faint);
+}
+
+.thread__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.thread__msg p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* -------------------------- reply audience picker ------------------------- */
+
+.audience {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-md);
+  margin: 0 0 var(--space-lg);
+  padding: 0;
+  border: 0;
+}
+
+.audience legend {
+  padding: 0;
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.audience__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin: 0;
+  padding: var(--space-lg);
+  font-weight: 400;
+  cursor: pointer;
+  border: 1px solid var(--c-surface-input-border);
+  border-radius: var(--radius-md);
+}
+
+.audience__opt input {
+  width: auto;
+  margin: 2px 0 0;
+  accent-color: var(--c-cta);
+}
+
+.audience__opt span {
+  display: grid;
+  gap: 2px;
+}
+
+.audience__opt small {
+  font-size: var(--text-sm);
+  color: var(--c-ink-muted);
+}
+
+.audience__opt.isActive {
+  border-color: var(--c-surfie);
+  background: var(--c-surface-selected);
+}
+
+@media (max-width: 1100px) {
+  .shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}

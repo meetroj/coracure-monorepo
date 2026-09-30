@@ -1,0 +1,502 @@
+/*
+ * Panel chrome.
+ *
+ * Every colour, radius, space and type size is a `var(--…)` written onto
+ * `:root` by `brand-css.ts` from `@coracure/brand`. There is deliberately no
+ * hex in this file — a second copy of the palette is how the panel and the apps
+ * stop matching.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  color: var(--c-ink);
+  background: var(--c-surface-page);
+}
+
+h1 {
+  font-family: var(--font-heading);
+  font-size: var(--text-xxl);
+  margin: 0 0 var(--space-sm);
+}
+
+h2 {
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-sm);
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: var(--text-sm);
+}
+
+.muted {
+  color: var(--c-ink-muted);
+}
+
+.small {
+  font-size: var(--text-sm);
+}
+
+.error {
+  color: var(--c-danger);
+  background: var(--c-danger-soft);
+  padding: var(--space-md);
+  border-radius: var(--radius-sm);
+  margin: var(--space-md) 0;
+}
+
+.card {
+  background: var(--c-surface-card);
+  border: 1px solid var(--c-surface-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-xxl);
+}
+
+.pill {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--c-surface-selected);
+  color: var(--c-surfie);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* ---------------------------------- forms --------------------------------- */
+
+label {
+  display: block;
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-xs);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+input,
+select {
+  width: 100%;
+  padding: var(--space-md) var(--space-lg);
+  font: inherit;
+  color: inherit;
+  background: var(--c-white);
+  border: 1px solid var(--c-surface-input-border);
+  border-radius: var(--radius-input);
+}
+
+input:focus-visible,
+select:focus-visible,
+.button:focus-visible,
+.sidebar__link:focus-visible {
+  outline: 2px solid var(--c-cta);
+  outline-offset: 2px;
+}
+
+.button {
+  margin-top: var(--space-xl);
+  width: 100%;
+  padding: var(--space-md) var(--space-xl);
+  font: inherit;
+  font-weight: 600;
+  color: var(--c-white);
+  /* Flat, not gradient — the brand keeps the gradient for the logo tile. */
+  background: var(--c-cta);
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--c-cta-pressed);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.button--ghost {
+  margin: 0;
+  width: auto;
+  color: var(--c-ink-muted);
+  background: transparent;
+  border: 1px solid var(--c-surface-line);
+}
+
+.button--ghost:hover:not(:disabled) {
+  background: var(--c-surface-mint-soft);
+  color: var(--c-ink);
+}
+
+/* --------------------------------- sign-in -------------------------------- */
+
+.auth {
+  display: grid;
+  /*
+   * Artwork left, form right — the split in the supplied comp.
+   *
+   * `minmax(0, …)` rather than a bare `55fr`: a grid track sized in `fr`
+   * still refuses to shrink below its content's min-content width, so on a
+   * small or zoomed-in viewport the columns push past the window and the page
+   * scrolls sideways with the left copy cut off. The explicit 0 minimum is
+   * what lets the columns actually shrink.
+   */
+  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+  min-height: 100vh;
+  background: var(--c-white);
+}
+
+.auth__hero,
+.auth__panel {
+  min-width: 0;
+}
+
+/* ---- left: the brand artwork ---- */
+
+/*
+ * The artwork fills the panel edge to edge — no band of flat colour anywhere,
+ * so the logo and the copy sit ON the image.
+ *
+ * `cover` is what fills it, and filling costs a crop: the artwork is 3:2 and
+ * this panel is roughly 0.9:1, so only about 60% of the image's width fits.
+ * Anchoring right keeps the doctor in frame and spends the crop on the left of
+ * the image, which is the empty mint field — the part the scrim below recreates
+ * anyway.
+ */
+.auth__hero {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--c-surface-mint);
+  background-size: cover;
+  background-position: right center;
+  background-repeat: no-repeat;
+}
+
+/*
+ * The mint field the copy sits on.
+ *
+ * Because the crop above removes the artwork's own mint field, this paints it
+ * back: solid for the width of the text column, then out completely before it
+ * reaches the doctor. `color-mix` keeps the fade on the brand token instead of
+ * a hand-mixed rgba that would not follow if the token changed.
+ */
+.auth__hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    93deg,
+    var(--c-surface-mint) 0%,
+    var(--c-surface-mint) 31%,
+    color-mix(in srgb, var(--c-surface-mint) 86%, transparent) 41%,
+    color-mix(in srgb, var(--c-surface-mint) 38%, transparent) 52%,
+    transparent 63%
+  );
+}
+
+.auth__heroContent {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  /* Logo at the top, the message block in the middle, the strapline at the
+     bottom — the three-part spread in the comp. */
+  justify-content: space-between;
+  gap: var(--space-lg);
+  /* Fills the cell without asserting a viewport height of its own, so a short
+     window shrinks the panel instead of overflowing it. */
+  min-height: 100%;
+  /*
+   * Sized off whichever axis is tighter. Keying padding and type to `vw` alone
+   * means a wide-but-short window (a zoomed-in browser, a laptop with a tall
+   * taskbar) gets desktop-sized spacing in a viewport that cannot hold it.
+   */
+  padding: clamp(var(--space-lg), min(4.5vw, 5.5vh), 56px)
+    clamp(var(--space-lg), min(4.5vw, 6vh), 64px);
+  max-width: 560px;
+}
+
+.auth__logo {
+  display: block;
+  height: auto;
+  max-width: 220px;
+}
+
+.auth__headline {
+  font-family: var(--font-heading);
+  /* Shrinks on a short viewport too, not only a narrow one. */
+  font-size: clamp(30px, min(3.7vw, 6.2vh), 54px);
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  margin: var(--space-md) 0 var(--space-lg);
+}
+
+.auth__headlineAccent {
+  color: var(--c-surfie);
+}
+
+.auth__lede {
+  max-width: 34ch;
+  font-size: var(--text-lg);
+  line-height: 1.55;
+  color: var(--c-ink-muted);
+  margin: 0 0 clamp(var(--space-lg), 4vh, var(--space-xxxl));
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: var(--space-xxl) 0 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--c-ink-faint);
+}
+
+.eyebrow__rule {
+  width: 34px;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--c-cta);
+}
+
+.auth__features {
+  display: flex;
+  gap: clamp(var(--space-lg), 2.5vw, var(--space-xxxl));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.auth__features li {
+  max-width: 96px;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--c-ink-muted);
+}
+
+.auth__featureIcon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: var(--space-md);
+  border-radius: var(--radius-pill);
+  color: var(--c-surfie);
+  background: var(--c-surface-selected);
+}
+
+.auth__featureIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.auth__footnote {
+  margin-top: 0;
+}
+
+/* ---- right: the form, on the page and NOT in a card ---- */
+
+.auth__panel {
+  display: grid;
+  place-items: center;
+  padding: var(--space-xxxl) var(--space-xxl);
+}
+
+.auth__form {
+  width: 100%;
+  max-width: 380px;
+}
+
+.auth__form .eyebrow {
+  margin-top: 0;
+}
+
+.auth__logo--form {
+  margin: var(--space-md) 0 var(--space-xxl);
+  max-width: 200px;
+}
+
+.auth__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-xxl);
+  margin: 0 0 var(--space-xs);
+}
+
+.auth__subtitle {
+  margin: 0 0 var(--space-sm);
+}
+
+.auth__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+  font-weight: 400;
+  color: var(--c-ink-muted);
+  cursor: pointer;
+}
+
+.checkbox input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--c-cta);
+  cursor: pointer;
+}
+
+.linkish {
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--c-surfie);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.linkish:hover {
+  text-decoration: underline;
+}
+
+.note {
+  margin: var(--space-md) 0 0;
+  padding: var(--space-md);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--c-ink-muted);
+  background: var(--c-surface-mint-soft);
+  border-radius: var(--radius-sm);
+}
+
+.auth__note {
+  margin-top: var(--space-xl);
+  text-align: center;
+  /* Stops the last word dropping to a line of its own. */
+  text-wrap: pretty;
+}
+
+/* An input with a leading icon, and optionally a trailing reveal button. */
+.field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.field__icon {
+  position: absolute;
+  left: var(--space-lg);
+  display: grid;
+  place-items: center;
+  color: var(--c-ink-faint);
+  pointer-events: none;
+}
+
+.field input {
+  padding-left: 46px;
+}
+
+.field__reveal {
+  position: absolute;
+  right: var(--space-md);
+  display: grid;
+  place-items: center;
+  padding: var(--space-sm);
+  color: var(--c-ink-faint);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.field__reveal:hover {
+  color: var(--c-ink);
+}
+
+.sidebar__mark {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  /* The one place a gradient belongs: the logo tile. */
+  background: var(--c-gradient-brand);
+}
+
+/* A short panel cannot carry the feature row as well as the headline. */
+@media (max-height: 720px) {
+  .auth__features {
+    gap: var(--space-lg);
+  }
+
+  .auth__featureIcon {
+    width: 42px;
+    height: 42px;
+    margin-bottom: var(--space-sm);
+  }
+}
+
+@media (max-height: 600px) {
+  .auth__features,
+  .auth__footnote {
+    display: none;
+  }
+}
+
+/*
+ * The split stops working when the artwork column can no longer hold the
+ * headline — either because the window is narrow, or because it is short
+ * enough that the panel has nothing left to show. Either way the form takes
+ * the whole window and the artwork goes; the form is the part that has a job.
+ */
+@media (max-width: 900px), (max-height: 470px) {
+  .auth {
+    grid-template-columns: 1fr;
+  }
+
+  .auth__hero {
+    display: none;
+  }
+}
+
+/* ---------------------------------- shell --------------------------------- */
+
+.endpoints {
+  margin: 0 0 var(--space-lg);
+  padding-left: var(--space-xl);
+  line-height: 1.9;
+}
+
+/* A narrow window gets the nav above the content rather than a squeezed grid. */
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--c-surface-line);
+  }
+}
