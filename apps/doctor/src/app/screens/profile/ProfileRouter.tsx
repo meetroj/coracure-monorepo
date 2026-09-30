@@ -3,6 +3,7 @@ import React from 'react';
 import { useStore } from '../../../state/store';
 import { signOut } from '../../../state/actions';
 import { demoRegistration } from '../../../data/registration';
+import { useVerification } from '../../../data/verification';
 import { AccountStatusScreen, verificationItems } from './AccountStatusScreens';
 import { ProfileScreen } from './ProfileScreen';
 
@@ -34,14 +35,16 @@ export const ProfileRouter = ({
   const submission = useStore((s) => s.submission);
   const mobile = useStore((s) => s.session.mobile);
 
-  const status = verification.status === 'notSubmitted' ? 'pending' : verification.status;
+  const live = useVerification(submission ?? demoRegistration(mobile));
+  // The server's answer when it has one; what the store remembers until then.
+  const status = live.status ?? (verification.status === 'notSubmitted' ? 'pending' : verification.status);
   if (!verification.acknowledged) {
     return (
       <AccountStatusScreen
         status={status}
         acknowledged={verification.acknowledged}
         submittedAt={verification.submittedAt}
-        items={verificationItems(status, submission ?? demoRegistration(mobile))}
+        items={live.items}
         onAcknowledge={onAcknowledge}
         onGetSupport={onGetSupport}
         onResubmit={onResubmit}

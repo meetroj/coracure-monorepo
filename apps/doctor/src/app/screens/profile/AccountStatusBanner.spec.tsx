@@ -6,7 +6,7 @@ import { demoRegistration } from '../../../data/registration';
 
 const draft = {
   ...demoRegistration('+91 91234 56780'),
-  basic: { ...demoRegistration('+91 91234 56780').basic, fullName: 'Kavya Rao', languages: ['English', 'Kannada'] },
+  basic: { ...demoRegistration('+91 91234 56780').basic, fullName: 'Kavya Rao', languages: ['English', 'Hindi'] },
 };
 
 const show = (status: 'pending' | 'rejected' | 'approved', acknowledged = false, onBack?: () => void) =>
@@ -25,7 +25,7 @@ const show = (status: 'pending' | 'rejected' | 'approved', acknowledged = false,
 
 test('the items describe what this doctor submitted, not a fixture', () => {
   show('pending');
-  expect(screen.getByText('Kavya Rao · English, Kannada')).toBeTruthy();
+  expect(screen.getByText('Kavya Rao · English, Hindi')).toBeTruthy();
   expect(screen.getByText(/Aadhaar · •+1156/)).toBeTruthy();
   const rows = screen.getAllByTestId(/^verification-/);
   expect(rows).toHaveLength(4);

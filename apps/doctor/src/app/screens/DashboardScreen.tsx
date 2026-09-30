@@ -36,6 +36,7 @@ import {
   type ScheduleOverride,
 } from '../../data/doctor';
 import { DEMO_NOW_MINUTES, TODAY, toISODate } from '../../data/calendar';
+import { useDoctorDay } from '../../data/appointments';
 
 type Props = {
   onOpenTasks: () => void;
@@ -97,6 +98,10 @@ export const DashboardScreen = ({
   const overrides = useStore((s) => s.availability.overrides);
   const leave = useStore((s) => s.availability.leave);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Loads the day into the store: the counts below and the lists they open read
+  // the same array, so they cannot disagree.
+  useDoctorDay();
+  const blockedBy = useStore((st) => st.pendingDocumentation);
 
   const locked = isAutoStatus(status);
   const instantOpen = acceptsInstantRequests(status);
@@ -339,6 +344,13 @@ export const DashboardScreen = ({
               <Text style={s.taskNum}>{tasks.summary}</Text>
               <Text style={s.taskText}>Summaries to submit</Text>
             </View>
+            {blockedBy.length > 0 && (
+              <Text testID="documentation-blocker" style={s.taskBlocker}>
+                {blockedBy.length === 1
+                  ? 'One consultation is not written up. You cannot go available until it is.'
+                  : `${blockedBy.length} consultations are not written up. You cannot go available until they are.`}
+              </Text>
+            )}
             <View style={s.listRow}>
               <Text style={s.taskNum}>{tasks.note + tasks.prescription}</Text>
               <Text style={s.taskText}>Notes &amp; prescriptions</Text>
@@ -461,6 +473,10 @@ const s = StyleSheet.create({
   statusDotOff: { backgroundColor: colors.inkFaint },
   autoStatusNote: { ...typeStyles.caption, color: colors.inkMuted, marginTop: spacing.sm },
 
+  // Not a badge. The backend refuses `available_now` with
+  // DOCUMENTATION_OUTSTANDING while this is non-empty, so the doctor is told
+  // why before they press it rather than after.
+  taskBlocker: { ...typeStyles.caption, color: colors.danger, marginTop: spacing.xs },
   summaryTop: { flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.lg },
   tileBase: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.surface.line },
   tileIcon: {

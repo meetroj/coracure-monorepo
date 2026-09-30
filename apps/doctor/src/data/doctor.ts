@@ -119,7 +119,12 @@ export type Appointment = {
   initials: string;
   name: string;
   age: number;
-  gender: 'Male' | 'Female';
+  /**
+   * `Other` covers the backend's `other` AND `undisclosed`: a patient who
+   * declined to say is not a third category to display, and inventing one
+   * would put a label on a card the patient never chose.
+   */
+  gender: 'Male' | 'Female' | 'Other';
   mode: ConsultMode;
   state: AppointmentState;
   payment: PaymentState;
@@ -357,7 +362,12 @@ export type PatientCase = {
   dayOffset: number;
   minutes: number;
   age: number;
-  gender: 'Male' | 'Female';
+  /**
+   * `Other` covers the backend's `other` AND `undisclosed`: a patient who
+   * declined to say is not a third category to display, and inventing one
+   * would put a label on a card the patient never chose.
+   */
+  gender: 'Male' | 'Female' | 'Other';
   concern: string;
   state: CaseState;
   docsDone: number;
@@ -769,7 +779,12 @@ export type InstantRequest = {
   initials: string;
   name: string;
   age: number;
-  gender: 'Male' | 'Female';
+  /**
+   * `Other` covers the backend's `other` AND `undisclosed`: a patient who
+   * declined to say is not a third category to display, and inventing one
+   * would put a label on a card the patient never chose.
+   */
+  gender: 'Male' | 'Female' | 'Other';
   speciality: string;
   concern: string;
   mode: ConsultMode;

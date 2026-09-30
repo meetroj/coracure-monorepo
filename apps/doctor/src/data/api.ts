@@ -1,9 +1,13 @@
-import { appointments, reviews } from './doctor';
+import { reviews } from './doctor';
 
 /**
  * The seam between the screens and wherever data actually comes from.
  *
- * Today every function resolves a local fixture. There is no simulated
+ * Reviews only, now: appointments come from the backend through
+ * `data/appointments.ts`. `GET /v1/admin/feedback` is admin-scoped, so reviews
+ * have no doctor-facing endpoint to move to yet (audit gap G-3).
+ *
+ * Today every function here resolves a local fixture. There is no simulated
  * network delay: waiting on data that is already on the device would only
  * slow the demo down, and a spinner that exists for show is its own kind of
  * dishonesty. `setLatency` stays as a test seam so the loading, skeleton and
@@ -46,16 +50,9 @@ const respond = <T,>(key: string, value: T): Promise<T> =>
  * never disagree about which entry they are sharing.
  */
 export const KEYS = {
-  appointments: (bucket: string) => `appointments.${bucket}`,
   reviews: 'reviews.list',
 } as const;
 
 /* -------------------------------- fetchers -------------------------------- */
-
-export const fetchAppointments = (bucket: 'today' | 'upcoming' | 'past') =>
-  respond(
-    KEYS.appointments(bucket),
-    appointments.filter((a) => a.bucket === bucket)
-  );
 
 export const fetchReviews = () => respond(KEYS.reviews, reviews);

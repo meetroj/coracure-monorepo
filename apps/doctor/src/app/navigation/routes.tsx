@@ -85,6 +85,7 @@ import FaqListScreen from '../screens/FaqListScreen';
 import AvailabilityScreen from '../screens/AvailabilityScreen';
 import OnboardingFlow from '../screens/onboarding/OnboardingFlow';
 import ProfileRouter, { type ProfileDestination } from '../screens/profile/ProfileRouter';
+import { useVerification } from '../../data/verification';
 import { AccountStatusScreen, verificationItems } from '../screens/profile/AccountStatusScreens';
 import DoctorProfileDetailsScreen from '../screens/profile/DoctorProfileDetailsScreen';
 import {
@@ -732,13 +733,14 @@ export const AccountStatusRoute = ({ navigation: nav }: Props<'AccountStatus'>) 
   const verification = useStore((s) => s.verification);
   const submission = useStore((s) => s.submission);
   const mobile = useStore((s) => s.session.mobile);
-  const status = verification.status === 'notSubmitted' ? 'pending' : verification.status;
+  const live = useVerification(submission ?? demoRegistration(mobile));
+  const status = live.status ?? (verification.status === 'notSubmitted' ? 'pending' : verification.status);
   return (
     <AccountStatusScreen
       status={status}
       acknowledged={verification.acknowledged}
       submittedAt={verification.submittedAt}
-      items={verificationItems(status, submission ?? demoRegistration(mobile))}
+      items={live.items}
       onBack={nav.goBack}
       onAcknowledge={() => {
         acknowledgeApproval();
@@ -753,13 +755,14 @@ export const AccountStatusRoute = ({ navigation: nav }: Props<'AccountStatus'>) 
 export const ResubmitRoute = ({ navigation: nav }: Props<'Resubmit'>) => {
   const submission = useStore((s) => s.submission);
   const mobile = useStore((s) => s.session.mobile);
-  const rejected = useStore((s) => s.verification.status === 'rejected');
   const draft = submission ?? demoRegistration(mobile);
-  const flagged = rejected
-    ? verificationItems('rejected', draft)
-        .filter((i) => i.state === 'issue')
-        .map((i) => ({ step: i.key as StepKey, label: i.issueLabel ?? 'Needs correction' }))
-    : [];
+  // What to correct is the ADMIN's list, not a guess: each label is the reason
+  // they typed against that document. A resubmission built from anything else
+  // sends the doctor back with the same problem.
+  const live = useVerification(draft);
+  const flagged = live.items
+    .filter((i) => i.state === 'issue')
+    .map((i) => ({ step: i.key as StepKey, label: i.issueLabel ?? 'Needs correction' }));
   return (
     <OnboardingFlow
       mode="resubmit"

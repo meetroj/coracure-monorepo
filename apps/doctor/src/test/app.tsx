@@ -4,6 +4,7 @@ import { render, fireEvent, screen, within } from '@testing-library/react-native
 import App from '../app/App';
 import { resetStore, type AppState } from '../state/store';
 import { DEMO_MOBILE } from '../state/actions';
+import { appointments as fixtureAppointments } from '../data/doctor';
 
 /**
  * Spec helpers for driving the whole app.
@@ -19,6 +20,9 @@ export const signedIn = (over: Partial<AppState> = {}) =>
     session: { stage: 'shell', mobile: DEMO_MOBILE },
     onboardingCompleted: true,
     verification: { status: 'approved', acknowledged: true },
+    // The store no longer ships with sample patients — a signed-in spec seeds
+    // them here, which is the one place fixtures belong.
+    appointments: fixtureAppointments,
     ...over,
   });
 

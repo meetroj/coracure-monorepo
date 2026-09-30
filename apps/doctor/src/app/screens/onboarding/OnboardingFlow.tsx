@@ -21,7 +21,10 @@ import {
   PrivacyNote,
   StepProgress,
 } from '../../../components/form';
+import { messageFor } from '@coracure/api/errors';
+
 import { TODAY } from '../../../data/calendar';
+import { submitRegistration, type SubmissionOutcome } from '../../../data/onboarding';
 import {
   GENDERS,
   ID_TYPES,
@@ -85,6 +88,7 @@ const Layout = ({
   onBack,
   backLabel,
   primaryLabel,
+  primaryDisabled,
   onPrimary,
   secondary,
   testID,
@@ -96,6 +100,8 @@ const Layout = ({
   onBack?: () => void;
   backLabel?: string;
   primaryLabel: string;
+  /** Held down while a submit is in flight, so one press cannot become two. */
+  primaryDisabled?: boolean;
   onPrimary: () => void;
   secondary?: ReactNode;
   testID?: string;
@@ -124,7 +130,15 @@ const Layout = ({
     footer={
       <View style={s.footerRow}>
         {secondary}
-        <Button testID="onboarding-primary" label={primaryLabel} onPress={onPrimary} icon="arrowRight" iconRight style={s.flex} />
+        <Button
+          testID="onboarding-primary"
+          label={primaryLabel}
+          onPress={onPrimary}
+          disabled={primaryDisabled}
+          icon="arrowRight"
+          iconRight
+          style={s.flex}
+        />
       </View>
     }
   >
@@ -306,7 +320,7 @@ export const OnboardingFlow = ({
   mode?: 'register' | 'resubmit';
   /** Sections the verification team asked to correct, with the reason shown. */
   flagged?: { step: StepKey; label: string }[];
-  onSubmitted: (draft: RegistrationDraft) => void;
+  onSubmitted: (draft: RegistrationDraft, outcome: SubmissionOutcome) => void;
   /** Leaves the flow (sign-in, or back to Account Status when resubmitting). */
   onExit: () => void;
   /** Current month as `YYYY-MM`; injected so totals do not drift with the clock. */
@@ -388,6 +402,21 @@ export const OnboardingFlow = ({
   // Android's back button walks the same path as the on-screen one
   const backRef = useRef(back);
   backRef.current = back;
+  /**
+   * Submit state, held HERE rather than beside the review markup: the steps
+   * below are conditional returns from this one component, so a hook declared
+   * next to the review branch would only run on the review step and React
+   * would see a different hook count on every other one.
+   */
+  const [sending, setSending] = useState<{ done: number; total: number } | null>(null);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       backRef.current();
@@ -905,6 +934,18 @@ export const OnboardingFlow = ({
   ];
   const incomplete = STEPS.filter((st) => !isStepComplete(draft, st.key));
 
+  /**
+   * Sends the form.
+   *
+   * *** THE DOCUMENTS GO UP BEFORE THE DOCTOR LEAVES THIS SCREEN. *** Each is
+   * three round trips on a phone network, so the button counts them ("3 of 5")
+   * rather than spinning: an upload that appears frozen is the one a doctor
+   * kills by backgrounding the app, which leaves the registration half sent.
+   *
+   * A failure keeps them here with the file named. Moving on and retrying
+   * later would mean an admin already holds a partial set with no way to know
+   * more is coming.
+   */
   const submit = () => {
     if (incomplete.length) {
       setReviewError(`Complete ${incomplete.map((x) => x.label).join(', ')} before submitting.`);
@@ -918,12 +959,27 @@ export const OnboardingFlow = ({
       title: mode === 'resubmit' ? 'Resubmit for verification?' : 'Submit for verification?',
       message: 'Your details are locked while the verification team reviews them.',
       confirmLabel: 'Submit',
-      // straight on to Account Status, which shows the review under way
-      onConfirm: () => {
-        toast.show(mode === 'resubmit' ? 'Resubmitted for verification' : 'Details submitted for verification');
-        onSubmitted(draft);
-      },
+      onConfirm: () => void send(),
     });
+  };
+
+  const send = async () => {
+    if (sending) return;
+    setSending({ done: 0, total: 0 });
+    setReviewError('');
+    try {
+      const outcome = await submitRegistration(draft, (done, total) => {
+        if (aliveRef.current) setSending({ done, total });
+      });
+      if (!aliveRef.current) return;
+      toast.show(mode === 'resubmit' ? 'Resubmitted for verification' : 'Details submitted for verification');
+      onSubmitted(draft, outcome);
+    } catch (e) {
+      if (!aliveRef.current) return;
+      setReviewError(e instanceof Error ? e.message : messageFor(e));
+    } finally {
+      if (aliveRef.current) setSending(null);
+    }
   };
 
   return (
@@ -935,7 +991,19 @@ export const OnboardingFlow = ({
       subtitle={mode === 'resubmit' ? 'Correct the sections flagged by the verification team, then resubmit.' : 'Check everything before submitting. You can edit any section.'}
       onBack={back}
       backLabel={mode === 'resubmit' ? 'Close' : 'Back to experience'}
-      primaryLabel={mode === 'resubmit' ? 'Resubmit for Verification' : 'Submit for Verification'}
+      primaryLabel={
+        sending
+          ? sending.total
+            ? `Uploading ${sending.done} of ${sending.total}…`
+            : 'Submitting…'
+          : mode === 'resubmit'
+            ? 'Resubmit for Verification'
+            : 'Submit for Verification'
+      }
+      // The declaration is a claim the doctor is making, so the button stays
+      // down until they have actually made it. `submit` still refuses without
+      // it — a disabled button is the affordance, never the check.
+      primaryDisabled={!!sending || !draft.confirmed}
       onPrimary={submit}
     >
       <View style={s.reviewCard}>

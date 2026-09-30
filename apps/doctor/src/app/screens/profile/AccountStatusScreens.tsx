@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 import { colors, radius, spacing } from '../../../theme/brand';
 import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon } from '../../../components/Icon';
-import { Screen, PageTitle, Card, Button, StatusPill, ProgressBar } from '../../../components/ui';
+import { Screen, PageTitle, Card, Button, StatusPill } from '../../../components/ui';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { confirm } from '../../../components/confirm';
 import { TabHeader } from '../../navigation/TabHeader';
@@ -205,7 +205,21 @@ export const AccountStatusScreen = ({
    * discrete hops the doctor can watch, which it does not. Submitted is 60%
    * because the work that remains is the admin's, not theirs.
    */
-  const percent = status === 'approved' ? 100 : status === 'rejected' ? 40 : 60;
+  /**
+   * *** THERE IS NO PERCENTAGE. ***
+   *
+   * This used to read "60% Complete" from `status === 'pending' ? 60 : ...` —
+   * a number with nothing behind it. Verification is not a proportion: an
+   * admin either has everything and has decided, or is waiting on one thing.
+   * "60%" invited a doctor to conclude they were two thirds of the way through
+   * a queue that does not exist, and it moved when nothing about their account
+   * had.
+   *
+   * The three-step sequence below is the real state, because each step is
+   * something that actually happened.
+   */
+  const STAGES = ['Submitted', 'Under review', 'Approved'] as const;
+  const reached = status === 'approved' ? 3 : status === 'rejected' ? 1 : 2;
   const issues = items.filter((i) => i.state === 'issue').length;
 
   const footer =
@@ -240,9 +254,23 @@ export const AccountStatusScreen = ({
         <View style={s.progressCard}>
           <View style={s.progressHead}>
             <Text style={s.progressLabel}>Verification Progress</Text>
-            <Text style={s.progressValue}>{percent}% Complete</Text>
           </View>
-          <ProgressBar percent={percent} />
+          <View style={s.stages}>
+            {STAGES.map((label, i) => (
+              <View key={label} style={s.stage}>
+                <View
+                  style={[
+                    s.stageDot,
+                    i < reached && s.stageDotDone,
+                    i === reached - 1 && status !== 'approved' && s.stageDotCurrent,
+                  ]}
+                />
+                <Text style={[s.stageLabel, i < reached && s.stageLabelDone]} numberOfLines={1}>
+                  {label}
+                </Text>
+              </View>
+            ))}
+          </View>
           {!!submittedAt && <Text style={s.progressMeta}>Submitted {submittedAt}</Text>}
         </View>
       </Card>
@@ -308,6 +336,13 @@ const s = StyleSheet.create({
   heroCard: { padding: spacing.md },
   heroBody: { ...typeStyles.caption, color: colors.inkMuted },
   progressCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
+  stages: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  stage: { flex: 1, alignItems: 'flex-start', gap: 6 },
+  stageDot: { height: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colors.surface.line },
+  stageDotDone: { backgroundColor: colors.surfie },
+  stageDotCurrent: { backgroundColor: colors.paris },
+  stageLabel: { ...typeStyles.caption, color: colors.inkMuted },
+  stageLabelDone: { color: colors.ink, fontWeight: fontWeight.medium },
   progressHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
   progressLabel: { ...typeStyles.label, color: colors.ink },
   progressValue: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },

@@ -72,10 +72,10 @@ test('every profile row goes somewhere real', () => {
 });
 
 test('logging out asks first', () => {
-  const { Alert } = require('react-native');
+  const { confirm } = require('../../../components/confirm');
   resetStore({ session: { stage: 'shell', mobile: '9876543210' }, verification: { status: 'approved', acknowledged: true } });
   setup();
   fireEvent.press(screen.getByTestId('logout'));
-  expect(Alert.alert).toHaveBeenCalledWith('Log out?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Log out?' }));
   expect(getState().session.stage).toBe('login');
 });

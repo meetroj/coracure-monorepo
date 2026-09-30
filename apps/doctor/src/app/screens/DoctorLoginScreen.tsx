@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { authApi, doctorAuthApi, type DoctorVerificationStatus } from '@coracure/api';
+import { messageFor } from '@coracure/api/errors';
 
 import { BrandLockup } from '../../components/BrandLockup';
 import { colors, radius, spacing } from '../../theme/brand';
@@ -109,10 +111,26 @@ const ContactOptions = () => (
  *
  * The phone field and its button are kept above the keyboard on every phone
  * size: the page shrinks by the keyboard's height and scrolls the button into
- * view. There are no artificial waits — this build has no OTP service, so the
- * code step opens straight away and any six digits sign in.
+ * view.
+ *
+ * *** THE CODE STEP IS NOT A FORMALITY. *** `POST /auth/doctor/otp/request`
+ * returns a `challengeId` that `verify` must send back, and a RESEND ISSUES A
+ * NEW ONE — verifying a fresh code against the id from the first send fails as
+ * an invalid code, which looks to a doctor like the SMS was wrong. The id held
+ * here is therefore replaced on every send, and cleared when the number
+ * changes.
+ *
+ * A doctor account is created by an administrator (there is no sign-up), so an
+ * unknown number is refused rather than texted a code. The backend answers that
+ * with the same `INVALID_CREDENTIALS` it uses for a wrong code, on purpose:
+ * this screen shows the sentence it is given and does not try to work out which
+ * of the two happened.
  */
-export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobile: string) => void }) => {
+export const DoctorLoginScreen = ({
+  onAuthenticated,
+}: {
+  onAuthenticated: (mobile: string, verificationStatus: DoctorVerificationStatus) => void;
+}) => {
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
@@ -122,6 +140,10 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
   const [viewport, setViewport] = useState(0);
   const [ctaBottom, setCtaBottom] = useState(0);
   const [topRowBottom, setTopRowBottom] = useState(0);
+  /** From the last successful send. Sent back on verify; replaced by a resend. */
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
   const { height: winHeight } = useWindowDimensions();
@@ -164,20 +186,62 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
     if (step === 'otp') otpRefs.current[0]?.focus();
   }, [step]);
 
+  // A reply that lands after the doctor has left this screen must not set state
+  // on an unmounted tree, and must not sign anybody in behind them.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
   const countdown = `${String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:${String(secondsLeft % 60).padStart(2, '0')}`;
+
+  /** E.164 is what the API takes; the field holds only the national digits. */
+  const mobileNumber = () => authApi.toE164(DIAL_CODE, phone);
+
+  /**
+   * Sends a code. Used by both the first send and the resend, because they are
+   * the same call — and because the resend has to overwrite `challengeId` for
+   * exactly the reason the header comment gives.
+   */
+  const sendCode = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { challengeId: id } = await doctorAuthApi.requestOtp(mobileNumber());
+      if (!alive.current) return;
+      setChallengeId(id);
+      setOtp(Array(OTP_LENGTH).fill(''));
+      setFocusedBox(0);
+      setSecondsLeft(RESEND_SECONDS);
+      setStep('otp');
+    } catch (e) {
+      if (!alive.current) return;
+      // Stay on the number step: an unenrolled number, a rate limit and a dead
+      // network are all fixed here, and moving to a code step that can never
+      // succeed would just waste six more digits.
+      setError(messageFor(e));
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
 
   const requestCode = () => {
     if (!phoneValid) return;
-    setOtp(Array(OTP_LENGTH).fill(''));
-    setFocusedBox(0);
-    setSecondsLeft(RESEND_SECONDS);
-    setStep('otp');
+    void sendCode();
   };
 
   const backToPhone = () => {
     setStep('phone');
     setOtp(Array(OTP_LENGTH).fill(''));
     setFocusedBox(0);
+    // The challenge belongs to the number that was sent to. Keeping it across
+    // an edit would verify a new number against an old send.
+    setChallengeId(null);
+    setError(null);
   };
 
   const onChangeOtp = (index: number, raw: string) => {
@@ -207,17 +271,44 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
     }
   };
 
-  const verify = () => {
-    if (!otpValid) return;
+  const verify = async () => {
+    // `busy` is the double-submit guard: the button is disabled while a verify
+    // is in flight, but a fast double tap can queue two presses before React
+    // re-renders, and two verifies burn two rate-limit attempts.
+    if (!otpValid || busy) return;
+    if (!challengeId) {
+      setError('That code has expired. Tap Resend code to get a new one.');
+      return;
+    }
     Keyboard.dismiss();
-    onAuthenticated(phone);
+    setBusy(true);
+    setError(null);
+    try {
+      const { verificationStatus } = await doctorAuthApi.verifyOtp({
+        mobileNumber: mobileNumber(),
+        challengeId,
+        code: otpValue,
+      });
+      if (!alive.current) return;
+      // The session is already in secure storage by the time this resolves, so
+      // the next screen can call the API immediately.
+      onAuthenticated(phone, verificationStatus);
+    } catch (e) {
+      if (!alive.current) return;
+      setError(messageFor(e));
+      // Clear the boxes so a retype starts clean rather than editing six digits
+      // that are already known to be wrong.
+      setOtp(Array(OTP_LENGTH).fill(''));
+      setFocusedBox(0);
+      otpRefs.current[0]?.focus();
+    } finally {
+      if (alive.current) setBusy(false);
+    }
   };
 
   const resend = () => {
-    if (secondsLeft > 0) return;
-    setSecondsLeft(RESEND_SECONDS);
-    setOtp(Array(OTP_LENGTH).fill(''));
-    otpRefs.current[0]?.focus();
+    if (secondsLeft > 0 || busy) return;
+    void sendCode();
   };
 
   const isOtp = step === 'otp';
@@ -348,6 +439,12 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                   </Pressable>
                 )}
 
+                {!!error && (
+                  <Text testID="auth-error" style={styles.authError} accessibilityLiveRegion="polite" accessibilityRole="alert">
+                    {error}
+                  </Text>
+                )}
+
                 <View
                   onLayout={(e) => {
                     const { y, height } = e.nativeEvent.layout;
@@ -357,13 +454,17 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                   <Pressable
                     testID="verify"
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: !otpValid }}
+                    accessibilityState={{ disabled: !otpValid || busy, busy }}
                     onPress={verify}
-                    disabled={!otpValid}
-                    style={({ pressed }) => [styles.cta, !otpValid && styles.ctaDisabled, pressed && otpValid && styles.pressed]}
+                    disabled={!otpValid || busy}
+                    style={({ pressed }) => [
+                      styles.cta,
+                      (!otpValid || busy) && styles.ctaDisabled,
+                      pressed && otpValid && !busy && styles.pressed,
+                    ]}
                   >
-                    <Text style={styles.ctaText}>Verify &amp; Continue</Text>
-                    <ArrowRightIcon />
+                    <Text style={styles.ctaText}>{busy ? 'Verifying…' : 'Verify & Continue'}</Text>
+                    {!busy && <ArrowRightIcon />}
                   </Pressable>
                 </View>
 
@@ -412,6 +513,12 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                   />
                 </View>
 
+                {!!error && (
+                  <Text testID="auth-error" style={styles.authError} accessibilityLiveRegion="polite" accessibilityRole="alert">
+                    {error}
+                  </Text>
+                )}
+
                 <View
                   onLayout={(e) => {
                     const { y, height } = e.nativeEvent.layout;
@@ -421,13 +528,17 @@ export const DoctorLoginScreen = ({ onAuthenticated }: { onAuthenticated: (mobil
                   <Pressable
                     testID="cta"
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: !phoneValid }}
+                    accessibilityState={{ disabled: !phoneValid || busy, busy }}
                     onPress={requestCode}
-                    disabled={!phoneValid}
-                    style={({ pressed }) => [styles.cta, !phoneValid && styles.ctaDisabled, pressed && phoneValid && styles.pressed]}
+                    disabled={!phoneValid || busy}
+                    style={({ pressed }) => [
+                      styles.cta,
+                      (!phoneValid || busy) && styles.ctaDisabled,
+                      pressed && phoneValid && !busy && styles.pressed,
+                    ]}
                   >
-                    <Text style={styles.ctaText}>Get verification code</Text>
-                    <ArrowRightIcon />
+                    <Text style={styles.ctaText}>{busy ? 'Sending…' : 'Get verification code'}</Text>
+                    {!busy && <ArrowRightIcon />}
                   </Pressable>
                 </View>
 
@@ -607,6 +718,14 @@ const styles = StyleSheet.create({
   },
   ctaDisabled: { opacity: 0.45 },
   ctaText: { ...typeStyles.button, color: colors.white },
+  // Inline, above the button that failed — not a toast. A sign-in refusal is
+  // the answer to what the doctor just pressed, and it has to still be on
+  // screen while they fix the number or retype the code.
+  authError: {
+    ...typeStyles.bodySmall,
+    color: colors.danger,
+    marginTop: spacing.md,
+  },
   secureRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg },
   secureCopy: { flex: 1, marginLeft: spacing.md },
   secureTitle: { ...typeStyles.cardTitle, color: colors.ink },

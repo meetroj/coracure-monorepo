@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { confirm } from '../../components/confirm';
 import { render, fireEvent, screen } from '@testing-library/react-native';
 
 import ClarificationsScreen from './ClarificationsScreen';
@@ -70,12 +70,7 @@ test('submitting needs the identifier confirmation, and asks first', () => {
   // picking a doctor is what asks to submit.
   fireEvent.press(screen.getByTestId('submit'));
   fireEvent.press(screen.getByTestId('select-expert-exp-kulkarni'));
-  expect(Alert.alert).toHaveBeenLastCalledWith(
-    'Submit to Dr. Anita Kulkarni?',
-    expect.any(String),
-    expect.any(Array),
-    expect.any(Object),
-  );
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Submit to Dr. Anita Kulkarni?' }));
   expect(props.onSubmit).toHaveBeenCalledWith(
     expect.objectContaining({
       appointmentId: 'a2',
@@ -122,7 +117,7 @@ test('a reply needs content, is added to the thread, and hands the case back to 
 test('closing a thread asks first and keeps it for audit', () => {
   render(<ExpertClarificationScreen clarification={clar('cl3')} onBack={jest.fn()} onRecordDecision={jest.fn()} />);
   fireEvent.press(screen.getByTestId('close-thread'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Close this thread?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Close this thread?' }));
   expect(clar('cl3').status).toBe('closed');
   expect(clar('cl3').messages.length).toBeGreaterThan(0);
 });

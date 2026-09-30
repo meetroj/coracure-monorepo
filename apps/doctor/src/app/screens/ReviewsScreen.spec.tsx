@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { confirm } from '../../components/confirm';
 import { render, fireEvent, screen } from '@testing-library/react-native';
 
 import ReviewsScreen from './ReviewsScreen';
@@ -37,7 +37,7 @@ test('reporting a concern needs a reason, asks first, and marks the review', () 
   expect(screen.getByTestId('report-confirm')).toBeDisabled();
   fireEvent.press(screen.getByTestId('reason-1'));
   fireEvent.press(screen.getByTestId('report-confirm'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Report this review?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Report this review?' }));
   expect(getState().reviewReports.r5).toBe('Not about my consultation');
   expect(screen.getByTestId('reported-r5')).toBeTruthy();
   expect(screen.queryByTestId('report-r5')).toBeNull();

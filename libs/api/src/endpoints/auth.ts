@@ -7,10 +7,24 @@ export const isValidE164 = (phone: string): boolean => {
   return E164_REGEX.test(phone.trim());
 };
 
-export const toE164 = (phone: string, defaultCountryCode = '+91'): string => {
-  const cleaned = phone.replace(/[\s-]/g, '');
-  if (cleaned.startsWith('+')) return cleaned;
-  return `${defaultCountryCode}${cleaned}`;
+/**
+ * Joins a dial code and the national digits a user typed.
+ *
+ * The argument order is (dial code, national number) because that is the shape
+ * of both sign-in screens: a fixed `+91` label beside a field that only ever
+ * holds the 10 digits after it. A value that ALREADY carries a plus is passed
+ * through, so re-normalising a stored number is a no-op rather than `+91+91…`.
+ *
+ * Formatting the user can see — spaces, hyphens, brackets — is stripped here
+ * rather than in the field, so the input can stay readable while the wire value
+ * stays E.164.
+ */
+export const toE164 = (dialCode: string, nationalNumber = ''): string => {
+  const national = nationalNumber.replace(/[^\d+]/g, '');
+  if (national.startsWith('+')) return national;
+  const code = dialCode.replace(/[^\d+]/g, '');
+  if (!national) return code.startsWith('+') ? code : `+${code}`;
+  return code.startsWith('+') ? `${code}${national}` : `+${code}${national}`;
 };
 
 export const requestOtp = (mobileNumber: string): Promise<OtpRequestResponse> => {

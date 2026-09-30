@@ -80,8 +80,16 @@ export const selectDoctor = memoByState((s): DoctorProfile => {
 /* ------------------------------ appointments ------------------------------ */
 
 /** The schedule as it stands now: an ended call makes its appointment completed. */
+/**
+ * Every appointment the doctor has, from the store.
+ *
+ * `endedCalls` is applied on top because ending a call is a local fact the
+ * moment it happens — the backend learns it from the video webhook a beat
+ * later, and a row that flips back to "confirmed" on the next poll would look
+ * like the call never happened.
+ */
 export const selectAppointments = memoByState((s): Appointment[] =>
-  fixtureAppointments.map((a) =>
+  s.appointments.map((a) =>
     s.endedCalls[a.id] && a.state === 'confirmed' ? { ...a, state: 'completed' as const } : a
   )
 );
@@ -299,7 +307,9 @@ export const selectTasks = memoByState((s): ClinicalTask[] => {
   selectAlerts(s)
     .filter((al) => !al.live.read && al.responses.length > 0)
     .forEach((al) => {
-      const a = fixtureAppointments.find((x) => x.id === al.appointmentId);
+      // The doctor's own list, not the fixture module: an alert is about a
+      // consultation they actually have.
+      const a = selectAppointments(s).find((x) => x.id === al.appointmentId);
       if (!a) return;
       tasks.push({
         id: `t-${al.id}`,

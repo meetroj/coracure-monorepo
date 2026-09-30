@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, screen, within, act } from '@testing-library/react-native';
+import { doctorProfileApi } from '@coracure/api';
 
 import { renderShell, tap, on, toastText } from '../test/app';
 import { getState } from '../state/store';
@@ -82,10 +83,31 @@ test('after creating a profile: Account Status, then Go to Dashboard, then the f
   expect(on('account-status-pending').getByText('Under Review')).toBeTruthy();
 });
 
-test('a rejected doctor lands on Profile and sees what to fix', () => {
+test('a rejected doctor lands on Profile and sees what to fix', async () => {
+  // What to fix is the ADMIN's own words, read back from the server. It used to
+  // be a fixture — every rejected doctor was told "Name mismatch" whatever the
+  // reviewer had actually written.
+  jest.spyOn(doctorProfileApi, 'getCredentials').mockResolvedValue({
+    status: 'under_review',
+    outstanding: [],
+    registrationNumberMissing: false,
+    documents: [
+      {
+        id: 'doc-1',
+        documentType: 'identity_proof',
+        reviewStatus: 'rejected',
+        rejectionReason: 'The name on your Aadhaar does not match your registration.',
+      },
+    ],
+  } as never);
+
   renderShell({ verification: { status: 'rejected', acknowledged: false } });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
   expect(screen.getByText('Changes Required')).toBeTruthy();
-  expect(screen.getByText('Name mismatch')).toBeTruthy();
+  expect(screen.getByText('The name on your Aadhaar does not match your registration.')).toBeTruthy();
   expect(screen.getByTestId('resubmit')).toBeTruthy();
 });
 
@@ -106,10 +128,10 @@ test('there is no visible switcher between account states', () => {
 });
 
 test('a pending doctor can still log out, after confirming', () => {
-  const { Alert } = require('react-native');
+  const { confirm } = require('../components/confirm');
   renderShell({ verification: { status: 'pending', acknowledged: false } });
   fireEvent.press(screen.getByTestId('logout'));
-  expect(Alert.alert).toHaveBeenCalledWith('Log out?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Log out?' }));
   expect(getState().session.stage).toBe('login');
 });
 

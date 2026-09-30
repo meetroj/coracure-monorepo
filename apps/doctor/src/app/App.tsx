@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { doctorAuthApi } from '@coracure/api';
 
 import DoctorLoginScreen from './screens/DoctorLoginScreen';
 import IntroScreen from './screens/IntroScreen';
@@ -8,9 +10,11 @@ import AppShell from './AppShell';
 import ErrorBoundary from './ErrorBoundary';
 import { PortalProvider } from '../components/Portal';
 import { ToastHost } from '../components/Toast';
+import { ConfirmHost } from '../components/confirm';
 import { KeyboardDoneBar } from '../components/KeyboardDoneBar';
+import { brand } from '../theme/brand';
 import { useStore } from '../state/store';
-import { leaveIntro, leaveOnboarding, signIn, submitRegistration } from '../state/actions';
+import { endSession, leaveIntro, leaveOnboarding, signIn, submitRegistration } from '../state/actions';
 
 /**
  * Doctor app root.
@@ -34,15 +38,41 @@ import { leaveIntro, leaveOnboarding, signIn, submitRegistration } from '../stat
 export const App = () => {
   const stage = useStore((s) => s.session.stage);
   const mobile = useStore((s) => s.session.mobile);
+  const submission = useStore((s) => s.submission);
+
+  /**
+   * The client signs out on its own when a refresh fails or the account's
+   * `token_version` moves — a sign-out from another device, or an admin
+   * suspension. Without this the app would sit on a dashboard whose every
+   * request 401s. Subscribing at the root means it is handled once, wherever
+   * the doctor happens to be.
+   *
+   * Cold-start restore is kicked off by `main.tsx`, not here: a spec renders
+   * this component directly and must not have a network call wired into mount.
+   */
+  useEffect(() => doctorAuthApi.onSignedOut(() => endSession()), []);
 
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
         <PortalProvider>
+          {stage === 'restoring' && (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: brand.colors.surface.page }}>
+              <ActivityIndicator size="large" color={brand.colors.surfie} />
+            </View>
+          )}
           {stage === 'login' && <DoctorLoginScreen onAuthenticated={signIn} />}
-          {stage === 'onboarding' && <OnboardingFlow mobile={mobile} onSubmitted={submitRegistration} onExit={leaveOnboarding} />}
+          {stage === 'onboarding' && (
+            <OnboardingFlow
+              mobile={mobile}
+              initialDraft={submission}
+              onSubmitted={submitRegistration}
+              onExit={leaveOnboarding}
+            />
+          )}
           {stage === 'shell' && <AppShell />}
           {stage === 'intro' && <IntroScreen onDone={leaveIntro} />}
+          <ConfirmHost />
           <ToastHost />
           <KeyboardDoneBar />
         </PortalProvider>

@@ -6,8 +6,7 @@ import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen, PageTitle, Avatar, EmptyState } from '../../components/ui';
 import { TabHeader } from '../navigation/TabHeader';
-import { useResource } from '../../data/useResource';
-import { fetchAppointments, KEYS } from '../../data/api';
+import { useDoctorDay } from '../../data/appointments';
 import { SkeletonAppointmentList, SectionError, RefreshBar } from '../../components/skeletons';
 import { useStore } from '../../state/store';
 import { joinStateFor, selectAppointments } from '../../state/selectors';
@@ -47,13 +46,16 @@ export const AppointmentsScreen = ({
   const [filter, setFilter] = useState<Filter>('all');
   const live = useStore(selectAppointments);
 
-  // Each bucket is its own cache entry, so switching loads independently and a
-  // bucket already seen comes back instantly.
-  const { data, error, showSkeleton, isRefreshing, retry } = useResource(KEYS.appointments(bucket), () =>
-    fetchAppointments(bucket)
-  );
-  // the fetched list, with any state this session has changed (an ended call)
-  const inBucket = useMemo(() => (data ?? []).map((a) => live.find((x) => x.id === a.id) ?? a), [data, live]);
+  /**
+   * ONE request for the whole day, then filtered in memory.
+   *
+   * It used to be a request per bucket. The buckets are three views of the same
+   * rows — the backend has no "today" list — so three calls meant three chances
+   * for the dashboard's count and this list to disagree. They now read the same
+   * array the dashboard does.
+   */
+  const { error, showSkeleton, isRefreshing, retry } = useDoctorDay();
+  const inBucket = useMemo(() => live.filter((a) => a.bucket === bucket), [live, bucket]);
 
   const counts = useMemo(
     () => ({

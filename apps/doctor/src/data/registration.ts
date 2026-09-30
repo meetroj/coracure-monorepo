@@ -25,11 +25,44 @@ export const ID_TYPES = [
   'Other government ID',
 ] as const;
 
-/** Offered for consultation. Searchable, multi-select. */
-export const CONSULT_LANGUAGES = [
-  'English', 'Hindi', 'Marathi', 'Kannada', 'Punjabi', 'Tamil', 'Telugu',
-  'Bengali', 'Gujarati', 'Malayalam', 'Odia', 'Urdu',
-] as const;
+/**
+ * Offered for consultation. Multi-select.
+ *
+ * *** TWO, BECAUSE THE BACKEND HAS TWO. *** `UpdateOwnDoctorProfileDto` accepts
+ * `'en' | 'hi'` and nothing else, and language is a MATCHING input — the
+ * assignment engine pairs a patient's `preferredLanguage` with a provider who
+ * speaks it (FR-20.2). Offering Marathi here would let a doctor claim a
+ * language the matcher cannot route on and no patient can ask for: a promise
+ * the platform silently drops. The list grows when the backend's does.
+ */
+export const CONSULT_LANGUAGES = ['English', 'Hindi'] as const;
+
+/** What each label is called on the wire. */
+export const API_LANGUAGE: Record<string, 'en' | 'hi'> = {
+  English: 'en',
+  Hindi: 'hi',
+};
+
+/**
+ * What this form collects that the doctor's own API still cannot take.
+ *
+ * Kept as data rather than prose because the submit path reads it, and a
+ * reviewer asking "where did that field go?" should find the answer in the code
+ * rather than in a commit message.
+ *
+ * `admin` means the column exists but is the administrator's to set
+ * (`PATCH /v1/admin/doctors/:doctorId`). `none` means there is no column.
+ *
+ * It is nearly empty now: the September 2026 backend change added
+ * `doctor_identity`, `doctor_qualifications` and `doctor_experience`, plus a
+ * date of birth, gender and email on `doctors`, and `PUT /me/doctor/registration`
+ * writes all of it. What remains is deliberate — a provider stating their own
+ * medical council number is the one claim verification exists to check.
+ */
+export const UNMAPPED_FIELDS = {
+  'basic.registrationNumber': 'admin',
+} as const;
+
 
 export const QUALIFICATION_OPTIONS = [
   'MBBS', 'MD Psychiatry', 'DNB Psychiatry', 'DM Addiction Psychiatry',
@@ -47,8 +80,20 @@ export const UPLOAD_HINT = 'PDF, JPG or PNG';
 
 /* --------------------------------- shapes --------------------------------- */
 
-/** An uploaded document. `null` until something is attached. */
-export type UploadedFile = { name: string; kind: 'pdf' | 'image'; size: string } | null;
+/**
+ * An uploaded document. `null` until something is attached.
+ *
+ * `uri` and `contentType` come from the system picker and are what the signed
+ * upload sends. An authored fixture has neither, which is why the submit path
+ * refuses one rather than reporting it as uploaded.
+ */
+export type UploadedFile = {
+  name: string;
+  kind: 'pdf' | 'image';
+  size: string;
+  uri?: string;
+  contentType?: string;
+} | null;
 
 export type BasicDetails = {
   photo: UploadedFile;
@@ -364,3 +409,37 @@ export const demoRegistration = (mobile: string): RegistrationDraft => ({
 /** Masks all but the last four characters, for display after saving. */
 export const maskId = (value: string) =>
   value.length <= 4 ? value : `${'•'.repeat(Math.max(0, value.length - 4))}${value.slice(-4)}`;
+
+/* ------------------------------ API mapping ------------------------------- */
+
+/** Form labels → the codes `PUT /me/doctor/registration` accepts. */
+export const API_GENDER: Record<string, 'male' | 'female' | 'other' | 'undisclosed'> = {
+  Male: 'male',
+  Female: 'female',
+  Other: 'other',
+  'Prefer not to say': 'undisclosed',
+};
+
+export const API_ID_TYPE: Record<string, 'aadhaar' | 'passport' | 'driving_licence' | 'voter_id' | 'other'> = {
+  Aadhaar: 'aadhaar',
+  Passport: 'passport',
+  'Driving Licence': 'driving_licence',
+  'Voter ID': 'voter_id',
+  [OTHER_ID]: 'other',
+};
+
+/** `DD / MM / YYYY` → `YYYY-MM-DD`, or undefined when it is not a real date. */
+export const toApiDate = (dob: string): string | undefined => {
+  const parsed = parseDob(dob);
+  if (!parsed) return undefined;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+};
+
+/** `2018 / 01` or `2018-01` → `2018-01`. */
+export const toApiMonth = (value: string): string | undefined => {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 5) return undefined;
+  const month = digits.slice(4, 6).padStart(2, '0');
+  return Number(month) >= 1 && Number(month) <= 12 ? `${digits.slice(0, 4)}-${month}` : undefined;
+};

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { confirm } from '../../components/confirm';
 import { render, fireEvent, screen } from '@testing-library/react-native';
 
 import PatientDocumentsScreen from './PatientDocumentsScreen';
@@ -87,7 +87,7 @@ test('an open request can be withdrawn after confirming', () => {
   });
   docs('PT-10482', 'a1');
   fireEvent.press(screen.getByTestId(`cancel-${id}`));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Withdraw this request?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Withdraw this request?' }));
   expect(getState().reportRequests.find((r) => r.id === id)!.status).toBe('cancelled');
 });
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Image, type ImageSourcePropType } from 'react-native';
+import { launchCamera, launchImageLibrary, type PhotoQuality } from 'react-native-image-picker';
 
 import { colors, radius, spacing } from '../theme/brand';
 import { typeStyles, fontWeight } from '../theme/typography';
@@ -8,20 +9,32 @@ import { BottomSheet } from './BottomSheet';
 import { confirm } from './confirm';
 
 /**
- * Attaching a file: pick → upload → attached, with a way out at every step.
+ * Attaching a file: pick → attach → attached, with a way out at every step.
  *
- *   empty ─pick─▶ selecting ─choose─▶ uploading ─done─▶ uploaded
+ *   empty ─pick─▶ selecting ─choose─▶ attaching ─done─▶ attached
  *                     │                   │                 │
  *                  cancel              cancel         replace / remove
  *                     ▼                   ▼                 ▼
  *                 (as before)        (as before)     selecting / empty
  *   a file over the size limit ─▶ error ─▶ try again (selecting)
  *
- * There is no native picker in the app yet and no server to upload to, so the
- * picker offers sample files and the upload is simulated. Replacing keeps the
- * existing file until the new one has finished, as a real upload would.
+ * *** NOTHING IS SENT TO THE SERVER HERE. *** The file is held locally until
+ * the form is submitted, and `data/onboarding.ts` uploads the set in one pass.
+ * That is deliberate: `POST /me/doctor/credentials` moves the account from
+ * `pending` to `under_review` — it is the queue an admin works from — so
+ * uploading on the first photo pick would put a half-filled registration in
+ * front of a reviewer, and a certificate for a qualification the doctor then
+ * deletes would be left behind as an orphan credential nobody can explain.
  */
-export type PickedFile = { name: string; kind: 'pdf' | 'image'; size: string };
+export type PickedFile = {
+  name: string;
+  kind: 'pdf' | 'image';
+  size: string;
+  /** Local `file://` or `content://` URI. Absent only on an authored fixture. */
+  uri?: string;
+  /** What the bytes actually are, for the signed upload. */
+  contentType?: string;
+};
 
 /** How long a simulated upload takes. Tests set it to 0. */
 export const uploadConfig = { durationMs: 1200 };
@@ -33,23 +46,43 @@ const sizeInMb = (size: string) => {
   return m[2].toUpperCase() === 'KB' ? n / 1024 : n;
 };
 
-const SAMPLE_DOCUMENTS: PickedFile[] = [
-  { name: 'Registration_Certificate.pdf', kind: 'pdf', size: '1.2 MB' },
-  { name: 'Aadhaar_Front_Back.pdf', kind: 'pdf', size: '640 KB' },
-  { name: 'Degree_Certificate.pdf', kind: 'pdf', size: '2.4 MB' },
-  { name: 'Experience_Letter.jpg', kind: 'image', size: '880 KB' },
-  { name: 'Scan_0921.pdf', kind: 'pdf', size: '14.8 MB' },
-];
-
-const SAMPLE_PHOTOS: PickedFile[] = [
-  { name: 'IMG_2041.jpg', kind: 'image', size: '1.8 MB' },
-  { name: 'IMG_2044.jpg', kind: 'image', size: '2.1 MB' },
-  { name: 'Profile_Studio.png', kind: 'image', size: '6.2 MB' },
-];
+/** Bytes → the "1.8 MB" the field shows and the size check reads back. */
+const humanSize = (bytes?: number): string => {
+  if (!bytes || bytes <= 0) return '0 KB';
+  const kb = bytes / 1024;
+  return kb < 1024 ? `${Math.round(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`;
+};
 
 /**
- * The pictures behind the sample photos, so a chosen photo shows as itself.
- * They are drawn illustrations, never photographs of real people.
+ * The content types the backend signs an upload for. Anything else is refused
+ * by the store AFTER the app thought it had a valid file, so it is checked here.
+ */
+const ACCEPTED = ['image/jpeg', 'image/png', 'image/heic', 'image/webp', 'application/pdf'];
+
+const toPicked = (asset: {
+  uri?: string;
+  fileName?: string;
+  fileSize?: number;
+  type?: string;
+}): PickedFile | { error: string } => {
+  if (!asset.uri) return { error: 'That file could not be read. Please choose another.' };
+  const contentType = (asset.type ?? 'image/jpeg').toLowerCase();
+  if (!ACCEPTED.includes(contentType)) {
+    return { error: 'Choose a JPG, PNG or PDF.' };
+  }
+  return {
+    name: asset.fileName ?? `upload-${Date.now()}.jpg`,
+    kind: contentType === 'application/pdf' ? 'pdf' : 'image',
+    size: humanSize(asset.fileSize),
+    uri: asset.uri,
+    contentType,
+  };
+};
+
+/**
+ * The pictures behind the AUTHORED fixture photos, so a seeded doctor still
+ * has a face in screenshots and specs. They are drawn illustrations, never
+ * photographs of real people.
  */
 const SAMPLE_PREVIEWS: Record<string, ImageSourcePropType> = {
   'IMG_2041.jpg': require('../assets/samples/portrait-1.png'),
@@ -57,17 +90,45 @@ const SAMPLE_PREVIEWS: Record<string, ImageSourcePropType> = {
   'Profile_Studio.png': require('../assets/samples/portrait-3.png'),
 };
 
-/** The picture for a chosen photo, when this demo has one. */
-export const photoPreview = (file?: { name: string } | null): ImageSourcePropType | undefined =>
-  file ? SAMPLE_PREVIEWS[file.name] : undefined;
+/**
+ * What to draw for a chosen photo.
+ *
+ * A file the doctor just picked carries its own `uri` and is shown as itself —
+ * checked FIRST, because a real photo that happened to be named `IMG_2041.jpg`
+ * would otherwise render as somebody else's illustration.
+ */
+export const photoPreview = (
+  file?: { name: string; uri?: string } | null,
+): ImageSourcePropType | undefined => {
+  if (!file) return undefined;
+  if (file.uri) return { uri: file.uri };
+  return SAMPLE_PREVIEWS[file.name];
+};
 
 /* --------------------------------- picker --------------------------------- */
 
+/** Where the file comes from. Two sources, because a phone has two. */
+const SOURCES = [
+  { id: 'camera' as const, icon: 'switchCamera' as const, label: 'Take a photo', hint: 'Use the camera' },
+  { id: 'library' as const, icon: 'folder' as const, label: 'Choose from library', hint: 'Photos and scans on this device' },
+];
+
+/**
+ * The real system picker, via `react-native-image-picker` — already a
+ * dependency, so no new native module.
+ *
+ * *** PDFs CANNOT BE PICKED YET. *** This library reads the photo library and
+ * the camera; selecting an arbitrary PDF needs a document picker, which is a
+ * second native dependency. The backend accepts images as well as PDFs, so a
+ * photograph of a certificate is a complete submission today — and the type
+ * check above still passes a PDF through if one ever arrives from elsewhere.
+ */
 export const FilePickerSheet = ({
   visible,
   kind,
   maxMb,
   onPick,
+  onError,
   onClose,
   testID,
 }: {
@@ -75,40 +136,77 @@ export const FilePickerSheet = ({
   kind: 'document' | 'photo';
   maxMb: number;
   onPick: (f: PickedFile) => void;
+  /** Permission refused, an unreadable file, a wrong type. */
+  onError?: (message: string) => void;
   onClose: () => void;
   testID?: string;
 }) => {
-  const files = kind === 'photo' ? SAMPLE_PHOTOS : SAMPLE_DOCUMENTS;
+  const pick = async (source: 'camera' | 'library') => {
+    // Required by the OS before the sheet can be replaced by the picker.
+    onClose();
+    const options = {
+      mediaType: 'photo' as const,
+      // The store is charged per byte and a 12MP original helps nobody read a
+      // degree certificate. This also keeps most files under `maxMb`.
+      maxWidth: 2400,
+      maxHeight: 2400,
+      quality: 0.85 as PhotoQuality,
+      includeExtra: true,
+    };
+    const response =
+      source === 'camera'
+        ? await launchCamera({ ...options, saveToPhotos: false })
+        : await launchImageLibrary({ ...options, selectionLimit: 1 });
+
+    if (response.didCancel) return;
+    if (response.errorCode) {
+      onError?.(
+        response.errorCode === 'permission'
+          ? 'Coracure needs permission to use that. Enable it in Settings and try again.'
+          : response.errorMessage || 'That could not be opened. Please try again.',
+      );
+      return;
+    }
+    const asset = response.assets?.[0];
+    if (!asset) return;
+    const picked = toPicked(asset);
+    if ('error' in picked) {
+      onError?.(picked.error);
+      return;
+    }
+    onPick(picked);
+  };
+
   return (
     <BottomSheet
       visible={visible}
-      title={kind === 'photo' ? 'Choose a photo' : 'Choose a file'}
-      subtitle={`Sample files for this demo · max ${maxMb} MB`}
+      title={kind === 'photo' ? 'Choose a photo' : 'Add the document'}
+      subtitle={
+        kind === 'photo'
+          ? `A clear head-and-shoulders photo · max ${maxMb} MB`
+          : `Photograph the document, or pick a scan · max ${maxMb} MB`
+      }
       onClose={onClose}
       testID={testID ? `${testID}-picker` : undefined}
     >
       <View style={s.pickList}>
-        {files.map((f, i) => (
+        {SOURCES.map((source, i) => (
           <Pressable
-            key={f.name}
-            testID={testID ? `${testID}-pick-${i}` : undefined}
-            onPress={() => onPick(f)}
-            style={({ pressed }) => [s.pickRow, i < files.length - 1 && s.pickRule, pressed && s.pressed]}
+            key={source.id}
+            testID={testID ? `${testID}-pick-${source.id}` : undefined}
+            onPress={() => void pick(source.id)}
+            style={({ pressed }) => [s.pickRow, i < SOURCES.length - 1 && s.pickRule, pressed && s.pressed]}
             accessibilityRole="button"
-            accessibilityLabel={`${f.name}, ${f.size}`}
+            accessibilityLabel={source.label}
           >
-            {photoPreview(f) ? (
-              <Image source={photoPreview(f)} style={s.pickIcon} accessibilityIgnoresInvertColors />
-            ) : (
-              <View style={[s.pickIcon, f.kind === 'pdf' && s.pickIconPdf]}>
-                <Text style={[s.pickKind, f.kind === 'pdf' && s.pickKindPdf]}>{f.kind === 'pdf' ? 'PDF' : 'IMG'}</Text>
-              </View>
-            )}
+            <View style={s.pickIcon}>
+              <Icon name={source.icon} size={18} color={colors.surfie} />
+            </View>
             <View style={s.flex}>
               <Text style={s.pickName} numberOfLines={1}>
-                {f.name}
+                {source.label}
               </Text>
-              <Text style={s.pickMeta}>{f.size}</Text>
+              <Text style={s.pickMeta}>{source.hint}</Text>
             </View>
             <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </Pressable>

@@ -5,7 +5,9 @@
  * such as "saving notes stamps the time and clears the draft flag" lives in
  * one place and every screen showing that record agrees.
  */
-import { appointmentById, type ManualStatus } from '../data/doctor';
+import { doctorAuthApi, type DoctorVerificationStatus } from '@coracure/api';
+
+import { appointmentById, type Appointment, type ManualStatus } from '../data/doctor';
 import {
   emptyRecord,
   type ConsultationRecord,
@@ -18,6 +20,8 @@ import type { AlertAction } from '../data/followup';
 import type { ClarificationDraft, ClarificationMessage } from '../data/clarification';
 import type { ReportRequest } from '../data/documents';
 import type { RegistrationDraft } from '../data/registration';
+import type { SubmissionOutcome } from '../data/onboarding';
+import { readSession } from '../data/session';
 import { ISSUE_CATEGORIES } from '../data/support';
 import { patientById } from '../data/patients';
 import { fmtDate, dayOffset } from '../data/calendar';
@@ -40,35 +44,108 @@ const uid = (prefix: string) => {
 
 /* --------------------------------- session -------------------------------- */
 
-/**
- * The demo account: a verified, onboarded doctor (Dr. Arjun Mehta). Signing in
- * with this number goes straight to the Dashboard; any other number behaves
- * as a new account an administrator has just created, which completes
- * onboarding first. A backend answers the same question from the account.
- */
+/** The seeded fixture doctor (Dr. Arjun Mehta), used by the specs' test harness. */
 export const DEMO_MOBILE = '9876543210';
 
-export const signIn = (mobile: string) => {
+/**
+ * Maps the backend's `verificationStatus` onto the app's own verification
+ * state. `rejected` and `suspended` are absent on purpose: the backend refuses
+ * those at sign-in with `ACCOUNT_NOT_ACTIVE`, so they never reach a signed-in
+ * app and a branch for them here would be dead code pretending to be a rule.
+ */
+const VERIFICATION: Record<string, VerificationState> = {
+  verified: 'approved',
+  under_review: 'pending',
+  pending: 'notSubmitted',
+};
+
+/**
+ * Lands a doctor after `POST /auth/doctor/otp/verify`.
+ *
+ * *** WHERE THEY LAND IS THE SERVER'S ANSWER, NOT THIS DEVICE'S. *** The
+ * account exists before the app ever sees it — an administrator created it —
+ * so `verificationStatus` decides: `verified` opens the shell, anything else
+ * goes to onboarding to finish credentials. The previous build guessed from a
+ * hardcoded demo number, which was right only on one phone.
+ */
+export const signIn = (mobile: string, verificationStatus: DoctorVerificationStatus = 'pending') => {
+  const verified = verificationStatus === 'verified';
   const s = getState();
-  // the same doctor signing back in keeps everything they did this session
-  if (s.session.mobile === mobile && s.onboardingCompleted) {
+
+  // The same doctor signing back in keeps everything they did this session.
+  if (s.session.mobile === mobile && s.onboardingCompleted && verified) {
     setState((st) => ({ ...st, session: { stage: 'shell', mobile } }));
     return;
   }
-  // a different doctor on this device starts from clean data
-  if (mobile === DEMO_MOBILE) {
-    resetStore({
-      session: { stage: 'shell', mobile },
-      onboardingCompleted: true,
-      verification: { status: 'approved', acknowledged: true },
-    });
-    return;
-  }
-  resetStore({ session: { stage: 'onboarding', mobile } });
+
+  // A different doctor on this device starts from clean data — one account's
+  // drafts, records and alerts must never show under another's sign-in.
+  resetStore({
+    session: { stage: verified ? 'shell' : 'onboarding', mobile },
+    onboardingCompleted: verified,
+    verification: { status: VERIFICATION[verificationStatus] ?? 'notSubmitted', acknowledged: verified },
+  });
 };
 
-export const signOut = () =>
+/**
+ * Cold start, when the keychain already holds a session.
+ *
+ * *** THE SERVER DECIDES WHERE THEY LAND, AGAIN. *** This is the same rule as
+ * `signIn` and for a stronger reason: the app was closed, so an admin may have
+ * verified or suspended the account since. Reusing `signIn` rather than setting
+ * the stage here is what keeps the two paths from drifting apart.
+ *
+ * Any failure ends on the sign-in screen. There is no partial restore: a shell
+ * with no identity behind it would 401 on every request it made.
+ */
+export const restoreSession = async (): Promise<boolean> => {
+  if (!(await doctorAuthApi.restoreSession())) {
+    endSession();
+    return false;
+  }
+  try {
+    const restored = await readSession();
+    if (!restored) {
+      endSession();
+      return false;
+    }
+    signIn(restored.mobile, restored.verificationStatus);
+    // After `signIn`, never before: it calls `resetStore` for a doctor it does
+    // not recognise, which would drop the draft this just fetched.
+    if (restored.draft) {
+      const draft = restored.draft;
+      setState((s) => ({ ...s, submission: draft }));
+    }
+    return true;
+  } catch {
+    endSession();
+    return false;
+  }
+};
+
+/**
+ * Drops the UI back to sign-in. Local only — it calls nothing.
+ *
+ * *** THIS IS WHAT THE CLIENT'S OWN SIGN-OUT LISTENER RUNS. *** It must not
+ * call `doctorAuthApi.signOut`, because that clears the session, which fires
+ * the listener, which would call it again. Separating the two is what keeps a
+ * revoked token from looping.
+ */
+export const endSession = () =>
   setState((s) => ({ ...s, session: { ...s.session, stage: 'login' }, activeCall: undefined }));
+
+/**
+ * The doctor pressing Log out.
+ *
+ * The local stage moves first and unconditionally: they asked to be signed out,
+ * and a revoke that cannot reach the server must not leave them looking at
+ * patient data. `doctorAuthApi.signOut` clears the keychain either way and
+ * revokes every device when it can.
+ */
+export const signOut = () => {
+  endSession();
+  void doctorAuthApi.signOut();
+};
 
 /** Skip or finish the intro carousel; it is not shown again this session. */
 export const leaveIntro = () =>
@@ -76,13 +153,50 @@ export const leaveIntro = () =>
 
 export const leaveOnboarding = () => setState((s) => ({ ...s, session: { ...s.session, stage: 'login' } }));
 
-export const submitRegistration = (draft: RegistrationDraft) =>
+/**
+ * Records a submitted registration.
+ *
+ * *** THE STATUS COMES FROM THE SERVER. *** `submitRegistration` in
+ * `data/onboarding.ts` reads `GET /me/doctor/credentials` after the uploads,
+ * and that is the account's real state — an admin may already have approved or
+ * rejected part of the set while the doctor was still typing. Assuming
+ * `pending` here would show "submitted, awaiting review" to somebody who has
+ * already been rejected.
+ *
+ * The draft is still kept locally because most of it has nowhere else to live
+ * (see `UNMAPPED_FIELDS`): it is what the Review and Resubmit screens read.
+ */
+export const submitRegistration = (draft: RegistrationDraft, outcome?: SubmissionOutcome) =>
   setState((s) => ({
     ...s,
     onboardingCompleted: true,
     submission: draft,
-    verification: { status: 'pending', acknowledged: false, submittedAt: fmtDate(dayOffset(0)) },
+    verification: {
+      status: VERIFICATION[outcome?.progress.status ?? 'under_review'] ?? 'pending',
+      acknowledged: false,
+      submittedAt: fmtDate(dayOffset(0)),
+    },
     session: { ...s.session, stage: 'shell' },
+  }));
+
+/**
+ * The doctor's day, as the backend has it.
+ *
+ * `pendingDocumentation` is kept beside the appointments because it is the one
+ * thing that BLOCKS going available — the backend refuses the presence change
+ * with `DOCUMENTATION_OUTSTANDING` while it is non-empty, so the app has to be
+ * able to say why before the doctor presses it.
+ */
+export const setDoctorDay = (day: {
+  appointments: Appointment[];
+  pendingDocumentation: { consultationId: string; referenceCode: string }[];
+  unreadNotifications: number;
+}) =>
+  setState((s) => ({
+    ...s,
+    appointments: day.appointments,
+    pendingDocumentation: day.pendingDocumentation,
+    unreadCount: day.unreadNotifications,
   }));
 
 /* ------------------------------- verification ----------------------------- */

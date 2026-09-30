@@ -18,13 +18,28 @@ jest.mock('react-native-safe-area-context', () => require('react-native-safe-are
  * a fixture on the first frame, and a spec that wants the loading path calls
  * `__resetResourceCache()` and drives it itself (as `useResource.spec` does).
  *
- * Confirmation dialogs are native `Alert`s, which never call back under Jest.
- * The spy presses the non-cancel button — the action the dialog asks about —
- * so a spec exercises what happens after the doctor confirms. A spec that
- * needs the cancel path overrides it with `mockImplementationOnce`.
+ * Confirmations go through `components/confirm`, not `Alert.alert`. The spy
+ * presses the confirm button — the action the dialog asks about — so a spec
+ * exercises what happens after the doctor agrees. A spec that needs the cancel
+ * path overrides it with `mockImplementationOnce`:
+ *
+ *     (confirm as jest.Mock).mockImplementationOnce((o) => o.onCancel?.());
+ *
+ * `confirmDiscard` is spied separately because it calls `confirm` through its
+ * own module-local binding, which a spy on `confirm` cannot intercept. Assert
+ * on whichever one the screen actually calls.
  */
 beforeEach(() => {
   const { Alert } = require('react-native');
+  const confirmModule = require('./components/confirm');
+
+  jest
+    .spyOn(confirmModule, 'confirm')
+    .mockImplementation((options: { onConfirm: () => void }) => options.onConfirm());
+  jest
+    .spyOn(confirmModule, 'confirmDiscard')
+    .mockImplementation((onDiscard: () => void) => onDiscard());
+
   const { resetStore } = require('./state/store');
   const { KEYS, setLatency, clearFailures } = require('./data/api');
   const { __resetResourceCache, seedResource } = require('./data/useResource');
@@ -32,17 +47,16 @@ beforeEach(() => {
   const { tapGuard } = require('./components/ui');
   const { appointments, reviews } = require('./data/doctor');
 
+
   // The app opens on the intro carousel; specs start from sign-in.
-  resetStore({ session: { stage: 'login', mobile: '' } });
+  //
+  // `appointments` is seeded here because the store no longer ships with sample
+  // patients — on a device it is empty until the backend answers. A spec that
+  // wants the empty state sets it back to [].
+  resetStore({ session: { stage: 'login', mobile: '' }, appointments });
   setLatency(0);
   clearFailures();
   __resetResourceCache();
-  (['today', 'upcoming', 'past'] as const).forEach((b) =>
-    seedResource(
-      KEYS.appointments(b),
-      appointments.filter((a: { bucket: string }) => a.bucket === b)
-    )
-  );
   seedResource(KEYS.reviews, reviews);
   uploadConfig.durationMs = 0;
   tapGuard.ms = 0;

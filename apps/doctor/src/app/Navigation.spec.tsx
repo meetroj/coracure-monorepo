@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, BackHandler } from 'react-native';
+import { BackHandler } from 'react-native';
+import { confirm, confirmDiscard } from '../components/confirm';
 import { render, fireEvent, screen, act, waitFor } from '@testing-library/react-native';
 
 import { renderShell, tap, on, pressBack, topmost } from '../test/app';
@@ -120,11 +121,11 @@ test('leaving a form with unsaved changes asks first, and Keep editing stays', (
   tap('request-document');
   fireEvent.changeText(topmost('item-name'), 'Thyroid profile');
 
-  (Alert.alert as jest.Mock).mockImplementationOnce((_t: string, _m: string, buttons: { style?: string; onPress?: () => void }[]) =>
-    buttons.find((b) => b.style === 'cancel')?.onPress?.()
-  );
+  // This path asks through `confirmDiscard`; cancelling it means the discard
+  // callback is simply never run.
+  (confirmDiscard as jest.Mock).mockImplementationOnce(() => undefined);
   pressBack();
-  expect(Alert.alert).toHaveBeenLastCalledWith('Discard changes?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirmDiscard).toHaveBeenCalled();
   expect(topmost('item-name').props.value).toBe('Thyroid profile');
 
   // the same question guards Android's back button
@@ -137,7 +138,8 @@ test('a form with nothing entered leaves without asking', () => {
   fireEvent.press(screen.getByTestId('tab-profile'));
   tap('row-fee');
   pressBack();
-  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(confirm).not.toHaveBeenCalled();
+  expect(confirmDiscard).not.toHaveBeenCalled();
   expect(screen.queryByTestId('consultation-fee')).toBeNull();
 });
 
@@ -147,7 +149,7 @@ test('the consultation room asks before Android back takes the doctor out of a c
   expect(getState().activeCall?.appointmentId).toBe('a1');
 
   expect(pressHardwareBack()).toBe(true);
-  expect(Alert.alert).toHaveBeenLastCalledWith('Leave the consultation?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Leave the consultation?' }));
   expect(getState().activeCall).toBeUndefined();
   expect(screen.queryByTestId('consultation-room')).toBeNull();
 });

@@ -40,7 +40,7 @@ export type SharedCase = {
   caseId: string;
   title: string;
   ageLabel: string;
-  gender: 'Male' | 'Female';
+  gender: 'Male' | 'Female' | 'Other';
   speciality: string;
   history: string;
   provisionalDiagnosis: string;
@@ -149,7 +149,7 @@ export type ClarificationDraft = {
   consultationId: string;
   title: string;
   ageLabel: string;
-  gender: 'Male' | 'Female';
+  gender: 'Male' | 'Female' | 'Other';
   history: string;
   provisionalDiagnosis: string;
   currentPlan: string;
@@ -261,7 +261,7 @@ export type Clarification = {
   /** The de-identified case, exactly as the expert sees it. */
   shared: {
     ageLabel: string;
-    gender: 'Male' | 'Female';
+    gender: 'Male' | 'Female' | 'Other';
     provisionalDiagnosis: string;
     history: string;
     currentPlan: string;

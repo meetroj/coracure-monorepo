@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { confirm, confirmDiscard } from '../components/confirm';
 import { render, fireEvent, screen } from '@testing-library/react-native';
 
 import { renderShell, tap, on, pressBack, topmost } from '../test/app';
@@ -143,7 +143,7 @@ test('a half-written alert review asks before it is dropped', () => {
   tap('notif-n1');
   fireEvent.changeText(topmost('note'), 'Called the patient; safety plan agreed.');
   pressBack();
-  expect(Alert.alert).toHaveBeenLastCalledWith('Discard changes?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirmDiscard).toHaveBeenCalled();
 });
 
 /* ------------------------------ small touches ------------------------------ */

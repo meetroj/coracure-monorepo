@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { confirm, confirmDiscard } from '../../components/confirm';
 import { render, fireEvent, screen, within } from '@testing-library/react-native';
 
 import ClinicalNotesScreen from './ClinicalNotesScreen';
@@ -145,7 +145,7 @@ test('a medicine can be edited and, after confirming, removed', () => {
 
   fireEvent.press(screen.getByTestId(`med-menu-${id}`));
   fireEvent.press(screen.getByTestId('sheet-action-remove'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Remove Escitalopram?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Remove Escitalopram?' }));
   expect(record().medicines).toHaveLength(0);
 });
 
@@ -156,12 +156,13 @@ test('finalising needs something to issue, asks first, then locks the prescripti
   prescription('psychiatrist', onFinalised);
   fireEvent.press(screen.getByTestId('finalise'));
   expect(onFinalised).not.toHaveBeenCalled();
-  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(confirm).not.toHaveBeenCalled();
+  expect(confirmDiscard).not.toHaveBeenCalled();
 
   fireEvent.changeText(screen.getByTestId('advice-input'), 'Keep a sleep diary for two weeks.');
   fireEvent.press(screen.getByTestId('advice-add'));
   fireEvent.press(screen.getByTestId('finalise'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Finalise prescription?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Finalise prescription?' }));
   expect(onFinalised).toHaveBeenCalledTimes(1);
   expect(record().rxStatus).toBe('finalised');
   expect(screen.getByTestId('rx-locked')).toBeTruthy();
@@ -207,7 +208,7 @@ test('a template is applied, duplicated, or — for the doctor’s own — delet
 
   fireEvent.press(screen.getByTestId('template-menu-tpl2'));
   fireEvent.press(screen.getByTestId('sheet-action-delete'));
-  expect(Alert.alert).toHaveBeenCalled();
+  expect(confirm).toHaveBeenCalled();
   expect(screen.queryByText('Sleep Support Plan')).toBeNull();
 });
 
@@ -264,7 +265,7 @@ test('with notes, prescription and plan done, submitting asks, then completes th
   );
   fireEvent.changeText(screen.getByTestId('summary-input'), 'Anxiety with poor sleep; moderate risk; escitalopram started; review in two weeks. '.repeat(2));
   fireEvent.press(screen.getByTestId('submit-summary'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Submit summary and complete?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Submit summary and complete?' }));
   expect(onSubmitted).toHaveBeenCalledTimes(1);
   expect(record().summaryStatus).toBe('submitted');
 });

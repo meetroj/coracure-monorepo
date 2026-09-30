@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { confirm } from '../../components/confirm';
 import { render, fireEvent, screen, act } from '@testing-library/react-native';
 
 import ConsultationRoomScreen from './ConsultationRoomScreen';
@@ -46,14 +46,12 @@ test('the timer counts from when the doctor joined, so re-entering keeps it', ()
 test('ending the call asks first and reports the call log', () => {
   const { props } = setup();
   fireEvent.press(screen.getByTestId('ctl-end'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('End consultation?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'End consultation?' }));
   expect(props.onEnd).toHaveBeenCalledWith(expect.objectContaining({ appointmentId: 'a1', consultationId: 'CON-10482' }));
 });
 
 test('choosing to continue the call keeps the doctor in the room', () => {
-  (Alert.alert as jest.Mock).mockImplementationOnce((_t: string, _m: string, buttons: { style?: string; onPress?: () => void }[]) =>
-    buttons.find((b) => b.style === 'cancel')?.onPress?.()
-  );
+  (confirm as jest.Mock).mockImplementationOnce((o: { onCancel?: () => void }) => o.onCancel?.());
   const { props } = setup();
   fireEvent.press(screen.getByTestId('ctl-end'));
   expect(props.onEnd).not.toHaveBeenCalled();
@@ -62,7 +60,7 @@ test('choosing to continue the call keeps the doctor in the room', () => {
 test('leaving the room asks first', () => {
   const { props } = setup();
   fireEvent.press(screen.getByLabelText('Leave consultation room'));
-  expect(Alert.alert).toHaveBeenLastCalledWith('Leave the consultation room?', expect.any(String), expect.any(Array), expect.any(Object));
+  expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Leave the consultation room?' }));
   expect(props.onLeave).toHaveBeenCalledTimes(1);
 });
 

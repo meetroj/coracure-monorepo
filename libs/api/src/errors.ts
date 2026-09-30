@@ -49,6 +49,8 @@ export const DomainCode = {
   TOKEN_INVALID: 'TOKEN_INVALID',
   ACCOUNT_NOT_ACTIVE: 'ACCOUNT_NOT_ACTIVE',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  /** The SMS provider is down. Nothing to do with the code the user typed. */
+  OTP_PROVIDER_UNAVAILABLE: 'OTP_PROVIDER_UNAVAILABLE',
   INVALID_DATE_OF_BIRTH: 'INVALID_DATE_OF_BIRTH',
 } as const;
 
@@ -144,6 +146,10 @@ const FRIENDLY: Record<string, string> = {
   [PlatformCode.STORAGE_UNAVAILABLE]: 'File storage is unavailable right now. Try again shortly.',
   [PlatformCode.NOT_FOUND]: 'We could not find that.',
   [PlatformCode.FORBIDDEN]: 'You do not have access to that.',
+  // The server phrasing names the SMS vendor, which means nothing to a user and
+  // wrongly reads as "your number is wrong".
+  [DomainCode.OTP_PROVIDER_UNAVAILABLE]:
+    'We could not send a code just now. Please try again in a moment.',
 };
 
 export const messageFor = (e: unknown, fallback = 'Something went wrong. Please try again.'): string => {

@@ -12,6 +12,7 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 import {
+  type Appointment,
   doctor,
   initialLeave,
   initialOverrides,
@@ -54,7 +55,27 @@ export type AvailabilityState = {
 };
 
 export type AppState = {
-  session: { stage: 'intro' | 'login' | 'onboarding' | 'shell'; mobile: string };
+  /**
+   * `restoring` is the cold-start stage: the keychain may hold a session, and
+   * until the server has answered there is nothing honest to show. Only
+   * `main.tsx` sets it, so a spec rendering `App` starts where it always did.
+   */
+  session: { stage: 'restoring' | 'intro' | 'login' | 'onboarding' | 'shell'; mobile: string };
+  /**
+   * The doctor's consultations, as loaded from the backend.
+   *
+   * *** EMPTY UNTIL THE SERVER ANSWERS, NEVER SEEDED WITH FIXTURES. *** Every
+   * count on the dashboard and every list it opens read this one array, so they
+   * cannot disagree. Falling back to sample patients while a request is in
+   * flight would put invented names on a clinical screen for as long as the
+   * network took; the loading contract in `useResource` covers that gap with a
+   * skeleton instead. The spec harness seeds it explicitly.
+   */
+  appointments: Appointment[];
+  /** Held consultations with no write-up. Non-empty blocks going available. */
+  pendingDocumentation: { consultationId: string; referenceCode: string }[];
+  /** The notification badge, as the server counts it. */
+  unreadCount: number;
   onboardingCompleted: boolean;
   /** What the doctor submitted for verification, when they did it this session. */
   submission?: RegistrationDraft;
@@ -83,6 +104,9 @@ export type AppState = {
 
 export const initialState = (): AppState => ({
   session: { stage: 'intro', mobile: '' },
+  appointments: [],
+  pendingDocumentation: [],
+  unreadCount: 0,
   onboardingCompleted: false,
   verification: { status: 'notSubmitted', acknowledged: false },
   profile: { fee: doctor.consultationFee, changeRequests: [] },
