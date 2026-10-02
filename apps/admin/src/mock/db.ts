@@ -147,6 +147,7 @@ export const allocationPolicy: AllocationPolicy = { mayRelaxRegion: true, maxDec
 export const doctors: Doctor[] = [
   {
     id: 'dr-1',
+    registration: { dateOfBirth: '1984-03-12', gender: 'Female', idType: 'Aadhaar', idNumberLast4: '4421', abhaId: 'ananya.rao@abdm', basicQualification: 'MBBS', pgSpecialisation: 'MD Psychiatry', superSpecialisation: null, fellowship: null, experience: [{ designation: 'Consultant Psychiatrist', institution: 'Lilavati Hospital', years: 8 }, { designation: 'Senior Resident', institution: 'KEM Hospital', years: 3 }], hasSignature: true, hasPhoto: true, mobileVerified: true, emailVerified: true },
     fullName: 'Dr Ananya Rao',
     mobileNumber: '+919876543210',
     specialtyId: 'sp-psy',
@@ -166,6 +167,7 @@ export const doctors: Doctor[] = [
   },
   {
     id: 'dr-2',
+    registration: { dateOfBirth: '1988-09-02', gender: 'Male', idType: 'Passport', idNumberLast4: '7781', abhaId: null, basicQualification: 'MBBS', pgSpecialisation: 'DPM', superSpecialisation: null, fellowship: 'Fellowship in Addiction Medicine', experience: [{ designation: 'Consultant', institution: 'Apollo Clinic, Delhi', years: 8 }], hasSignature: true, hasPhoto: false, mobileVerified: true, emailVerified: true },
     fullName: 'Dr Vikram Sethi',
     mobileNumber: '+919812345678',
     specialtyId: 'sp-deadd',
@@ -184,6 +186,7 @@ export const doctors: Doctor[] = [
   },
   {
     id: 'dr-3',
+    registration: { dateOfBirth: '1991-06-21', gender: 'Female', idType: 'Aadhaar', idNumberLast4: '1156', abhaId: null, basicQualification: 'MA Psychology', pgSpecialisation: 'M.Phil Clinical Psychology', superSpecialisation: null, fellowship: null, experience: [{ designation: 'Clinical Psychologist', institution: 'NIMHANS', years: 6 }], hasSignature: false, hasPhoto: true, mobileVerified: true, emailVerified: false },
     fullName: 'Meera Krishnan',
     mobileNumber: '+919900112233',
     specialtyId: 'sp-psyc',
@@ -201,6 +204,8 @@ export const doctors: Doctor[] = [
   },
   {
     id: 'dr-4',
+    registration: { dateOfBirth: '1986-11-05', gender: 'Male', idType: 'Aadhaar', idNumberLast4: '9034', abhaId: null, basicQualification: 'MBBS', pgSpecialisation: 'MD Psychiatry', superSpecialisation: null, fellowship: 'Fellowship in Child Psychiatry', experience: [{ designation: 'Consultant Psychiatrist', institution: 'Manipal Hospital', years: 5 }, { designation: 'Resident', institution: 'NIMHANS', years: 3 }], hasSignature: true, hasPhoto: true, mobileVerified: true, emailVerified: true },
+    email: 'sameer.joshi@example.com',
     fullName: 'Dr Sameer Joshi',
     mobileNumber: '+919765432109',
     specialtyId: 'sp-psy',
@@ -258,6 +263,8 @@ export const documents: Record<string, DoctorDocument[]> = {
     { id: 'doc-5', documentType: 'degree_certificate', status: 'pending', uploadedAt: daysAgo(5) },
     { id: 'doc-6', documentType: 'registration_certificate', status: 'pending', uploadedAt: daysAgo(5) },
     { id: 'doc-7', documentType: 'identity_proof', status: 'pending', uploadedAt: daysAgo(5) },
+    { id: 'doc-7b', documentType: 'experience_letter', status: 'pending', uploadedAt: daysAgo(5) },
+    { id: 'doc-7c', documentType: 'prescription_signature', status: 'pending', uploadedAt: daysAgo(5) },
   ],
   'dr-5': [
     {
@@ -287,6 +294,7 @@ export const reliability: Record<string, Reliability> = {
 export const availability: Record<string, AvailabilityRule[]> = {
   'dr-1': [
     { id: 'av-1', ruleType: 'weekly', dayOfWeek: 1, startTime: '09:00', endTime: '13:00' },
+    { id: 'av-1b', ruleType: 'weekly', dayOfWeek: 1, startTime: '16:00', endTime: '19:00' },
     { id: 'av-2', ruleType: 'weekly', dayOfWeek: 2, startTime: '09:00', endTime: '13:00' },
     { id: 'av-3', ruleType: 'weekly', dayOfWeek: 4, startTime: '14:00', endTime: '18:00' },
     { id: 'av-4', ruleType: 'blocked', date: inDays(6).slice(0, 10) },
@@ -582,15 +590,34 @@ export const searchConfiguration: SearchConfigShape = {
 };
 
 export const pathways: Pathway[] = [
-  { code: 'depression-followup', version: 3, publishedAt: daysAgo(40), questions: [], redFlagRules: [] },
-  { code: 'depression-followup', version: 2, publishedAt: daysAgo(160), questions: [], redFlagRules: [] },
-  { code: 'deaddiction-followup', version: 1, publishedAt: daysAgo(200), questions: [], redFlagRules: [] },
+  { code: 'depression-followup', version: 3, publishedAt: daysAgo(40), questions: [
+    { id: 'mood_today', text: 'How is your mood today compared with yesterday?', type: 'single_choice', options: [{ value: 'better', label: 'Better' }, { value: 'same', label: 'About the same' }, { value: 'worse', label: 'Worse' }, { value: 'much_worse', label: 'Much worse' }], required: true },
+    { id: 'slept_well', text: 'Did you sleep well last night?', type: 'yes_no', required: true },
+    { id: 'unsafe_thoughts', text: 'Have you had thoughts of harming yourself?', type: 'yes_no', required: true },
+  ], redFlagRules: [
+    { questionId: 'unsafe_thoughts', whenAnswerIn: ['yes'], category: 'self_harm', reason: 'The patient reported thoughts of harming themselves.' },
+    { questionId: 'mood_today', whenAnswerIn: ['much_worse'], category: 'severe_worsening', reason: 'The patient reported feeling much worse.' },
+  ] },
+  { code: 'depression-followup', version: 2, publishedAt: daysAgo(160), questions: [
+    { id: 'mood_today', text: 'How is your mood today compared with yesterday?', type: 'single_choice', options: [{ value: 'better', label: 'Better' }, { value: 'same', label: 'About the same' }, { value: 'worse', label: 'Worse' }, { value: 'much_worse', label: 'Much worse' }], required: true },
+    { id: 'slept_well', text: 'Did you sleep well last night?', type: 'yes_no', required: true },
+    { id: 'unsafe_thoughts', text: 'Have you had thoughts of harming yourself?', type: 'yes_no', required: true },
+  ], redFlagRules: [
+    { questionId: 'unsafe_thoughts', whenAnswerIn: ['yes'], category: 'self_harm', reason: 'The patient reported thoughts of harming themselves.' },
+    { questionId: 'mood_today', whenAnswerIn: ['much_worse'], category: 'severe_worsening', reason: 'The patient reported feeling much worse.' },
+  ] },
+  { code: 'deaddiction-followup', version: 1, publishedAt: daysAgo(200), questions: [
+    { id: 'cravings', text: 'How strong were your cravings today?', type: 'single_choice', options: [{ value: 'none', label: 'None' }, { value: 'mild', label: 'Mild' }, { value: 'strong', label: 'Strong' }, { value: 'unbearable', label: 'Unbearable' }], required: true },
+    { id: 'took_medication', text: 'Did you take your medication as advised?', type: 'yes_no', required: true },
+  ], redFlagRules: [
+    { questionId: 'cravings', whenAnswerIn: ['unbearable'], category: 'severe_withdrawal', reason: 'The patient reported unbearable cravings.' },
+  ] },
 ];
 
 export const legalDocuments: Record<string, LegalDocument[]> = {
   teleconsultation_consent: [
     { documentType: 'teleconsultation_consent', version: '3.0', publishedAt: daysAgo(60), body: 'I consent to a teleconsultation…' },
-    { documentType: 'teleconsultation_consent', version: '2.1', publishedAt: daysAgo(240), body: 'I consent to a teleconsultation…' },
+    { documentType: 'teleconsultation_consent', version: '2.0', publishedAt: daysAgo(240), body: 'I consent to a teleconsultation…' },
   ],
   privacy_policy: [
     { documentType: 'privacy_policy', version: '2.0', publishedAt: daysAgo(90), body: 'This policy explains what we collect…' },
@@ -632,8 +659,17 @@ export const retention: RetentionInfo = {
 
 export const notifications: AdminNotification[] = [
   { id: 'nt-1', title: 'New red-flag alert', body: 'A check-in answer has raised a red flag.', createdAt: hoursAgo(3) },
-  { id: 'nt-2', title: 'Credential queue', body: 'Two providers are waiting on document review.', createdAt: hoursAgo(20) },
+  { id: 'nt-2', title: 'Doctor documents to review', body: 'Two doctors are waiting on document review.', createdAt: hoursAgo(20) },
+  { id: 'nt-4', title: 'Complaint escalated', body: 'A complaint has been open for more than 48 hours.', createdAt: hoursAgo(26) },
+  { id: 'nt-5', title: 'Case summary needs attention', body: 'A summary could not be generated and needs a retry.', createdAt: hoursAgo(30) },
   { id: 'nt-3', title: 'Payout run due', body: 'Two payouts are outstanding.', createdAt: daysAgo(2), readAt: daysAgo(1) },
+  { id: 'nt-6', title: 'New doctor registered', body: 'A doctor has submitted their registration for review.', createdAt: daysAgo(2) },
+  { id: 'nt-7', title: 'Deletion request received', body: 'A patient has asked for their data to be deleted.', createdAt: daysAgo(3), readAt: daysAgo(3) },
+  { id: 'nt-8', title: 'Notification sent', body: 'Your announcement to all doctors was delivered.', createdAt: daysAgo(4), readAt: daysAgo(4) },
+  { id: 'nt-9', title: 'Follow-up alert', body: 'A patient missed two check-ins in a row.', createdAt: daysAgo(5) },
+  { id: 'nt-10', title: 'Care Hub item awaiting review', body: 'A new article is ready for clinical review.', createdAt: daysAgo(6), readAt: daysAgo(5) },
+  { id: 'nt-11', title: 'Allocation override', body: 'A consultation was reassigned by an administrator.', createdAt: daysAgo(8), readAt: daysAgo(8) },
+  { id: 'nt-12', title: 'Policy document updated', body: 'The privacy policy has a new version.', createdAt: daysAgo(12), readAt: daysAgo(11) },
 ];
 
 /* --------------------------- derived / helpers ----------------------------- */

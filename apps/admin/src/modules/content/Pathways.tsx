@@ -14,8 +14,10 @@ import {
   Notice,
   PageHeader,
   StatusBadge,
+  SelectField,
   Table,
   TextArea,
+  TextField,
   may,
 } from '../../ui';
 
@@ -119,22 +121,108 @@ export function Pathways({ level }: { level: AdminLevel }) {
       </Async>
 
       {editing && (
-        <NewVersion
-          from={editing}
-          onClose={() => setEditing(null)}
-          onPublished={() => {
-            setEditing(null);
-            state.reload();
-          }}
-        />
+        <div style={{ marginTop: 'var(--space-xl)' }}>
+          <NewVersion
+            from={editing}
+            onClose={() => setEditing(null)}
+            onPublished={() => {
+              setEditing(null);
+              state.reload();
+            }}
+          />
+        </div>
       )}
     </>
   );
 }
 
+/* ------------------------------ the editor ------------------------------- */
+
+type QType = 'yes_no' | 'single_choice' | 'scale' | 'text';
+type Question = {
+  id: string;
+  text: string;
+  type: QType;
+  /** One per line while editing; turned into `{ value, label }` on publish. */
+  options: string;
+  required: boolean;
+};
+type Rule = { questionId: string; whenAnswerIn: string[]; category: string; reason: string };
+
+const TYPES: { value: QType; label: string }[] = [
+  { value: 'yes_no', label: 'Yes / No' },
+  { value: 'single_choice', label: 'Pick one' },
+  { value: 'scale', label: 'Scale' },
+  { value: 'text', label: 'Free text' },
+];
+
+/** The backend's own list — an admin picks from these, they cannot invent another. */
+const CATEGORIES = [
+  { value: 'self_harm', label: 'Self-harm' },
+  { value: 'severe_worsening', label: 'Severe worsening' },
+  { value: 'confusion_or_agitation', label: 'Confusion or agitation' },
+  { value: 'violence_risk', label: 'Violence risk' },
+  { value: 'severe_withdrawal', label: 'Severe withdrawal' },
+  { value: 'medication_side_effect', label: 'Medication side effect' },
+  { value: 'feeling_unsafe', label: 'Feeling unsafe' },
+];
+
+const slug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+
+const newId = () => `q_${Math.random().toString(36).slice(2, 8)}`;
+
+const optionsOf = (q: Question) =>
+  q.options
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((label) => ({ value: slug(label) || label, label }));
+
+/** Reads whatever the stored version holds into the editor's shape, tolerating a malformed one. */
+const loadQuestions = (raw: unknown): Question[] =>
+  (Array.isArray(raw) ? raw : []).map((r) => {
+    const x = r as { id?: string; text?: string; type?: QType; options?: { label?: string }[]; required?: boolean };
+    return {
+      id: x.id ?? newId(),
+      text: x.text ?? '',
+      type: x.type ?? 'yes_no',
+      options: (x.options ?? []).map((o) => o.label ?? '').join('\n'),
+      required: Boolean(x.required),
+    };
+  });
+
+const loadRules = (raw: unknown): Rule[] =>
+  (Array.isArray(raw) ? raw : []).map((r) => {
+    const x = r as Partial<Rule>;
+    return {
+      questionId: x.questionId ?? '',
+      whenAnswerIn: x.whenAnswerIn ?? [],
+      category: x.category ?? 'self_harm',
+      reason: x.reason ?? '',
+    };
+  });
+
+/** The answers a rule can fire on, for the question it is attached to. */
+const answersFor = (q: Question | undefined): { value: string; label: string }[] => {
+  if (!q) return [];
+  if (q.type === 'yes_no')
+    return [
+      { value: 'yes', label: 'Yes' },
+      { value: 'no', label: 'No' },
+    ];
+  if (q.type === 'text') return [];
+  return optionsOf(q);
+};
+
 /**
  * Duplicate-and-publish. The current version's content is pre-loaded so the
- * admin edits a copy rather than starting from nothing.
+ * admin edits a copy rather than starting from nothing. Questions and rules are
+ * edited as fields — the JSON the backend wants is built only when publishing.
  */
 function NewVersion({
   from,
@@ -146,21 +234,51 @@ function NewVersion({
   onPublished: () => void;
 }) {
   const toast = useToast();
-  const [questions, setQuestions] = useState(() =>
-    JSON.stringify(from.questions ?? [], null, 2),
-  );
-  const [rules, setRules] = useState(() => JSON.stringify(from.redFlagRules ?? [], null, 2));
+  const [questions, setQuestions] = useState<Question[]>(() => loadQuestions(from.questions));
+  const [rules, setRules] = useState<Rule[]>(() => loadRules(from.redFlagRules));
   const [confirming, setConfirming] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const publish = useMutation(pathways.publish);
 
-  const parsed = () => {
-    try {
-      return { questions: JSON.parse(questions), redFlagRules: JSON.parse(rules) };
-    } catch {
-      return null;
+  const patchQ = (i: number, patch: Partial<Question>) =>
+    setQuestions((cur) => cur.map((q, j) => (j === i ? { ...q, ...patch } : q)));
+  const patchR = (i: number, patch: Partial<Rule>) =>
+    setRules((cur) => cur.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  /** Names the first thing wrong, in the editor's own words. */
+  const check = (): string | null => {
+    if (questions.length === 0) return 'Add at least one question.';
+    for (const [i, q] of questions.entries()) {
+      if (!q.text.trim()) return `Question ${i + 1} has no wording.`;
+      if (q.text.length > 300) return `Question ${i + 1} is over 300 characters.`;
+      if ((q.type === 'single_choice' || q.type === 'scale') && optionsOf(q).length < 2)
+        return `Question ${i + 1} needs at least two answer options.`;
+      if (optionsOf(q).length > 10) return `Question ${i + 1} has more than 10 options.`;
     }
+    for (const [i, r] of rules.entries()) {
+      if (!questions.some((q) => q.id === r.questionId)) return `Rule ${i + 1}: choose a question.`;
+      if (r.whenAnswerIn.length === 0) return `Rule ${i + 1}: choose which answers raise it.`;
+      if (!r.reason.trim()) return `Rule ${i + 1}: write the reason, in plain words.`;
+      if (r.reason.length > 255) return `Rule ${i + 1}: the reason is over 255 characters.`;
+    }
+    return null;
   };
+
+  const body = () => ({
+    questions: questions.map((q) => ({
+      id: q.id,
+      text: q.text.trim(),
+      type: q.type,
+      ...(q.type === 'single_choice' || q.type === 'scale' ? { options: optionsOf(q) } : {}),
+      ...(q.required ? { required: true } : {}),
+    })),
+    redFlagRules: rules.map((r) => ({
+      questionId: r.questionId,
+      whenAnswerIn: r.whenAnswerIn,
+      category: r.category,
+      reason: r.reason.trim(),
+    })),
+  });
 
   return (
     <>
@@ -170,27 +288,152 @@ function NewVersion({
           patient is put on.
         </p>
 
-        <TextArea
-          label="Questions"
-          rows={10}
-          value={questions}
-          error={parseError}
-          hint="JSON. The wording is clinical content and needs clinician sign-off."
-          onChange={(e) => {
-            setQuestions(e.target.value);
-            setParseError(null);
-          }}
-        />
-        <TextArea
-          label="Red-flag rules"
-          rows={8}
-          value={rules}
-          hint="JSON. These are what turn a check-in answer into a safety alert."
-          onChange={(e) => {
-            setRules(e.target.value);
-            setParseError(null);
-          }}
-        />
+        <h3 className="subhead">Questions</h3>
+        <p className="fieldHint">The wording is clinical content and needs clinician sign-off.</p>
+        {questions.length === 0 && <p className="muted">No questions yet.</p>}
+        {questions.map((q, i) => (
+          <div className="pwItem" key={q.id}>
+            <div className="pwItem__head">
+              <strong>Question {i + 1}</strong>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  // A rule on a deleted question would point at nothing.
+                  setQuestions((cur) => cur.filter((_, j) => j !== i));
+                  setRules((cur) => cur.filter((r) => r.questionId !== q.id));
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+            <TextField label="Wording" value={q.text} onChange={(e) => patchQ(i, { text: e.target.value })} />
+            <div className="formGrid">
+              <SelectField
+                label="Answered by"
+                value={q.type}
+                onChange={(e) => patchQ(i, { type: e.target.value as QType })}
+                options={TYPES}
+              />
+              <label className="checkOption">
+                <input
+                  type="checkbox"
+                  checked={q.required}
+                  onChange={(e) => patchQ(i, { required: e.target.checked })}
+                />
+                The patient must answer
+              </label>
+            </div>
+            {(q.type === 'single_choice' || q.type === 'scale') && (
+              <TextArea
+                label="Answer options"
+                rows={4}
+                value={q.options}
+                hint="One per line, at most 10."
+                onChange={(e) => patchQ(i, { options: e.target.value })}
+              />
+            )}
+          </div>
+        ))}
+        <div className="formActions">
+          <Button
+            type="button"
+            variant="secondary"
+            icon="plus"
+            onClick={() =>
+              setQuestions((cur) => [
+                ...cur,
+                { id: newId(), text: '', type: 'yes_no', options: '', required: false },
+              ])
+            }
+          >
+            Add question
+          </Button>
+        </div>
+
+        <h3 className="subhead">Red-flag rules</h3>
+        <p className="fieldHint">These turn a check-in answer into a safety alert.</p>
+        {rules.length === 0 && <p className="muted">No rules yet — no answer will raise an alert.</p>}
+        {rules.map((r, i) => {
+          const q = questions.find((x) => x.id === r.questionId);
+          return (
+            <div className="pwItem" key={i}>
+              <div className="pwItem__head">
+                <strong>Rule {i + 1}</strong>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setRules((cur) => cur.filter((_, j) => j !== i))}
+                >
+                  Remove
+                </Button>
+              </div>
+              <div className="formGrid">
+                <SelectField
+                  label="When this question…"
+                  value={r.questionId}
+                  onChange={(e) => patchR(i, { questionId: e.target.value, whenAnswerIn: [] })}
+                  options={[
+                    { value: '', label: 'Choose…' },
+                    ...questions
+                      .filter((x) => x.type !== 'text' && x.text.trim())
+                      .map((x) => ({ value: x.id, label: x.text.trim() })),
+                  ]}
+                />
+                <SelectField
+                  label="…raises an alert of"
+                  value={r.category}
+                  onChange={(e) => patchR(i, { category: e.target.value })}
+                  options={CATEGORIES}
+                />
+              </div>
+              {q && (
+                <fieldset className="checkGroup">
+                  <legend>…is answered</legend>
+                  {answersFor(q).map((a) => (
+                    <label key={a.value} className="checkOption">
+                      <input
+                        type="checkbox"
+                        checked={r.whenAnswerIn.includes(a.value)}
+                        onChange={(e) =>
+                          patchR(i, {
+                            whenAnswerIn: e.target.checked
+                              ? [...r.whenAnswerIn, a.value]
+                              : r.whenAnswerIn.filter((v) => v !== a.value),
+                          })
+                        }
+                      />
+                      {a.label}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+              <TextField
+                label="Reason shown with the alert"
+                value={r.reason}
+                hint="Plain words, never a diagnosis. Up to 255 characters."
+                onChange={(e) => patchR(i, { reason: e.target.value })}
+              />
+            </div>
+          );
+        })}
+        <div className="formActions">
+          <Button
+            type="button"
+            variant="secondary"
+            icon="plus"
+            disabled={questions.length === 0}
+            onClick={() =>
+              setRules((cur) => [...cur, { questionId: '', whenAnswerIn: [], category: 'self_harm', reason: '' }])
+            }
+          >
+            Add rule
+          </Button>
+        </div>
+
+        {problem && <p className="fieldError">{problem}</p>}
 
         <div className="formActions">
           <Button variant="ghost" onClick={onClose}>
@@ -199,13 +442,9 @@ function NewVersion({
           <Button
             variant="primary"
             onClick={() => {
-              // Never send text that is not valid JSON — the backend would
-              // reject it and the admin would lose the edit to a toast.
-              if (!parsed()) {
-                setParseError('That is not valid JSON. Fix it before publishing.');
-                return;
-              }
-              setConfirming(true);
+              const found = check();
+              setProblem(found);
+              if (!found) setConfirming(true);
             }}
           >
             Publish new version
@@ -228,10 +467,8 @@ function NewVersion({
           </>
         }
         onConfirm={async () => {
-          const body = parsed();
-          if (!body) return;
           try {
-            await publish.mutate(from.code, body);
+            await publish.mutate(from.code, body());
             toast.success('New version published.');
             onPublished();
           } catch (e) {

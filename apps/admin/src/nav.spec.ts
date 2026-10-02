@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LEVELS, SECTIONS, canSee, landingFor, sectionsFor } from './nav';
+import { GROUPS, LEVELS, SECTIONS, SETTINGS_TABS, canSee, landingFor, sectionsFor, settingsTabsFor } from './nav';
 import { brandVars } from './brand-css';
 
 /**
@@ -34,21 +34,22 @@ describe('permission gating', () => {
     const finance = sectionsFor('finance').map((s) => s.path);
     expect(finance).toContain('payments');
     expect(finance).not.toContain('credentials');
-    expect(finance).not.toContain('clarification');
+    expect(finance).not.toContain('case-review');
 
     const clinical = sectionsFor('clinical_governance').map((s) => s.path);
     expect(clinical).toContain('credentials');
     expect(clinical).not.toContain('payments');
   });
 
-  it('reserves the super_admin-only sections to super_admin', () => {
+  it('reserves the super_admin-only settings tabs to super_admin', () => {
     for (const path of ['retention', 'admin-accounts']) {
-      const section = SECTIONS.find((s) => s.path === path);
-      expect(section, path).toBeDefined();
-      expect(section?.levels).toEqual([]);
-      expect(canSee('super_admin', section!)).toBe(true);
-      expect(canSee('operations', section!)).toBe(false);
+      const tab = SETTINGS_TABS.find((t) => t.path === path);
+      expect(tab, path).toBeDefined();
+      expect(tab?.levels).toEqual([]);
+      expect(canSee('super_admin', tab!)).toBe(true);
+      expect(canSee('operations', tab!)).toBe(false);
     }
+    expect(settingsTabsFor('finance').map((t) => t.path)).toEqual(['general', 'audit']);
   });
 
   it('gives every level somewhere to land', () => {
@@ -57,6 +58,28 @@ describe('permission gating', () => {
       expect(landing, level).not.toBe('no-access');
       expect(SECTIONS.some((s) => s.path === landing)).toBe(true);
     }
+  });
+
+  it('lists the sidebar in priority order: dashboard, then people, then the care queues', () => {
+    const labels = SECTIONS.map((s) => s.label);
+    expect(labels.slice(0, 4)).toEqual(['Dashboard', 'Doctors', 'Document verification', 'Patients']);
+    // Complaints sit low, just above Settings, and Settings is last.
+    expect(labels.at(-1)).toBe('Settings');
+    expect(labels.at(-2)).toBe('Complaints & feedback');
+    // groups appear in the declared order
+    const seen = [...new Set(SECTIONS.map((s) => s.group))];
+    expect(seen).toEqual(GROUPS.filter((g) => seen.includes(g)));
+  });
+
+  it('merged, renamed and hid what was asked', () => {
+    const paths = SECTIONS.map((s) => s.path);
+    expect(paths).toContain('case-summaries');
+    expect(paths).toContain('case-review');
+    for (const gone of ['pending-summaries', 'clarification', 'allocation-decisions', 'search-config', 'legal', 'audit', 'deletion-requests', 'retention', 'admin-accounts']) {
+      expect(paths, gone).not.toContain(gone);
+    }
+    expect(SECTIONS.find((s) => s.path === 'notifications')?.label).toBe('Notifications');
+    expect(SETTINGS_TABS.map((t) => t.path)).toEqual(['general', 'legal', 'audit', 'deletion-requests', 'retention', 'admin-accounts']);
   });
 
   it('has no duplicate paths', () => {

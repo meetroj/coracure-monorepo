@@ -11,6 +11,7 @@ import {
   Column,
   ConfirmDialog,
   EmptyState,
+  Icon,
   Notice,
   PageHeader,
   StatusBadge,
@@ -37,6 +38,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
   const fetcher = useCallback(() => safety.list(), []);
   const state = useResource<SafetyAlert[]>(fetcher, []);
   const [closing, setClosing] = useState<SafetyAlert | null>(null);
+  const [ackingId, setAckingId] = useState<string | null>(null);
 
   // Polls only while the tab is in front — a backgrounded tab stops.
   usePoll(state.reload, POLL_MS);
@@ -65,7 +67,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
       header: 'Consultation',
       render: (a) =>
         a.consultationId ? (
-          <Link to={`/consultations/${a.consultationId}`}>{a.consultationId.slice(0, 8)}…</Link>
+          <Link to={`/consultations/${a.consultationId}`}>{a.consultationId}</Link>
         ) : (
           <span className="muted">—</span>
         ),
@@ -94,14 +96,20 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
             <Button
               size="sm"
               variant="secondary"
-              loading={acknowledge.busy}
+              className="btn--fixed"
+              // Only the clicked row spins; the rest wait (the mutation allows one at a time).
+              loading={ackingId === a.id}
+              disabled={acknowledge.busy && ackingId !== a.id}
               onClick={async () => {
+                setAckingId(a.id);
                 try {
                   await acknowledge.mutate(a.id);
                   toast.success('Acknowledged — this alert is now yours.');
                   state.reload();
                 } catch (e) {
                   toast.fromError(e);
+                } finally {
+                  setAckingId(null);
                 }
               }}
             >
@@ -109,11 +117,16 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
             </Button>
           )}
           {a.acknowledgedAt && !a.closedAt && (
-            <Button size="sm" variant="primary" onClick={() => setClosing(a)}>
+            <Button size="sm" variant="primary" className="btn--fixed" onClick={() => setClosing(a)}>
               Close
             </Button>
           )}
-          {a.closedAt && <span className="muted small">Done</span>}
+          {a.closedAt && (
+            <span className="doneTag">
+              <Icon name="check" size={14} />
+              Done
+            </span>
+          )}
         </span>
       ),
     },

@@ -154,6 +154,7 @@ function ComplaintQueue({
             rows={ordered(rows)}
             rowKey={(c) => c.id}
             onRowClick={(c) => navigate(`/complaints/${c.id}`)}
+            hideChevron
           />
         )}
       </Async>

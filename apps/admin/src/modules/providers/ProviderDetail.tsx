@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useState, type ReactNode } from 'react';
+import { useLocation, useParams, useSearchParams } from 'react-router-dom';
 
 import {
   doctors,
@@ -26,7 +26,8 @@ import {
   TextField,
   may,
 } from '../../ui';
-import { CredentialReview } from './CredentialReview';
+import { CredentialReview, SECTIONS } from './CredentialReview';
+import { EditDoctor } from './EditDoctor';
 import { AvailabilityEditor } from '../availability/AvailabilityEditor';
 
 /**
@@ -43,17 +44,25 @@ import { AvailabilityEditor } from '../availability/AvailabilityEditor';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'credentials', label: 'Credentials' },
   { id: 'availability', label: 'Availability' },
   { id: 'regions', label: 'Regions & languages' },
   { id: 'commercials', label: 'Commercials' },
   { id: 'reliability', label: 'Reliability' },
 ];
 
+/** Opened from Document verification: the tabs are the review sections, nothing else. */
+const VERIFY_TABS = SECTIONS.map((s) => ({ id: s.id, label: s.title }));
+
 export function ProviderDetail({ level }: { level: AdminLevel }) {
   const { doctorId = '' } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'overview';
+  const verifying = useLocation().pathname.startsWith('/credentials/');
+  const wanted = params.get('tab') ?? '';
+  const tab = verifying
+    ? VERIFY_TABS.some((t) => t.id === wanted)
+      ? wanted
+      : VERIFY_TABS[0].id
+    : wanted || 'overview';
 
   const fetcher = useCallback(() => doctors.get(doctorId), [doctorId]);
   const state = useResource<Doctor>(fetcher, [doctorId]);
@@ -65,13 +74,12 @@ export function ProviderDetail({ level }: { level: AdminLevel }) {
   };
 
   return (
-    <Async state={state} resource="this provider">
+    <Async state={state} resource="this doctor">
       {(doctor) => (
         <>
           <PageHeader
+            back={{ to: verifying ? '/credentials' : '/providers', label: 'Back' }}
             title={doctor.fullName}
-            back={{ to: '/providers', label: 'Providers' }}
-            crumbs={[{ label: 'Providers', to: '/providers' }, { label: doctor.fullName }]}
             description={
               <span className="row">
                 <StatusBadge status={doctor.verificationStatus} />
@@ -80,24 +88,42 @@ export function ProviderDetail({ level }: { level: AdminLevel }) {
               </span>
             }
             actions={
-              <VerificationActions doctor={doctor} level={level} onChanged={state.reload} />
+              <>
+                {/* Editing details belongs to the doctor's own page, not the verification review. */}
+                {!verifying && <EditDoctor doctor={doctor} level={level} onSaved={state.reload} />}
+                <VerificationActions doctor={doctor} level={level} onChanged={state.reload} />
+              </>
             }
           />
 
-          <Tabs tabs={TABS} active={tab} onChange={setTab} />
+          <Tabs tabs={verifying ? VERIFY_TABS : TABS} active={tab} onChange={setTab} />
 
-          {tab === 'overview' && <Overview doctor={doctor} />}
-          {tab === 'credentials' && (
-            <CredentialReview doctorId={doctor.id} level={level} onReviewed={state.reload} />
+          {verifying && (
+            <>
+              <VerifyDetails
+                doctor={doctor}
+                section={tab}
+              />
+              {/* Basic details has no documents to approve — just the one card. */}
+              {tab !== 'basic' && (
+                <CredentialReview
+                  doctorId={doctor.id}
+                  level={level}
+                  onReviewed={state.reload}
+                  section={tab}
+                />
+              )}
+            </>
           )}
-          {tab === 'availability' && <AvailabilityEditor doctorId={doctor.id} level={level} />}
-          {tab === 'regions' && (
+          {!verifying && tab === 'overview' && <Overview doctor={doctor} />}
+          {!verifying && tab === 'availability' && <AvailabilityEditor doctorId={doctor.id} level={level} />}
+          {!verifying && tab === 'regions' && (
             <RegionsAndLanguages doctor={doctor} level={level} onChanged={state.reload} />
           )}
-          {tab === 'commercials' && (
+          {!verifying && tab === 'commercials' && (
             <Commercials doctor={doctor} level={level} onChanged={state.reload} />
           )}
-          {tab === 'reliability' && <ReliabilityPane doctorId={doctor.id} />}
+          {!verifying && tab === 'reliability' && <ReliabilityPane doctorId={doctor.id} />}
         </>
       )}
     </Async>
@@ -186,7 +212,7 @@ function VerificationActions({
               `${doctor.fullName} is now listed and assignable.`,
             ))}
           >
-            {doctor.isListed ? 'Unlist' : 'List provider'}
+            {doctor.isListed ? 'Unlist' : 'List doctor'}
           </Button>
         )}
         {isSuspended ? (
@@ -211,16 +237,16 @@ function VerificationActions({
         busy={reject.busy}
         onClose={() => setRejecting(false)}
         title={`Reject ${doctor.fullName}?`}
-        confirmLabel="Reject provider"
+        confirmLabel="Reject doctor"
         consequence={
           <>
             The provider stays on the platform but cannot be listed or assigned. This is{' '}
-            <strong>reversible</strong> — Reopen puts them back in the credential queue.
+            <strong>reversible</strong> — Reopen puts them back in Document verification.
           </>
         }
         reason={{
           label: 'Reason',
-          hint: 'Shown to the provider in their app. Write it as instructions they can act on.',
+          hint: 'Shown to the doctor in their app. Write it as instructions they can act on.',
           maxLength: 255,
         }}
         onConfirm={async (reason) => {
@@ -234,7 +260,7 @@ function VerificationActions({
         busy={suspend.busy}
         onClose={() => setSuspending(false)}
         title={`Suspend ${doctor.fullName}?`}
-        confirmLabel="Suspend provider"
+        confirmLabel="Suspend doctor"
         consequence={
           <>
             They are removed from the assignment pool immediately.{' '}
@@ -270,6 +296,160 @@ function VerificationActions({
 
 /* -------------------------------- overview -------------------------------- */
 
+const dateLabel = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : null);
+
+/** What the doctor stated in the sign-up form, for the reviewer. Private: never shown to patients. */
+function RegistrationDetails({ doctor }: { doctor: Doctor }) {
+  const r = doctor.registration!;
+  return (
+    <Card title="Registration details">
+      <DefinitionList
+        items={[
+          { label: 'Date of birth', value: dateLabel(r.dateOfBirth) },
+          { label: 'Gender', value: r.gender },
+          { label: 'Email', value: doctor.email },
+          { label: 'Registration number', value: doctor.registrationNumber },
+          { label: 'Government ID', value: r.idType ? `${r.idType} · ending ${r.idNumberLast4 ?? '—'}` : null },
+          { label: 'ABHA ID / address', value: r.abhaId },
+          { label: 'Basic qualification', value: r.basicQualification },
+          { label: 'PG specialisation', value: r.pgSpecialisation },
+          { label: 'Super specialisation', value: r.superSpecialisation },
+          { label: 'Fellowship', value: r.fellowship },
+          { label: 'Prescription signature', value: r.hasSignature ? 'Uploaded' : 'Not uploaded' },
+        ]}
+      />
+      {r.experience && r.experience.length > 0 && (
+        <>
+          <h3 className="subhead">Experience</h3>
+          <ul>
+            {r.experience.map((x, i) => (
+              <li key={i}>
+                <strong>{x.designation}</strong> — {x.institution}, {x.years} {x.years === 1 ? 'year' : 'years'}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Card>
+  );
+}
+
+const yesNo = (v?: boolean | null, yes = 'Uploaded', no = 'Not uploaded') => (v ? yes : no);
+
+const Verified = ({ ok, what }: { ok?: boolean; what: string }) =>
+  ok ? (
+    <StatusBadge status="verified" label={what} />
+  ) : (
+    <StatusBadge status="pending" label="Not verified" />
+  );
+
+/** What the doctor declared for one review section, shown above that section's documents. */
+function VerifyDetails({
+  doctor,
+  section,
+  title = 'Declared by the doctor',
+}: {
+  doctor: Doctor;
+  section: string;
+  title?: string;
+}) {
+  const r = doctor.registration;
+  let items: { label: string; value: ReactNode }[];
+  let note: ReactNode = null;
+
+  if (section === 'basic') {
+    items = [
+      { label: 'Profile photo (optional)', value: yesNo(r?.hasPhoto) },
+      { label: 'Full name', value: doctor.fullName },
+      { label: 'Date of birth', value: dateLabel(r?.dateOfBirth) },
+      { label: 'Gender', value: r?.gender },
+      {
+        label: 'Mobile number',
+        value: doctor.mobileNumber ? (
+          <span className="row">
+            {doctor.mobileNumber} <Verified ok={r?.mobileVerified} what="OTP verified" />
+          </span>
+        ) : null,
+      },
+      {
+        label: 'Email address',
+        value: doctor.email ? (
+          <span className="row">
+            {doctor.email} <Verified ok={r?.emailVerified} what="Verified" />
+          </span>
+        ) : null,
+      },
+      {
+        label: 'Languages for consultation',
+        value: doctor.languages && doctor.languages.length > 0 ? doctor.languages.join(', ') : null,
+      },
+    ];
+  } else if (section === 'identity') {
+    items = [
+      { label: 'Government ID type', value: r?.idType },
+      // Only the last four characters are ever held in the admin view.
+      { label: 'Government ID number', value: r?.idNumberLast4 ? `•••• ${r.idNumberLast4}` : null },
+      { label: 'ABHA ID / address (optional)', value: r?.abhaId },
+    ];
+  } else if (section === 'qualification') {
+    const shown = [r?.basicQualification, r?.pgSpecialisation, r?.superSpecialisation, r?.fellowship]
+      .filter(Boolean)
+      .join(' · ');
+    items = [
+      { label: 'Basic qualification', value: r?.basicQualification },
+      { label: 'PG specialisation (optional)', value: r?.pgSpecialisation },
+      { label: 'Super specialisation (optional)', value: r?.superSpecialisation },
+      { label: 'Fellowship (optional)', value: r?.fellowship },
+      { label: 'Registration number', value: doctor.registrationNumber },
+    ];
+    note = (
+      <p className="muted">
+        Shown to patients as: <strong>{shown || '—'}</strong>. The degree and registration
+        certificates stay private and are used only for verification.
+      </p>
+    );
+  } else if (section === 'experience') {
+    const entries = r?.experience ?? [];
+    const total = entries.reduce((sum, x) => sum + x.years, 0);
+    items = [
+      {
+        label: 'Entries',
+        value:
+          entries.length > 0 ? (
+            <ul style={{ display: 'grid', gap: 10, margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.5 }}>
+              {entries.map((x, i) => (
+                <li key={i}>
+                  <strong>{x.designation}</strong> — {x.institution}, {x.years} {x.years === 1 ? 'year' : 'years'}
+                </li>
+              ))}
+            </ul>
+          ) : null,
+      },
+    ];
+    note = (
+      <p className="muted">
+        Shown to patients as: <strong>{total} Years of Experience</strong> — nothing about the
+        institution, designation or certificates.
+      </p>
+    );
+  } else {
+    items = [{ label: 'Prescription signature', value: yesNo(r?.hasSignature) }];
+    note = (
+      <p className="muted">
+        JPG or PNG. Kept private and placed automatically on this doctor&apos;s prescriptions once
+        approved.
+      </p>
+    );
+  }
+
+  return (
+    <Card title={title}>
+      <DefinitionList items={items} />
+      {note}
+    </Card>
+  );
+}
+
 function Overview({ doctor }: { doctor: Doctor }) {
   return (
     <>
@@ -285,26 +465,9 @@ function Overview({ doctor }: { doctor: Doctor }) {
         </Notice>
       )}
 
-      <Card title="Provider">
-        <DefinitionList
-          items={[
-            { label: 'Full name', value: doctor.fullName },
-            { label: 'Mobile (sign-in identifier)', value: doctor.mobileNumber },
-            { label: 'Specialty', value: doctor.specialtyName },
-            { label: 'Qualification', value: doctor.qualification },
-            { label: 'Registration number', value: doctor.registrationNumber },
-            {
-              label: 'Experience',
-              value: doctor.yearsOfExperience ? `${doctor.yearsOfExperience} years` : null,
-            },
-            { label: 'Verification', value: <StatusBadge status={doctor.verificationStatus} /> },
-            {
-              label: 'Listing',
-              value: <StatusBadge status={doctor.isListed ? 'listed' : 'unlisted'} />,
-            },
-          ]}
-        />
-      </Card>
+      {SECTIONS.map((x) => (
+        <VerifyDetails key={x.id} doctor={doctor} section={x.id} title={x.title} />
+      ))}
     </>
   );
 }
@@ -476,7 +639,7 @@ function Commercials({
           label="Consultation fee (₹)"
           inputMode="numeric"
           value={fee}
-          hint="The provider keeps all of it."
+          hint="The doctor keeps all of it."
           onChange={(e) => setFee(e.target.value)}
         />
         <TextField

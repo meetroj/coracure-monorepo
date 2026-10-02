@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { getSession, signOut, type Session } from '../api/http';
 import { inbox } from '../api/admin';
@@ -8,6 +8,7 @@ import logo from '../assets/brand/coracure-wide-twotone.svg';
 import { switchLevel } from '../mock/auth';
 import { GROUPS, LEVELS, LEVEL_LABEL, SECTIONS, sectionsFor, type AdminLevel } from '../nav';
 import { Button, ConfirmDialog, Icon, SelectField } from '../ui';
+import { NotificationBell } from './NotificationBell';
 
 /**
  * The admin shell: left navigation by module, compact top header, content
@@ -26,6 +27,17 @@ export function Shell({
   const { level } = session;
   const visible = sectionsFor(level);
   const location = useLocation();
+  // Below 860px the sidebar is an off-canvas drawer; this is its open state.
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Picking a page (or the browser Back button) closes the drawer; so does ESC.
+  useEffect(() => setNavOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setNavOpen(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navOpen]);
 
   // The header title comes from the same map as the nav, so the two can never
   // disagree about what the current page is called.
@@ -35,18 +47,33 @@ export function Shell({
 
   return (
     <div className="shell">
-      <aside className="sidebar">
+      <div className={`scrim ${navOpen ? 'isOpen' : ''}`.trim()} onClick={() => setNavOpen(false)} />
+      <aside className={`sidebar ${navOpen ? 'isOpen' : ''}`.trim()}>
         <Link className="sidebar__brand" to="/">
           <img src={logo} alt="Coracure admin" width={150} />
         </Link>
+        <button
+          type="button"
+          className="sidebar__close"
+          aria-label="Close menu"
+          onClick={() => setNavOpen(false)}
+        >
+          <Icon name="close" size={20} />
+        </button>
 
         <nav className="sidebar__nav" aria-label="Sections">
           {GROUPS.map((group) => {
             const inGroup = visible.filter((s) => s.group === group);
             if (inGroup.length === 0) return null;
+            // Settings sits alone at the foot: a rule above it says "system", no label needed.
+            const isSystem = group === 'System';
             return (
-              <div className="sidebar__group" key={group}>
-                <h2>{group}</h2>
+              <div
+                className={`sidebar__group ${isSystem ? 'sidebar__group--system' : ''}`.trim()}
+                key={group}
+                {...(isSystem ? { role: 'group', 'aria-label': group } : {})}
+              >
+                {!isSystem && <h2>{group}</h2>}
                 {inGroup.map((section) => (
                   <NavLink key={section.path} to={`/${section.path}`} className="sidebar__link">
                     <Icon name={section.icon} size={18} />
@@ -61,9 +88,10 @@ export function Shell({
 
       <div className="main">
         <Header
-          title={current?.label ?? 'Admin'}
+          title={current?.label ?? (location.pathname.startsWith('/inbox') ? 'Notifications' : 'Admin')}
           session={session}
           onLevelChange={onLevelChange}
+          onMenu={() => setNavOpen(true)}
         />
         <main className="content">
           <Outlet />
@@ -79,13 +107,34 @@ function Header({
   title,
   session,
   onLevelChange,
+  onMenu,
 }: {
   title: string;
   session: Session;
   onLevelChange: () => void;
+  onMenu: () => void;
 }) {
+  const navigate = useNavigate();
+  const parts = useLocation().pathname.split('/').filter(Boolean);
+  // A detail page (/doctors/:id, /consultations/:id, ...) gets Back, here beside the section name.
+  const isDetail = parts.length >= 2 && parts[0] !== 'settings';
+  const goBack = () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    // Back keeps the list's filters; a deep link with no history falls back to the list itself.
+    if (idx > 0) navigate(-1);
+    else navigate(`/${parts[0]}`);
+  };
+
   return (
     <header className="header">
+      <button type="button" className="header__menu" aria-label="Open menu" onClick={onMenu}>
+        <Icon name="menu" size={22} />
+      </button>
+      {isDetail && (
+        <button type="button" className="header__back" aria-label="Back" onClick={goBack}>
+          <Icon name="arrowLeft" size={18} />
+        </button>
+      )}
       <h1 className="header__title">{title}</h1>
 
       <div className="header__right">
@@ -93,28 +142,6 @@ function Header({
         <AccountMenu session={session} onLevelChange={onLevelChange} />
       </div>
     </header>
-  );
-}
-
-/**
- * The admin's own notifications. `GET /me/notifications` is open to all three
- * account kinds, so this is a real count — not a decorative bell. SRS 2.3 is
- * explicit that admins have no push and read alerts in-panel.
- */
-function NotificationBell() {
-  const fetcher = useCallback(() => inbox.unreadCount(), []);
-  const unread = useResource<{ count: number }>(fetcher, []);
-  const count = unread.data?.count ?? 0;
-
-  return (
-    <NavLink
-      className="bell"
-      to="/inbox"
-      aria-label={`Notifications${count ? `, ${count} unread` : ''}`}
-    >
-      <Icon name="bell" size={19} />
-      {count > 0 && <span className="bell__dot">{count > 99 ? '99+' : count}</span>}
-    </NavLink>
   );
 }
 

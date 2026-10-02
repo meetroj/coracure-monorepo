@@ -9,10 +9,10 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { ApiError } from '@coracure/api/errors';
 
-import { canSee, type AdminLevel, type Section } from '../nav';
+import { canSee, SECTIONS, SETTINGS_TABS, type AdminLevel, type Section } from '../nav';
 import { Icon, type IconName } from './Icon';
 
 export { Icon } from './Icon';
@@ -179,19 +179,49 @@ export function SelectField({
     options: readonly { value: string; label: string }[];
   }) {
   const id = useId();
+  // The browser draws the list, so "open" is tracked from the events that open
+  // and close it: a press toggles, a choice, Escape or leaving closes.
+  const [open, setOpen] = useState(false);
   return (
     <div className={`formRow ${className}`.trim()}>
       <label htmlFor={id}>
         {label}
         {required && <span className="req" aria-hidden="true"> *</span>}
       </label>
-      <select {...rest} id={id} required={required} aria-invalid={error ? true : undefined}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <div className={`selectWrap ${open ? 'isOpen' : ''}`.trim()}>
+        <select
+          {...rest}
+          id={id}
+          required={required}
+          aria-invalid={error ? true : undefined}
+          onMouseDown={(e) => {
+            rest.onMouseDown?.(e);
+            setOpen((o) => !o);
+          }}
+          onChange={(e) => {
+            rest.onChange?.(e);
+            setOpen(false);
+          }}
+          onBlur={(e) => {
+            rest.onBlur?.(e);
+            setOpen(false);
+          }}
+          onKeyDown={(e) => {
+            rest.onKeyDown?.(e);
+            if (e.key === 'Escape') setOpen(false);
+            else if (e.key === ' ' || e.key === 'Enter' || (e.altKey && e.key === 'ArrowDown')) setOpen(true);
+          }}
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <span className="selectWrap__chev" aria-hidden="true">
+          <Icon name="chevronDown" size={16} />
+        </span>
+      </div>
       {hint && !error && <p className="fieldHint">{hint}</p>}
       {error && <p className="fieldError">{error}</p>}
     </div>
@@ -223,12 +253,16 @@ export function SearchField({
     return () => clearTimeout(timer);
   }, [local, value, delay]);
 
+  const id = useId();
   return (
-    <div className="search">
+    <div className="formRow searchRow">
+      <label htmlFor={id}>Search</label>
+      <div className="search">
       <span className="search__icon" aria-hidden="true">
         <Icon name="search" size={16} />
       </span>
       <input
+        id={id}
         type="search"
         value={local}
         placeholder={placeholder}
@@ -245,6 +279,7 @@ export function SearchField({
           ×
         </button>
       )}
+      </div>
     </div>
   );
 }
@@ -338,28 +373,48 @@ export type Crumb = { label: string; to?: string };
  * deep link opened cold must still land somewhere sensible rather than leaving
  * the app.
  */
+/**
+ * Titles the top bar already shows. A page heading that repeats one of these
+ * is dropped (with its description) so the screen does not say the same thing
+ * twice; the actions below it stay. Detail pages (a doctor's name, a patient)
+ * are not in this set and keep their heading.
+ */
+const SHELL_TITLES = new Set<string>([
+  ...SECTIONS.map((s) => s.label),
+  ...SETTINGS_TABS.map((t) => t.label),
+  'Settings',
+  'Clarification cases',
+  'Allocation decisions',
+]);
+
 export function PageHeader({
   title,
   description,
   crumbs,
   back,
   actions,
+  titleAside,
 }: {
   title: string;
+  /** Sits on the same line as the title, e.g. a status badge. */
+  titleAside?: ReactNode;
   description?: ReactNode;
   crumbs?: Crumb[];
   back?: { to: string; label: string };
   actions?: ReactNode;
 }) {
+  // Only on a route the top bar names; a title elsewhere is never hidden.
+  const { pathname } = useLocation();
+  const first = pathname.split('/').filter(Boolean)[0];
+  const onSection = SECTIONS.some((s) => s.path === first);
+  const showTitle = !(onSection && SHELL_TITLES.has(title));
+  // `back` is no longer drawn here — the top bar owns the Back button — but it still means
+  // "this page has somewhere to go back to", so crumbs stay hidden when it is passed.
+  if (!showTitle && !actions && !(!back && crumbs && crumbs.length > 0)) return null;
   return (
     <header className="pageHeader">
-      {back && (
-        <Link className="backLink" to={back.to}>
-          <Icon name="arrowLeft" size={16} />
-          {back.label}
-        </Link>
-      )}
-      {crumbs && crumbs.length > 0 && (
+      {/* A back link already says where you came from; crumbs only when there is none. */}
+      {!back && crumbs && crumbs.length > 0 && (
         <nav className="crumbs" aria-label="Breadcrumb">
           {crumbs.map((crumb, i) => (
             <span key={`${crumb.label}-${i}`}>
@@ -370,11 +425,20 @@ export function PageHeader({
         </nav>
       )}
       <div className="pageHeader__row">
-        <div>
-          <h1>{title}</h1>
-          {description && <p className="muted pageHeader__desc">{description}</p>}
-        </div>
-        {actions && <div className="pageHeader__actions">{actions}</div>}
+        {showTitle && (
+          <div>
+            {titleAside ? (
+              <div className="pageHeader__titleRow">
+                <h1>{title}</h1>
+                {titleAside}
+              </div>
+            ) : (
+              <h1>{title}</h1>
+            )}
+            {description && <p className="muted pageHeader__desc">{description}</p>}
+          </div>
+        )}
+        {actions && <div className={`pageHeader__actions ${showTitle ? '' : 'isAlone'}`.trim()}>{actions}</div>}
       </div>
     </header>
   );
@@ -539,29 +603,35 @@ export function Table<Row>({
   rows,
   rowKey,
   onRowClick,
+  hideChevron,
   caption,
 }: {
   columns: readonly Column<Row>[];
   rows: readonly Row[];
   rowKey: (row: Row) => string;
   onRowClick?: (row: Row) => void;
+  /** The row stays clickable, but no arrow is drawn - for tables that already carry their own button. */
+  hideChevron?: boolean;
   caption?: string;
 }) {
+  const chevron = Boolean(onRowClick) && !hideChevron;
   return (
     // Wide tables scroll inside their own box rather than the page (§8).
     <div className="tableWrap">
-      <table className="table">
+      <table className={`table ${chevron ? 'hasChevron' : ''}`.trim()}>
         {caption && <caption className="visuallyHidden">{caption}</caption>}
         <thead>
           <tr>
             {columns.map((col) => (
               <th
                 key={col.key}
+                className={col.align === 'end' ? 'colEnd' : undefined}
                 style={{ width: col.width, textAlign: col.align === 'end' ? 'right' : 'left' }}
               >
                 {col.header}
               </th>
             ))}
+            {chevron && <th className="colChev" aria-hidden="true" />}
           </tr>
         </thead>
         <tbody>
@@ -572,10 +642,19 @@ export function Table<Row>({
               onClick={onRowClick ? () => onRowClick(row) : undefined}
             >
               {columns.map((col) => (
-                <td key={col.key} style={{ textAlign: col.align === 'end' ? 'right' : 'left' }}>
+                <td
+                  key={col.key}
+                  className={col.align === 'end' ? 'colEnd' : undefined}
+                  style={{ textAlign: col.align === 'end' ? 'right' : 'left' }}
+                >
                   {col.render(row)}
                 </td>
               ))}
+              {chevron && (
+                <td className="colChev" aria-hidden="true">
+                  <Icon name="arrowRight" size={16} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

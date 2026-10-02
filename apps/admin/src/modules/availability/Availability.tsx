@@ -11,7 +11,6 @@ import {
   Column,
   EmptyState,
   Notice,
-  PageHeader,
   SelectField,
   StatusBadge,
   Table,
@@ -64,7 +63,7 @@ export function Availability({ level }: { level: AdminLevel }) {
   const columns: Column<AssignableProvider>[] = [
     {
       key: 'name',
-      header: 'Provider',
+      header: 'Doctor',
       render: (p) => (
         <span className="cellStack">
           <Link to={`/providers/${p.doctorId}`}>
@@ -100,12 +99,7 @@ export function Availability({ level }: { level: AdminLevel }) {
   ];
 
   return (
-    <>
-      <PageHeader
-        title="Availability & allocation"
-        description="Who can actually take a consultation for a given service, language, region and time."
-      />
-
+    <div className="stack">
       <Card title="Coverage lookup">
         <Notice tone="info">
           A provider free at the start time is still not assignable if the unbroken window left is
@@ -181,6 +175,6 @@ export function Availability({ level }: { level: AdminLevel }) {
           )}
         </Async>
       )}
-    </>
+    </div>
   );
 }

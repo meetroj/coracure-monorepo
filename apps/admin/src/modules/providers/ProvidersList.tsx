@@ -9,10 +9,10 @@ import {
   Button,
   Column,
   EmptyState,
-  PageHeader,
   PermissionGate,
   SearchField,
   SelectField,
+  Tabs,
   StatusBadge,
   Table,
 } from '../../ui';
@@ -69,7 +69,7 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
   const columns: Column<Doctor>[] = [
     {
       key: 'name',
-      header: 'Provider',
+      header: 'Doctor',
       render: (d) => (
         <span className="cellStack">
           <strong>{d.fullName}</strong>
@@ -126,32 +126,27 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
 
   return (
     <>
-      <PageHeader
-        title="Providers"
-        description="Accounts, credentials, pools and commercials. Creating an account is an operations action; verifying it is not."
-        actions={
-          // Only operations may create (§15 → backend `assertPermission`).
-          <PermissionGate level={level} allow={['operations']}>
-            <Link to="/providers/new">
-              <Button variant="primary" icon="plus">
-                Add provider
-              </Button>
-            </Link>
-          </PermissionGate>
-        }
-      />
+      {/* The title is in the top bar, so the action shares the tab row. */}
+      <div className="tabsRow">
+        <Tabs
+          tabs={STATUSES.map((o) => ({ id: o.value, label: o.value ? o.label : 'All' }))}
+          active={status}
+          onChange={(id) => setParam('verificationStatus', id)}
+        />
+        <PermissionGate level={level} allow={['operations']}>
+          <Link to="/providers/new" className="tabsRow__action">
+            <Button variant="primary" icon="plus">
+              Add doctor
+            </Button>
+          </Link>
+        </PermissionGate>
+      </div>
 
       <div className="filterBar">
         <SearchField
           value={search}
           onSearch={(next) => setParam('search', next)}
           placeholder="Name, mobile or registration number"
-        />
-        <SelectField
-          label="Verification"
-          options={STATUSES}
-          value={status}
-          onChange={(e) => setParam('verificationStatus', e.target.value)}
         />
         <SelectField
           label="Listing"
@@ -176,7 +171,7 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
             description={
               filtered
                 ? 'Try a wider verification status, or clear the search.'
-                : 'Providers are created here — there is no self sign-up for a doctor.'
+                : 'Doctors are created here — there is no self sign-up for a doctor.'
             }
             action={
               filtered ? (
@@ -190,11 +185,12 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
       >
         {(rows) => (
           <Table
-            caption="Providers"
+            caption="Doctors"
             columns={columns}
             rows={rows}
             rowKey={(d) => d.id}
             onRowClick={(d) => navigate(`/providers/${d.id}`)}
+            hideChevron
           />
         )}
       </Async>

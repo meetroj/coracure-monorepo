@@ -487,16 +487,37 @@ select:focus-visible,
   line-height: 1.9;
 }
 
-/* A narrow window gets the nav above the content rather than a squeezed grid. */
-@media (max-width: 860px) {
-  .shell {
-    grid-template-columns: 1fr;
+/* Narrow-window rules (drawer nav, mobile spacing) live at the end of shell.css. */
+
+/* Mobile sign-in: the artwork is already hidden at 900px; tighten the form. */
+@media (max-width: 640px) {
+  .auth__panel {
+    place-items: start center;
+    padding: var(--space-xl) var(--space-lg) var(--space-xxl);
   }
 
-  .sidebar {
-    position: static;
-    max-height: none;
-    border-right: 0;
-    border-bottom: 1px solid var(--c-surface-line);
+  .auth__logo--form {
+    margin-bottom: var(--space-xl);
+  }
+
+  .auth__title {
+    font-size: var(--text-xl);
+  }
+
+  .field input {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .field__reveal {
+    padding: var(--space-md);
+  }
+
+  .button {
+    min-height: 48px;
+  }
+
+  .auth__row {
+    flex-wrap: wrap;
   }
 }

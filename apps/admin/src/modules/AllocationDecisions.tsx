@@ -27,7 +27,7 @@ export function AllocationDecisions({ level }: { level: AdminLevel }) {
       key: 'consultation',
       header: 'Consultation',
       render: (d) => (
-        <Link to={`/consultations/${d.consultationId}`}>{d.consultationId.slice(0, 8)}…</Link>
+        <Link to={`/consultations/${d.consultationId}`}>{d.consultationId}</Link>
       ),
     },
     {

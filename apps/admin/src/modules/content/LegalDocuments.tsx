@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { legal, type LegalDocument } from '../../api/admin';
+import { legal, nextLegalVersion, type LegalDocument } from '../../api/admin';
 import { useMutation, useResource } from '../../lib/useResource';
 import { useToast } from '../../lib/toast';
 import type { AdminLevel } from '../../nav';
@@ -118,6 +118,7 @@ export function LegalDocuments({ level }: { level: AdminLevel }) {
       {drafting && (
         <Draft
           documentType={documentType}
+          nextVersion={nextLegalVersion(state.data ?? [])}
           onClose={() => setDrafting(false)}
           onPublished={() => {
             setDrafting(false);
@@ -131,10 +132,12 @@ export function LegalDocuments({ level }: { level: AdminLevel }) {
 
 function Draft({
   documentType,
+  nextVersion,
   onClose,
   onPublished,
 }: {
   documentType: string;
+  nextVersion: string;
   onClose: () => void;
   onPublished: () => void;
 }) {
@@ -148,6 +151,10 @@ function Draft({
   return (
     <>
       <Card title={`New version — ${humanise(documentType)}`}>
+        <p className="muted">
+          This will be published as <strong>version {nextVersion}</strong> — the number is set
+          automatically.
+        </p>
         <TextArea
           label="Document text"
           required
@@ -175,7 +182,7 @@ function Draft({
         busy={publish.busy}
         onClose={() => setConfirming(false)}
         variant={isConsent ? 'danger' : 'primary'}
-        title={`Publish a new ${humanise(documentType).toLowerCase()}?`}
+        title={`Publish version ${nextVersion} of the ${humanise(documentType).toLowerCase()}?`}
         confirmLabel="Publish version"
         consequence={
           isConsent ? (

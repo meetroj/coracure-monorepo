@@ -16,10 +16,13 @@ import { ProvidersList } from '../modules/providers/ProvidersList';
 import { ProviderCreate } from '../modules/providers/ProviderCreate';
 import { ProviderDetail } from '../modules/providers/ProviderDetail';
 import { CredentialQueue } from '../modules/CredentialQueue';
+import { Patients } from '../modules/patients/Patients';
+import { PatientDetail } from '../modules/patients/PatientDetail';
+import { CaseReview } from '../modules/CaseReview';
+import { SettingsHub } from '../modules/settings/SettingsHub';
 import { SafetyAlerts } from '../modules/SafetyAlerts';
+import { CaseSummaryDetail } from '../modules/CaseSummaryDetail';
 import { PendingSummaries } from '../modules/PendingSummaries';
-import { Clarification } from '../modules/Clarification';
-import { AllocationDecisions } from '../modules/AllocationDecisions';
 import { Availability } from '../modules/availability/Availability';
 import { Consultations } from '../modules/consultations/Consultations';
 import { ConsultationDetail } from '../modules/consultations/ConsultationDetail';
@@ -29,14 +32,7 @@ import { Payments } from '../modules/Payments';
 import { Catalogue } from '../modules/content/Catalogue';
 import { CareHub } from '../modules/content/CareHub';
 import { NotificationTemplates } from '../modules/content/NotificationTemplates';
-import { SearchConfig } from '../modules/content/SearchConfig';
 import { Pathways } from '../modules/content/Pathways';
-import { LegalDocuments } from '../modules/content/LegalDocuments';
-import { Settings } from '../modules/Settings';
-import { AuditLog } from '../modules/compliance/AuditLog';
-import { DeletionRequests } from '../modules/compliance/DeletionRequests';
-import { Retention } from '../modules/compliance/Retention';
-import { AdminAccounts } from '../modules/AdminAccounts';
 import { Inbox } from '../modules/Inbox';
 
 /**
@@ -49,35 +45,50 @@ const SCREENS: Record<string, ComponentType<{ level: AdminLevel }>> = {
   dashboard: Dashboard,
   providers: ProvidersList,
   credentials: CredentialQueue,
-  availability: Availability,
+  patients: Patients,
   consultations: Consultations,
   'safety-alerts': SafetyAlerts,
-  'pending-summaries': PendingSummaries,
-  clarification: Clarification,
-  'allocation-decisions': AllocationDecisions,
-  complaints: Complaints,
+  'case-summaries': PendingSummaries,
+  'case-review': CaseReview,
+  availability: Availability,
   payments: Payments,
   catalogue: Catalogue,
   'care-hub': CareHub,
   notifications: NotificationTemplates,
-  'search-config': SearchConfig,
   pathways: Pathways,
-  legal: LegalDocuments,
-  settings: Settings,
-  audit: AuditLog,
-  'deletion-requests': DeletionRequests,
-  retention: Retention,
-  'admin-accounts': AdminAccounts,
+  complaints: Complaints,
+  settings: SettingsHub,
+};
+
+/**
+ * Old sidebar paths that moved. A bookmark or a link in an audit note still
+ * lands in the right place instead of on "page not found".
+ */
+const MOVED: Record<string, string> = {
+  'pending-summaries': '/case-summaries',
+  clarification: '/case-review',
+  'allocation-decisions': '/case-review?tab=allocation',
+  legal: '/settings/legal',
+  audit: '/settings/audit',
+  'deletion-requests': '/settings/deletion-requests',
+  retention: '/settings/retention',
+  'admin-accounts': '/settings/admin-accounts',
 };
 
 /** Detail routes that live under a section but are not sidebar entries. */
 const CHILDREN: Record<string, { path: string; Component: ComponentType<{ level: AdminLevel }> }[]> =
   {
+    patients: [{ path: ':patientId', Component: PatientDetail }],
+    settings: [{ path: ':tab', Component: SettingsHub }],
     providers: [
       { path: 'new', Component: ProviderCreate },
       { path: ':doctorId', Component: ProviderDetail },
     ],
+    // Reviewing a doctor's documents stays inside Document verification: the
+    // sidebar and the top bar keep naming that section, and Back returns to the queue.
+    credentials: [{ path: ':doctorId', Component: ProviderDetail }],
     consultations: [{ path: ':consultationId', Component: ConsultationDetail }],
+    'case-summaries': [{ path: ':summaryId', Component: CaseSummaryDetail }],
     complaints: [{ path: ':complaintId', Component: ComplaintDetail }],
   };
 
@@ -188,6 +199,10 @@ function SignedIn({
     <Routes>
       <Route element={<Shell session={session} onLevelChange={() => onSession(getSession())} />}>
         <Route index element={<Navigate to={`/${landingFor(level)}`} replace />} />
+
+        {Object.entries(MOVED).map(([from, to]) => (
+          <Route key={from} path={from} element={<Navigate to={to} replace />} />
+        ))}
 
         {SECTIONS.map((section) => {
           const Screen = SCREENS[section.path] ?? SectionPlaceholder(section);

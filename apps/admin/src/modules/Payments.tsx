@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { API_BASE } from '../api/http';
-import { payments, type PendingPayout } from '../api/admin';
+import { payments, type PatientPayment, type PendingPayout } from '../api/admin';
 import { useMutation, useResource } from '../lib/useResource';
 import { useToast } from '../lib/toast';
 import type { AdminLevel } from '../nav';
@@ -16,7 +16,9 @@ import {
   Notice,
   PageHeader,
   PermissionGate,
+  StatusBadge,
   Table,
+  Tabs,
   TextField,
   may,
 } from '../ui';
@@ -40,6 +42,12 @@ export function Payments({ level }: { level: AdminLevel }) {
   const state = useResource<PendingPayout[]>(fetcher, []);
   const [paying, setPaying] = useState<PendingPayout | null>(null);
   const [refunding, setRefunding] = useState(false);
+  const [refundFor, setRefundFor] = useState('');
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'patients' ? 'patients' : 'doctors';
+
+  const patientFetcher = useCallback(() => payments.patientPayments(), []);
+  const patientState = useResource<PatientPayment[]>(patientFetcher, []);
 
   const record = useMutation(payments.recordPayout);
   const canPayout = may(level, ['finance']);
@@ -47,7 +55,7 @@ export function Payments({ level }: { level: AdminLevel }) {
   const columns: Column<PendingPayout>[] = [
     {
       key: 'provider',
-      header: 'Provider',
+      header: 'Doctor',
       render: (p) =>
         p.doctorId ? (
           <Link to={`/providers/${p.doctorId}`}>{p.doctorName ?? p.doctorId}</Link>
@@ -59,7 +67,7 @@ export function Payments({ level }: { level: AdminLevel }) {
       key: 'consultation',
       header: 'Consultation',
       render: (p) => (
-        <Link to={`/consultations/${p.consultationId}`}>{p.consultationId.slice(0, 8)}…</Link>
+        <Link to={`/consultations/${p.consultationId}`}>{p.consultationId}</Link>
       ),
     },
     {
@@ -89,30 +97,84 @@ export function Payments({ level }: { level: AdminLevel }) {
     },
   ];
 
+  const patientColumns: Column<PatientPayment>[] = [
+    {
+      key: 'ref',
+      header: 'Consultation',
+      render: (p) => <Link to={`/consultations/${p.consultationId}`}>{p.referenceCode}</Link>,
+    },
+    { key: 'patient', header: 'Patient', render: (p) => p.patientName },
+    {
+      key: 'date',
+      header: 'Date',
+      render: (p) => (p.at ? new Date(p.at).toLocaleDateString() : '—'),
+    },
+    {
+      key: 'amount',
+      header: 'Charged',
+      align: 'end',
+      render: (p) => `₹${p.amountInr.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`,
+    },
+    { key: 'status', header: 'Payment', render: (p) => <StatusBadge status={p.status} /> },
+    {
+      key: 'actions',
+      header: '',
+      align: 'end',
+      width: '130px',
+      render: (p) =>
+        p.status === 'paid' && may(level, ['finance', 'operations']) ? (
+          <span className="rowActions">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setRefundFor(p.consultationId);
+                setRefunding(true);
+              }}
+            >
+              Refund
+            </Button>
+          </span>
+        ) : null,
+    },
+  ];
+
   return (
     <>
       <PageHeader
         title="Payments & payouts"
-        description="What the platform still owes providers, and the refunds it has raised."
-        actions={
-          <PermissionGate level={level} allow={['finance']}>
-            <a href={`${API_BASE}${payments.exportUrl('transactions')}`} download>
-              <Button variant="secondary" icon="download">
-                Export transactions
-              </Button>
-            </a>
-            <Button variant="primary" icon="refresh" onClick={() => setRefunding(true)}>
-              Raise a refund
-            </Button>
-          </PermissionGate>
-        }
+        description="What the platform owes doctors, and what patients have paid."
       />
 
-      <Notice tone="warning">
-        Payouts are transferred manually by the client this release. “Record payout” marks a
-        transfer you have <strong>already made</strong> — it does not send money.
-      </Notice>
+      <div className="tabsRow">
+        <Tabs
+          tabs={[
+            { id: 'doctors', label: 'Doctors' },
+            { id: 'patients', label: 'Patients' },
+          ]}
+          active={tab}
+          onChange={(id) => setParams(id === 'doctors' ? {} : { tab: id }, { replace: true })}
+        />
+        <div className="tabsRow__action">
+          <PermissionGate level={level} allow={['finance']}>
+            <span className="row">
+              <a href={`${API_BASE}${payments.exportUrl('transactions')}`} download>
+                <Button variant="secondary" icon="download">
+                  Export transactions
+                </Button>
+              </a>
+              <Button variant="primary" icon="refresh" onClick={() => {
+                  setRefundFor('');
+                  setRefunding(true);
+                }}>
+                Raise a refund
+              </Button>
+              </span>
+          </PermissionGate>
+        </div>
+      </div>
 
+      {tab === 'doctors' && (
       <Card title="Pending payouts">
         <Async
           state={state}
@@ -135,6 +197,31 @@ export function Payments({ level }: { level: AdminLevel }) {
           )}
         </Async>
       </Card>
+      )}
+      {tab === 'patients' && (
+      <Card title="Patient payments">
+        <Async
+          state={patientState}
+          resource="patient payments"
+          empty={
+            <EmptyState
+              icon="payments"
+              title="No payments yet"
+              description="Payments appear here once patients book."
+            />
+          }
+        >
+          {(rows) => (
+            <Table
+              caption="Patient payments"
+              columns={patientColumns}
+              rows={rows}
+              rowKey={(p) => p.consultationId}
+            />
+          )}
+        </Async>
+      </Card>
+      )}
 
       <ConfirmDialog
         open={paying !== null}
@@ -163,7 +250,9 @@ export function Payments({ level }: { level: AdminLevel }) {
         }}
       />
 
-      {refunding && <RefundForm onClose={() => setRefunding(false)} />}
+      {refunding && (
+        <RefundForm initialConsultationId={refundFor} onClose={() => setRefunding(false)} />
+      )}
     </>
   );
 }
@@ -172,9 +261,15 @@ export function Payments({ level }: { level: AdminLevel }) {
  * A refund is raised against one consultation. The amount is typed, never
  * derived — see the note at the top of this file.
  */
-function RefundForm({ onClose }: { onClose: () => void }) {
+function RefundForm({
+  initialConsultationId,
+  onClose,
+}: {
+  initialConsultationId: string;
+  onClose: () => void;
+}) {
   const toast = useToast();
-  const [consultationId, setConsultationId] = useState('');
+  const [consultationId, setConsultationId] = useState(initialConsultationId);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const refund = useMutation(payments.refund);

@@ -28,8 +28,8 @@ import { Async, Button, Card, EmptyState, Notice, PageHeader, TextField } from '
 const OWNER_ROUTE: Record<string, string> = {
   'notification-templates': '/notifications',
   notifications: '/notifications',
-  'search-config': '/search-config',
-  search: '/search-config',
+  'search-config': '/settings/general',
+  search: '/settings/general',
   'allocation-policy': '/catalogue?tab=policy',
   allocation: '/catalogue?tab=policy',
   pathways: '/pathways',
@@ -153,7 +153,7 @@ function SettingRow({ setting, onSaved }: { setting: ConfigValue; onSaved: () =>
         )}
 
         {/* The audit entry IS the configuration history (§39). */}
-        <Link to={`/audit?entityType=app_config&entityId=${encodeURIComponent(setting.key)}`}>
+        <Link to={`/settings/audit?entityType=app_config&entityId=${encodeURIComponent(setting.key)}`}>
           <Button variant="ghost" size="sm" icon="audit">
             History
           </Button>

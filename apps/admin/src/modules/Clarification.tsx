@@ -35,6 +35,7 @@ export function Clarification({ level }: { level: AdminLevel }) {
   const [assigning, setAssigning] = useState<ClarificationCase | null>(null);
 
   const close = useMutation(clarification.close);
+  const [closingId, setClosingId] = useState<string | null>(null);
 
   const columns: Column<ClarificationCase>[] = [
     {
@@ -83,15 +84,19 @@ export function Clarification({ level }: { level: AdminLevel }) {
           {c.assignedExpertId && c.status !== 'closed' && (
             <Button
               size="sm"
-              variant="ghost"
-              loading={close.busy}
+              variant="secondary"
+              loading={closingId === c.id}
+              disabled={close.busy && closingId !== c.id}
               onClick={async () => {
+                setClosingId(c.id);
                 try {
                   await close.mutate(c.id);
                   toast.success('Case closed.');
                   state.reload();
                 } catch (e) {
                   toast.fromError(e);
+                } finally {
+                  setClosingId(null);
                 }
               }}
             >
@@ -106,8 +111,8 @@ export function Clarification({ level }: { level: AdminLevel }) {
   return (
     <>
       <PageHeader
-        title="Case clarification"
-        description="A treating provider has asked for a second opinion on a de-identified case. Assign one expert."
+        title="Clarification cases"
+        description="A treating doctor has asked for a second opinion on a de-identified case. Assign one expert."
       />
 
       <Notice tone="info">
@@ -206,7 +211,7 @@ function AssignExpert({
           <EmptyState
             icon="users"
             title="No experts available"
-            description="Expert level is granted per provider from their Regions & seniority tab."
+            description="Expert level is granted per doctor from their Regions & seniority tab."
           />
         }
       >

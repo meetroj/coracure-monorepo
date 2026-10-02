@@ -1,4 +1,8 @@
 import * as db from '../mock/db';
+import { consultationsList } from './consultationsList';
+import { baseExtras, extraConsultations } from '../mock/moreConsultations';
+import { chatFor } from '../mock/consultationChat';
+import { ownerOf } from '../mock/patients';
 import type {
   AdminNotification,
   AllocationDecision,
@@ -23,6 +27,7 @@ import type {
   LegalDocument,
   NotificationTemplate,
   Pathway,
+  PatientPayment,
   PendingPayout,
   PendingSummary,
   Region,
@@ -100,23 +105,41 @@ export const doctors = {
   create: (input: {
     mobileNumber: string;
     fullName: string;
-    specialtyId?: string;
-    qualification?: string;
-    registrationNumber?: string;
-    yearsOfExperience?: number;
+    email?: string;
+    dateOfBirth?: string;
+    gender?: string;
     languages?: string[];
+    hasPhoto?: boolean;
+    idType?: string;
+    idNumber?: string;
+    abhaId?: string | null;
+    specialtyId?: string;
+    basicQualification?: string;
+    pgSpecialisation?: string | null;
+    superSpecialisation?: string | null;
+    fellowship?: string | null;
+    registrationNumber?: string;
+    experience?: { designation: string; institution: string; years: number }[];
+    hasSignature?: boolean;
     payoutFeeInr?: number;
     consultationDurationMinutes?: number;
+    /** Document types the doctor has handed over; each waits in Document verification. */
+    documents?: string[];
   }) => {
+    const entries = input.experience ?? [];
     const created: Doctor = {
       id: db.newId('dr'),
       fullName: input.fullName,
       mobileNumber: input.mobileNumber,
+      email: input.email ?? null,
       specialtyId: input.specialtyId ?? null,
       specialtyName: db.specialties.find((s) => s.id === input.specialtyId)?.name ?? null,
-      qualification: input.qualification ?? null,
+      qualification:
+        [input.basicQualification, input.pgSpecialisation, input.superSpecialisation, input.fellowship]
+          .filter(Boolean)
+          .join(' · ') || null,
       registrationNumber: input.registrationNumber ?? null,
-      yearsOfExperience: input.yearsOfExperience ?? null,
+      yearsOfExperience: entries.length > 0 ? entries.reduce((n, x) => n + x.years, 0) : null,
       languages: input.languages ?? [],
       regionIds: [],
       // Exactly what the backend does: pending and unlisted.
@@ -126,15 +149,44 @@ export const doctors = {
       payoutFeeInr: input.payoutFeeInr ?? null,
       consultationDurationMinutes: input.consultationDurationMinutes ?? null,
       createdAt: new Date().toISOString(),
+      registration: {
+        dateOfBirth: input.dateOfBirth ?? null,
+        gender: input.gender ?? null,
+        // Only the last four characters are ever held in the admin view.
+        idType: input.idType ?? null,
+        idNumberLast4: input.idNumber ? input.idNumber.slice(-4) : null,
+        abhaId: input.abhaId ?? null,
+        basicQualification: input.basicQualification ?? null,
+        pgSpecialisation: input.pgSpecialisation ?? null,
+        superSpecialisation: input.superSpecialisation ?? null,
+        fellowship: input.fellowship ?? null,
+        experience: entries,
+        hasSignature: Boolean(input.hasSignature),
+        hasPhoto: Boolean(input.hasPhoto),
+        // Verified when the doctor first signs in / opens the email link.
+        mobileVerified: false,
+        emailVerified: false,
+      },
     };
     db.doctors.unshift(created);
+    if (input.documents && input.documents.length > 0) {
+      db.documents[created.id] = input.documents.map((documentType) => ({
+        id: db.newId('doc'),
+        documentType,
+        status: 'pending' as const,
+        uploadedAt: new Date().toISOString(),
+      }));
+    }
     return ok(copy(created));
   },
 
   update: (doctorId: string, input: Record<string, unknown>) => {
     const found = db.findDoctor(doctorId);
     if (!found) return notFound('Provider');
-    Object.assign(found, input);
+    const { registration, ...rest } = input as { registration?: Record<string, unknown> };
+    Object.assign(found, rest);
+    // The nested registration is merged, so saving a few fields never wipes the others.
+    if (registration) found.registration = { ...(found.registration ?? {}), ...registration };
     return ok(copy(found));
   },
 
@@ -328,12 +380,24 @@ export const scheduling = {
 /* ------------------------------ consultations ----------------------------- */
 
 const findConsultation = (id: string) =>
-  db.consultations.find((c) => c.id === id || c.referenceCode === id);
+  [...db.consultations, ...extraConsultations].find((c) => c.id === id || c.referenceCode === id);
 
 export const consultations = {
   get: (id: string) => {
     const found = findConsultation(id);
-    return found ? ok(copy(found)) : notFound('Consultation');
+    if (!found) return notFound('Consultation');
+    const regionName = db.regions.find((r) => r.id === found.regionId)?.name ?? null;
+    const owner = ownerOf(found.id);
+    // Full name here — this is a record an admin acts on, not a queue to skim.
+    return ok(
+      copy({ ...found, ...(baseExtras[found.id] ?? {}), regionName, patientId: owner.id, patientName: owner.fullName }),
+    );
+  },
+
+  /** The doctor–patient chat for this case. Read-only. */
+  chat: (id: string) => {
+    const found = findConsultation(id);
+    return found ? ok(chatFor(found.id, found.startsAt ?? null, found.status)) : notFound('Consultation');
   },
 
   override: (id: string, doctorId: string, reason: string) => {
@@ -453,6 +517,19 @@ export const payments = {
       status: 'paid',
       refundAmount: 0,
     } as Bill),
+
+  /** What patients were charged, one row per consultation that has a payment. */
+  patientPayments: async (): Promise<PatientPayment[]> => {
+    const page = await consultationsList.list();
+    return page.items.map((c) => ({
+      consultationId: c.id,
+      referenceCode: c.referenceCode ?? c.id,
+      patientName: c.patientName,
+      at: c.startsAt ?? null,
+      amountInr: 1313.28,
+      status: c.paymentStatus,
+    }));
+  },
 
   refund: (_consultationId: string, _amount: number, _reason: string) => ok({} as unknown),
 
@@ -713,6 +790,12 @@ export const pathways = {
   },
 };
 
+/** The next whole version: 1.0, then 2.0, 3.0 … — never 2.1 or 2.2, and never a repeat. */
+export const nextLegalVersion = (existing: { version?: string | number | null }[]): string => {
+  const highest = existing.reduce((max, d) => Math.max(max, Math.floor(parseFloat(String(d.version ?? 0))) || 0), 0);
+  return `${highest + 1}.0`;
+};
+
 export const legal = {
   versions: (documentType: string) => ok(copy(db.legalDocuments[documentType] ?? [])),
 
@@ -720,7 +803,7 @@ export const legal = {
     const list = db.legalDocuments[input.documentType] ?? [];
     const created: LegalDocument = {
       documentType: input.documentType,
-      version: input.version ?? `${list.length + 1}.0`,
+      version: input.version ?? nextLegalVersion(list),
       publishedAt: new Date().toISOString(),
       body: input.body,
     };
@@ -797,6 +880,8 @@ export const adminAccounts = {
     password: string;
     fullName: string;
     permissionLevel: string;
+    /** Sidebar sections this admin may open. The backend has no field for it yet. */
+    allowedSections?: string[];
   }) => ok({ id: db.newId('ad') }),
 };
 

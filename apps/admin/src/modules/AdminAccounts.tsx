@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { adminAccounts } from '../api/admin';
 import { useMutation } from '../lib/useResource';
 import { useToast } from '../lib/toast';
-import { LEVELS, LEVEL_LABEL, type AdminLevel } from '../nav';
+import { GROUPS, LEVELS, LEVEL_LABEL, SECTIONS, canSee, type AdminLevel } from '../nav';
 import {
   Button,
   Card,
@@ -33,6 +33,10 @@ export function AdminAccounts({ level }: { level: AdminLevel }) {
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [permissionLevel, setPermissionLevel] = useState<string>('operations');
+  const defaultsFor = (l: string) =>
+    SECTIONS.filter((s) => canSee(l as AdminLevel, s)).map((s) => s.path);
+  // Starts as the level's own sections; the super admin then ticks or unticks.
+  const [allowed, setAllowed] = useState<string[]>(() => defaultsFor('operations'));
   const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
 
   const create = useMutation(adminAccounts.create);
@@ -110,11 +114,69 @@ export function AdminAccounts({ level }: { level: AdminLevel }) {
           <SelectField
             label="Permission level"
             value={permissionLevel}
-            onChange={(e) => setPermissionLevel(e.target.value)}
-            hint="Decides which sections and data this admin sees. It cannot be changed afterwards without a backend endpoint."
+            onChange={(e) => {
+              setPermissionLevel(e.target.value);
+              setAllowed(defaultsFor(e.target.value));
+            }}
+            hint="Decides which data this admin can act on. It cannot be changed afterwards without a backend endpoint."
             options={LEVELS.map((l) => ({ value: l, label: LEVEL_LABEL[l] }))}
           />
         </div>
+
+        <fieldset className="permSet">
+          <legend className="permSet__legend">Tabs this admin can open</legend>
+          <div className="permSet__bar">
+            <p className="muted">
+              Pre-ticked from the role. Untick a tab to hide it. A tab marked <em>outside role</em>{' '}
+              only shows the link; the server still answers 403 for its data.
+            </p>
+            <div className="permSet__tools">
+              <span className="permSet__count" aria-live="polite">
+                {allowed.length} of {SECTIONS.length} selected
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setAllowed(SECTIONS.map((s) => s.path))}>
+                Select all
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setAllowed([])}>
+                Clear
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setAllowed(defaultsFor(permissionLevel))}>
+                Reset to role
+              </Button>
+            </div>
+          </div>
+
+          {GROUPS.map((group) => {
+            const items = SECTIONS.filter((s) => s.group === group);
+            if (items.length === 0) return null;
+            return (
+              <div className="permGroup" key={group}>
+                <h3 className="permGroup__title">{group}</h3>
+                <div className="permGrid">
+                  {items.map((s) => {
+                    const on = allowed.includes(s.path);
+                    const outside = on && !canSee(permissionLevel as AdminLevel, s);
+                    return (
+                      <label key={s.path} className={`permItem ${on ? 'isOn' : ''}`.trim()}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) =>
+                            setAllowed((cur) =>
+                              e.target.checked ? [...cur, s.path] : cur.filter((p) => p !== s.path),
+                            )
+                          }
+                        />
+                        <span className="permItem__label">{s.label}</span>
+                        {outside && <span className="permItem__tag">outside role</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </fieldset>
 
         <div className="formActions">
           <Button
@@ -124,12 +186,17 @@ export function AdminAccounts({ level }: { level: AdminLevel }) {
               const found = validate();
               setErrors(found);
               if (Object.keys(found).length > 0) return;
+              if (allowed.length === 0) {
+                toast.fromError(new Error('Tick at least one tab.'), 'Tick at least one tab.');
+                return;
+              }
               try {
                 await create.mutate({
                   email: email.trim().toLowerCase(),
                   password,
                   fullName: fullName.trim(),
                   permissionLevel,
+                  allowedSections: allowed,
                 });
                 toast.success(`${fullName.trim()} can now sign in.`);
                 setEmail('');

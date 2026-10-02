@@ -1,10 +1,20 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { doctors, type CredentialQueueRow } from '../api/admin';
 import { useResource } from '../lib/useResource';
 import type { AdminLevel } from '../nav';
-import { Async, Button, Column, EmptyState, PageHeader, StatusBadge, Table } from '../ui';
+import {
+  Async,
+  Button,
+  Column,
+  EmptyState,
+  PageHeader,
+  SearchField,
+  SelectField,
+  StatusBadge,
+  Table,
+} from '../ui';
 
 /**
  * The credential queue (§17) — clinical governance's home screen.
@@ -17,14 +27,17 @@ export function CredentialQueue({ level }: { level: AdminLevel }) {
   const navigate = useNavigate();
   const fetcher = useCallback(() => doctors.credentialQueue(), []);
   const state = useResource<CredentialQueueRow[]>(fetcher, []);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [order, setOrder] = useState<'oldest' | 'newest'>('oldest');
 
   const open = (row: CredentialQueueRow) =>
-    navigate(`/providers/${row.doctorId}?tab=credentials`);
+    navigate(`/credentials/${row.doctorId}?tab=credentials`);
 
   const columns: Column<CredentialQueueRow>[] = [
     {
       key: 'name',
-      header: 'Provider',
+      header: 'Doctor',
       render: (r) => (
         <span className="cellStack">
           <strong>{r.fullName}</strong>
@@ -67,21 +80,53 @@ export function CredentialQueue({ level }: { level: AdminLevel }) {
     },
   ];
 
-  const sorted = (rows: CredentialQueueRow[]) =>
-    [...rows].sort(
-      (a, b) => new Date(a.submittedAt ?? 0).getTime() - new Date(b.submittedAt ?? 0).getTime(),
-    );
+  const visible = (rows: CredentialQueueRow[]) => {
+    const q = search.trim().toLowerCase();
+    const dir = order === 'oldest' ? 1 : -1;
+    return rows
+      .filter((r) => !status || r.verificationStatus === status)
+      .filter(
+        (r) => !q || `${r.fullName} ${r.specialtyName ?? ''}`.toLowerCase().includes(q),
+      )
+      .sort(
+        (a, b) =>
+          dir * (new Date(a.submittedAt ?? 0).getTime() - new Date(b.submittedAt ?? 0).getTime()),
+      );
+  };
 
   return (
     <>
       <PageHeader
-        title="Credential queue"
-        description="Providers with documents awaiting a decision, longest wait first. Reviewing a document is separate from verifying the provider."
+        title="Document verification"
+        description="Doctors with documents awaiting a decision, longest wait first. Reviewing a document is separate from verifying the doctor."
       />
+
+      <div className="filterBar">
+        <SearchField value={search} onSearch={setSearch} placeholder="Doctor name or specialty" />
+        <SelectField
+          label="Verification"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          options={[
+            { value: '', label: 'Any status' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'under_review', label: 'Under review' },
+          ]}
+        />
+        <SelectField
+          label="Sort by"
+          value={order}
+          onChange={(e) => setOrder(e.target.value as 'oldest' | 'newest')}
+          options={[
+            { value: 'oldest', label: 'Longest waiting' },
+            { value: 'newest', label: 'Newest first' },
+          ]}
+        />
+      </div>
 
       <Async
         state={state}
-        resource="the credential queue"
+        resource="the document verification queue"
         empty={
           <EmptyState
             icon="check"
@@ -90,15 +135,21 @@ export function CredentialQueue({ level }: { level: AdminLevel }) {
           />
         }
       >
-        {(rows) => (
-          <Table
-            caption="Credential queue"
-            columns={columns}
-            rows={sorted(rows)}
-            rowKey={(r) => r.doctorId}
-            onRowClick={open}
-          />
-        )}
+        {(rows) => {
+          const shown = visible(rows);
+          return shown.length === 0 ? (
+            <EmptyState icon="search" title="No matches" description="Try a different search or status." />
+          ) : (
+            <Table
+              caption="Document verification"
+              columns={columns}
+              rows={shown}
+              rowKey={(r) => r.doctorId}
+              onRowClick={open}
+              hideChevron
+            />
+          );
+        }}
       </Async>
     </>
   );

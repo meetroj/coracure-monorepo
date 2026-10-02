@@ -41,7 +41,7 @@ export type Section = {
   /** Sidebar glyph, from the one icon set. */
   icon: IconName;
   label: string;
-  group: 'Operations' | 'Clinical' | 'Money' | 'Content' | 'Platform';
+  group: 'Overview' | 'People' | 'Care' | 'Money' | 'Content' | 'Support' | 'System';
   /**
    * Levels that reach this section. `super_admin` is never listed — it passes
    * everything, the same way the backend's `assertPermission` does.
@@ -60,18 +60,18 @@ export const SECTIONS: readonly Section[] = [
     path: 'dashboard',
     icon: 'dashboard',
     label: 'Dashboard',
-    group: 'Clinical',
+    group: 'Overview',
     levels: ['operations', 'clinical_governance', 'care_coordinator'],
     blurb:
       'The quality dashboard (FR-18.6). Every tile links into the queue behind it.',
     endpoints: ['GET /admin/governance/dashboard'],
-    spec: '§8.1',
+    spec: '§8.1'
   },
   {
     path: 'providers',
     icon: 'providers',
-    label: 'Providers',
-    group: 'Operations',
+    label: 'Doctors',
+    group: 'People',
     levels: ['operations', 'clinical_governance', 'care_coordinator'],
     blurb:
       'Create the account, edit the profile and commercials, set region pools, suspend. Creating is operations; verifying is not.',
@@ -86,13 +86,13 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/doctors/:doctorId/reinstate',
       'GET /admin/doctors/:doctorId/reliability',
     ],
-    spec: '§5',
+    spec: '§5'
   },
   {
     path: 'credentials',
     icon: 'credentials',
-    label: 'Credential queue',
-    group: 'Operations',
+    label: 'Document verification',
+    group: 'People',
     levels: ['operations', 'clinical_governance'],
     blurb:
       'Review each document, then verify or reject the provider. Verify is clinical_governance only.',
@@ -102,31 +102,24 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/doctors/credentials/:documentId/review',
       'POST /admin/doctors/:doctorId/verify | /reject | /reopen',
     ],
-    spec: '§5.2–5.3',
+    spec: '§5.2–5.3'
   },
   {
-    path: 'availability',
-    icon: 'calendar',
-    label: 'Availability & allocation',
-    group: 'Operations',
-    levels: ['operations', 'care_coordinator', 'clinical_governance'],
+    path: 'patients',
+    icon: 'users',
+    label: 'Patients',
+    group: 'People',
+    levels: ['operations', 'clinical_governance', 'care_coordinator'],
     blurb:
-      "Edit a provider's diary on their behalf, and answer who is assignable for a service, language, region and time.",
-    endpoints: [
-      'GET /admin/doctors/:doctorId/availability',
-      'PUT /admin/doctors/:doctorId/availability/weekly  (REPLACES the pattern)',
-      'POST /admin/doctors/:doctorId/availability/blocked | /custom-hours',
-      'DELETE /admin/doctors/:doctorId/availability/:ruleId',
-      'GET /admin/doctors/:doctorId/slots',
-      'GET /admin/availability/remaining',
-    ],
-    spec: '§6',
+      'Find a patient, see their consultations, follow-up plans, reports and any complaints in one place.',
+    endpoints: ['GET /admin/patients', 'GET /admin/patients/:patientId'],
+    spec: '§7'
   },
   {
     path: 'consultations',
     icon: 'consultations',
     label: 'Consultations',
-    group: 'Operations',
+    group: 'Care',
     levels: ['operations', 'care_coordinator', 'clinical_governance'],
     blurb:
       'BLOCKED by gap A-2 — there is no admin list endpoint, only fetch-by-id. Reach consultations from the queues until it lands.',
@@ -138,13 +131,13 @@ export const SECTIONS: readonly Section[] = [
       'GET /admin/consultations/:consultationId/video/session',
       'GET /admin/consultations/:consultationId/care-record',
     ],
-    spec: '§7',
+    spec: '§7'
   },
   {
     path: 'safety-alerts',
     icon: 'alert',
     label: 'Safety alerts',
-    group: 'Clinical',
+    group: 'Care',
     levels: ['care_coordinator', 'clinical_governance', 'operations'],
     blurb:
       'Acknowledge takes responsibility; close records what was done. Two steps, never one button.',
@@ -153,62 +146,50 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/safety-alerts/:alertId/acknowledge',
       'POST /admin/safety-alerts/:alertId/close',
     ],
-    spec: '§8.3',
+    spec: '§8.3'
   },
   {
-    path: 'pending-summaries',
+    path: 'case-summaries',
     icon: 'clipboard',
-    label: 'Pending case summaries',
-    group: 'Clinical',
+    label: 'Case summaries',
+    group: 'Care',
     levels: ['operations', 'clinical_governance', 'care_coordinator'],
-    blurb: 'Consultations held but not written up. Sort oldest first.',
+    blurb: 'Every case summary, written automatically after each consultation. Filter by status and open the consultation behind it.',
     endpoints: ['GET /admin/governance/pending-case-summaries'],
-    spec: '§8.2',
+    spec: '§8.2'
   },
   {
-    path: 'clarification',
+    path: 'case-review',
     icon: 'clarify',
-    label: 'Case clarification',
-    group: 'Clinical',
+    label: 'Clarification & allocation',
+    group: 'Care',
     levels: ['clinical_governance', 'operations'],
     blurb:
-      'Assign one expert per de-identified case. Expert seniority alone reveals nothing.',
+      'Expert clarification cases and the allocation decisions behind each assignment, in one place.',
     endpoints: [
       'GET /admin/clarification-cases',
-      'GET /admin/clarification-cases/experts',
       'POST /admin/clarification-cases/:caseId/assign',
-      'POST /admin/clarification-cases/:caseId/close',
-    ],
-    spec: '§8.4',
-  },
-  {
-    path: 'allocation-decisions',
-    icon: 'route',
-    label: 'Allocation decisions',
-    group: 'Clinical',
-    levels: ['operations', 'clinical_governance'],
-    blurb: 'Who was assigned and on what basis, including every override reason.',
-    endpoints: [
       'GET /admin/governance/allocation-decisions',
-      'GET /admin/governance/export/:kind',
     ],
-    spec: '§8.5',
+    spec: '§8.4–8.5'
   },
   {
-    path: 'complaints',
-    icon: 'note',
-    label: 'Complaints & feedback',
-    group: 'Operations',
-    levels: ['operations', 'clinical_governance'],
+    path: 'availability',
+    icon: 'calendar',
+    label: 'Doctor availability',
+    group: 'Care',
+    levels: ['operations', 'care_coordinator', 'clinical_governance'],
     blurb:
-      'A reply is either to the patient or to the file. That toggle must be unmissable.',
+      "Edit a provider's diary on their behalf, and answer who is assignable for a service, language, region and time.",
     endpoints: [
-      'GET /admin/feedback',
-      'GET /admin/complaints',
-      'GET /admin/complaints/:complaintId',
-      'POST /admin/complaints/:complaintId/assign | /reply | /close',
+      'GET /admin/doctors/:doctorId/availability',
+      'PUT /admin/doctors/:doctorId/availability/weekly  (REPLACES the pattern)',
+      'POST /admin/doctors/:doctorId/availability/blocked | /custom-hours',
+      'DELETE /admin/doctors/:doctorId/availability/:ruleId',
+      'GET /admin/doctors/:doctorId/slots',
+      'GET /admin/availability/remaining',
     ],
-    spec: '§11',
+    spec: '§6'
   },
   {
     path: 'payments',
@@ -224,7 +205,7 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/payments/:consultationId/payout',
       'GET /admin/payments/export?kind=transactions|refunds',
     ],
-    spec: '§9',
+    spec: '§9'
   },
   {
     path: 'catalogue',
@@ -240,7 +221,7 @@ export const SECTIONS: readonly Section[] = [
       'GET|POST /admin/regions · PATCH /admin/regions/:id',
       'GET /admin/allocation-policy · PATCH (operations only)',
     ],
-    spec: '§10.1',
+    spec: '§10.1'
   },
   {
     path: 'care-hub',
@@ -255,36 +236,22 @@ export const SECTIONS: readonly Section[] = [
       'GET|PATCH /admin/care-hub/items/:id',
       'POST /admin/care-hub/items/:id/submit | /publish | /archive',
     ],
-    spec: '§10.2',
+    spec: '§10.2'
   },
   {
     path: 'notifications',
     icon: 'bell',
-    label: 'Notification copy',
+    label: 'Notifications',
     group: 'Content',
     levels: ['content', 'clinical_governance'],
-    blurb: 'No notification may name a diagnosis. `reset` restores what shipped.',
+    blurb:
+      'Notification wording, a manual send to doctors or patients, and what was sent.',
     endpoints: [
       'GET /admin/notification-templates',
       'GET|PATCH /admin/notification-templates/:code',
       'POST /admin/notification-templates/:code/reset',
     ],
-    spec: '§10.3',
-  },
-  {
-    path: 'search-config',
-    icon: 'search',
-    label: 'Search & crisis',
-    group: 'Content',
-    levels: ['content', 'clinical_governance'],
-    blurb:
-      'Crisis keywords and emergency guidance are clinical_governance only. An empty save disables the crisis interrupt.',
-    endpoints: [
-      'GET /admin/search/config',
-      'PATCH /admin/search/crisis-keywords | /emergency-guidance   (clinical_governance)',
-      'PATCH /admin/search/synonyms | /popular-searches | /disclaimer',
-    ],
-    spec: '§10.4',
+    spec: '§10.3'
   },
   {
     path: 'pathways',
@@ -298,13 +265,59 @@ export const SECTIONS: readonly Section[] = [
       'GET /admin/followup-pathways',
       'POST /admin/followup-pathways/:code',
     ],
-    spec: '§10.5',
+    spec: '§10.5'
+  },
+  {
+    path: 'complaints',
+    icon: 'note',
+    label: 'Complaints & feedback',
+    group: 'Support',
+    levels: ['operations', 'clinical_governance'],
+    blurb:
+      'A reply is either to the patient or to the file. That toggle must be unmissable.',
+    endpoints: [
+      'GET /admin/feedback',
+      'GET /admin/complaints',
+      'GET /admin/complaints/:complaintId',
+      'POST /admin/complaints/:complaintId/assign | /reply | /close',
+    ],
+    spec: '§11'
+  },
+  {
+    path: 'settings',
+    icon: 'settings',
+    label: 'Settings',
+    group: 'System',
+    levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
+    blurb:
+      'Platform values, plus legal documents, the audit log, deletion requests, retention and admin accounts as tabs.',
+    endpoints: ['GET /admin/config', 'PUT /admin/config/:key'],
+    spec: '§10.7'
+  },
+];
+
+/**
+ * The tabs inside Settings (`/settings/:tab`). They were sidebar sections of
+ * their own; each keeps its own permission levels, so an admin sees only the
+ * tabs their level may use, exactly as the sidebar used to hide them.
+ */
+export type SettingsTab = Omit<Section, 'group'>;
+
+export const SETTINGS_TABS: readonly SettingsTab[] = [
+  {
+    path: 'general',
+    icon: 'settings',
+    label: 'General',
+    levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
+    blurb:
+      'Values the platform reads at runtime, rendered from the response — `editable` and `managedBy` decide the form, not a local list.',
+    endpoints: ['GET /admin/config', 'PUT /admin/config/:key'],
+    spec: '§10.7'
   },
   {
     path: 'legal',
     icon: 'legal',
     label: 'Legal documents',
-    group: 'Content',
     levels: ['content', 'clinical_governance', 'operations'],
     blurb:
       'Publishing a new consent version re-prompts every patient. The most disruptive button in the panel.',
@@ -312,24 +325,12 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/legal/documents',
       'GET /admin/legal/documents/:documentType/versions',
     ],
-    spec: '§10.6',
-  },
-  {
-    path: 'settings',
-    icon: 'settings',
-    label: 'Settings',
-    group: 'Platform',
-    levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
-    blurb:
-      'Render straight from the response — `editable` and `managedBy` decide the form, not a local list.',
-    endpoints: ['GET /admin/config', 'PUT /admin/config/:key'],
-    spec: '§10.7',
+    spec: '§10.6'
   },
   {
     path: 'audit',
     icon: 'audit',
     label: 'Audit log',
-    group: 'Platform',
     levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
     blurb:
       'Rows are filtered to what your level may read — say so. Searching the log is itself audited.',
@@ -338,13 +339,12 @@ export const SECTIONS: readonly Section[] = [
       'GET /admin/compliance/audit/export',
       'GET /admin/compliance/audit/consultation/:consultationId',
     ],
-    spec: '§12.1',
+    spec: '§12.1'
   },
   {
     path: 'deletion-requests',
     icon: 'trash',
     label: 'Deletion requests',
-    group: 'Platform',
     levels: ['operations'],
     blurb:
       'Operations reviews. super_admin alone executes — a separate queue, never the same screen.',
@@ -353,13 +353,12 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/deletion-requests/:id/review',
       'POST /admin/compliance/deletion-requests/:requestId/execute   (super_admin)',
     ],
-    spec: '§12.2',
+    spec: '§12.2'
   },
   {
     path: 'retention',
     icon: 'shieldCheck',
     label: 'Retention & data rights',
-    group: 'Platform',
     levels: [],
     blurb:
       'super_admin only. `retention/apply` is destructive — typed confirmation, and show the window first.',
@@ -368,25 +367,24 @@ export const SECTIONS: readonly Section[] = [
       'POST /admin/compliance/retention/apply',
       'GET /admin/compliance/patients/:patientId/data-export',
     ],
-    spec: '§12.3',
+    spec: '§12.3'
   },
   {
     path: 'admin-accounts',
     icon: 'users',
     label: 'Admin accounts',
-    group: 'Platform',
     levels: [],
     blurb:
       'BLOCKED by gap A-4 — only POST exists. No list, no edit, no 2FA toggle, so a super admin cannot see the other admins.',
     endpoints: ['POST /auth/admin/accounts'],
-    spec: '§3',
+    spec: '§3'
   },
 ];
 
-export const GROUPS = ['Operations', 'Clinical', 'Money', 'Content', 'Platform'] as const;
+export const GROUPS = ['Overview', 'People', 'Care', 'Money', 'Content', 'Support', 'System'] as const;
 
 /** `super_admin` passes everything, exactly as the backend does. */
-export const canSee = (level: AdminLevel, section: Section): boolean =>
+export const canSee = (level: AdminLevel, section: Pick<Section, 'levels'>): boolean =>
   level === 'super_admin' || section.levels.includes(level);
 
 export const sectionsFor = (level: AdminLevel): Section[] =>
@@ -395,3 +393,7 @@ export const sectionsFor = (level: AdminLevel): Section[] =>
 /** Where a level lands after sign-in — its first visible section. */
 export const landingFor = (level: AdminLevel): string =>
   sectionsFor(level)[0]?.path ?? 'no-access';
+
+/** The Settings tabs this level may open, in order. */
+export const settingsTabsFor = (level: AdminLevel): SettingsTab[] =>
+  SETTINGS_TABS.filter((t) => canSee(level, t));

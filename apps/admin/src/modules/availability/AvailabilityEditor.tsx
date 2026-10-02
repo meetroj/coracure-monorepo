@@ -31,18 +31,48 @@ import {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-type WeeklyRow = { dayOfWeek: number; startTime: string; endTime: string; enabled: boolean };
+type Range = { from: string; to: string };
+
+/** A day can carry several windows, e.g. a morning clinic and an evening one. */
+type WeeklyRow = { dayOfWeek: number; enabled: boolean; ranges: Range[] };
 
 const toRows = (rules: AvailabilityRule[]): WeeklyRow[] =>
   DAYS.map((_, day) => {
-    const rule = rules.find((r) => r.ruleType === 'weekly' && r.dayOfWeek === day);
+    const ranges = rules
+      .filter((r) => r.ruleType === 'weekly' && r.dayOfWeek === day)
+      .map((r) => ({ from: r.startTime ?? '09:00', to: r.endTime ?? '17:00' }))
+      .sort((x, y) => x.from.localeCompare(y.from));
     return {
       dayOfWeek: day,
-      startTime: rule?.startTime ?? '09:00',
-      endTime: rule?.endTime ?? '17:00',
-      enabled: Boolean(rule),
+      enabled: ranges.length > 0,
+      ranges: ranges.length > 0 ? ranges : [{ from: '09:00', to: '17:00' }],
     };
   });
+
+/** The next window offered after the last one, so "Add hours" lands somewhere sensible. */
+const nextRange = (ranges: Range[]): Range => {
+  const last = ranges[ranges.length - 1]?.to ?? '09:00';
+  const from = last < '16:00' ? '16:00' : last;
+  return { from, to: from < '19:00' ? '19:00' : '23:00' };
+};
+
+/** One message per day, naming it — same wording style as the doctor's own app. */
+const checkDay = (row: WeeklyRow): string | null => {
+  if (!row.enabled) return null;
+  const day = DAYS[row.dayOfWeek];
+  for (let i = 0; i < row.ranges.length; i++) {
+    if (row.ranges[i].from >= row.ranges[i].to)
+      return `Check ${day}: hours ${i + 1} must end after they start.`;
+  }
+  const sorted = row.ranges
+    .map((r, i) => ({ ...r, i }))
+    .sort((x, y) => x.from.localeCompare(y.from));
+  for (let k = 1; k < sorted.length; k++) {
+    if (sorted[k].from < sorted[k - 1].to)
+      return `Check ${day}: hours ${sorted[k - 1].i + 1} and ${sorted[k].i + 1} overlap.`;
+  }
+  return null;
+};
 
 export function AvailabilityEditor({
   doctorId,
@@ -105,8 +135,14 @@ function Weekly({
     [rules],
   );
 
-  const set = (day: number, patch: Partial<WeeklyRow>) =>
-    setRows((current) => current.map((r) => (r.dayOfWeek === day ? { ...r, ...patch } : r)));
+  const patchDay = (day: number, fn: (row: WeeklyRow) => WeeklyRow) =>
+    setRows((current) => current.map((r) => (r.dayOfWeek === day ? fn(r) : r)));
+
+  const setRange = (day: number, index: number, patch: Partial<Range>) =>
+    patchDay(day, (r) => ({
+      ...r,
+      ranges: r.ranges.map((x, i) => (i === index ? { ...x, ...patch } : x)),
+    }));
 
   /** Maps the backend's scheduling codes onto the field they belong to. */
   const asFieldError = (e: unknown): boolean => {
@@ -129,20 +165,20 @@ function Weekly({
   const saveWeekly = async () => {
     setFieldError(null);
     const enabled = rows.filter((r) => r.enabled);
-    const bad = enabled.find((r) => r.startTime >= r.endTime);
-    if (bad) {
-      setFieldError(`${DAYS[bad.dayOfWeek]}: the end time must be after the start time.`);
-      return;
+    for (const row of enabled) {
+      const problem = checkDay(row);
+      if (problem) {
+        setFieldError(problem);
+        return;
+      }
     }
     try {
       // The COMPLETE pattern, every time — the endpoint replaces, not merges.
       await save.mutate(
         doctorId,
-        enabled.map((r) => ({
-          dayOfWeek: r.dayOfWeek,
-          startTime: r.startTime,
-          endTime: r.endTime,
-        })),
+        enabled.flatMap((r) =>
+          r.ranges.map((x) => ({ dayOfWeek: r.dayOfWeek, startTime: x.from, endTime: x.to })),
+        ),
       );
       toastOk('Weekly pattern replaced.');
       onSaved();
@@ -159,33 +195,64 @@ function Weekly({
           from the provider’s diary, not left alone.
         </Notice>
 
-        <div className="weekGrid">
+        <div className="weekDays">
           {rows.map((row) => (
-            <div className="weekGrid__row" key={row.dayOfWeek}>
-              <label className="checkbox">
+            <div className="weekDay" key={row.dayOfWeek}>
+              <label className="checkbox weekDay__name">
                 <input
                   type="checkbox"
                   checked={row.enabled}
                   disabled={!editable}
-                  onChange={(e) => set(row.dayOfWeek, { enabled: e.target.checked })}
+                  onChange={(e) => patchDay(row.dayOfWeek, (r) => ({ ...r, enabled: e.target.checked }))}
                 />
                 {DAYS[row.dayOfWeek]}
               </label>
-              <input
-                type="time"
-                value={row.startTime}
-                disabled={!editable || !row.enabled}
-                aria-label={`${DAYS[row.dayOfWeek]} start`}
-                onChange={(e) => set(row.dayOfWeek, { startTime: e.target.value })}
-              />
-              <span className="muted">to</span>
-              <input
-                type="time"
-                value={row.endTime}
-                disabled={!editable || !row.enabled}
-                aria-label={`${DAYS[row.dayOfWeek]} end`}
-                onChange={(e) => set(row.dayOfWeek, { endTime: e.target.value })}
-              />
+
+              <div className="weekDay__ranges">
+                {row.ranges.map((range, i) => (
+                  <div className="weekDay__range" key={i}>
+                    <input
+                      type="time"
+                      value={range.from}
+                      disabled={!editable || !row.enabled}
+                      aria-label={`${DAYS[row.dayOfWeek]} start${i ? ` ${i + 1}` : ''}`}
+                      onChange={(e) => setRange(row.dayOfWeek, i, { from: e.target.value })}
+                    />
+                    <span className="muted">to</span>
+                    <input
+                      type="time"
+                      value={range.to}
+                      disabled={!editable || !row.enabled}
+                      aria-label={`${DAYS[row.dayOfWeek]} end${i ? ` ${i + 1}` : ''}`}
+                      onChange={(e) => setRange(row.dayOfWeek, i, { to: e.target.value })}
+                    />
+                    {editable && row.enabled && row.ranges.length > 1 && (
+                      <IconButton
+                        icon="trash"
+                        label={`Remove ${DAYS[row.dayOfWeek]} hours ${i + 1}`}
+                        onClick={() =>
+                          patchDay(row.dayOfWeek, (r) => ({
+                            ...r,
+                            ranges: r.ranges.filter((_, j) => j !== i),
+                          }))
+                        }
+                      />
+                    )}
+                  </div>
+                ))}
+                {editable && row.enabled && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="plus"
+                    onClick={() =>
+                      patchDay(row.dayOfWeek, (r) => ({ ...r, ranges: [...r.ranges, nextRange(r.ranges)] }))
+                    }
+                  >
+                    Add hours
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -207,12 +274,12 @@ function Weekly({
       {editable && (
         <Card title="Exceptions">
           <div className="formGrid">
-            <div>
+            <div className="exceptionBlock">
               <TextField
                 label="Block a date"
                 type="date"
                 value={blockDate}
-                hint="Takes the provider out of the pool for the whole day."
+                hint="Takes the doctor out of the pool for the whole day."
                 onChange={(e) => setBlockDate(e.target.value)}
               />
               <Button
@@ -235,7 +302,7 @@ function Weekly({
               </Button>
             </div>
 
-            <div>
+            <div className="exceptionBlock">
               <TextField
                 label="Override one date’s hours"
                 type="date"

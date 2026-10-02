@@ -10,7 +10,6 @@ import {
   Button,
   Column,
   EmptyState,
-  Notice,
   PageHeader,
   SelectField,
   StatusBadge,
@@ -145,22 +144,9 @@ export function AuditLog({ level }: { level: AdminLevel }) {
       <PageHeader
         title="Audit log"
         description="Who did what, and when."
-        actions={
-          <a href={exportHref} download>
-            <Button variant="secondary" icon="download">
-              Export this search
-            </Button>
-          </a>
-        }
       />
 
-      <Notice tone="info">
-        <strong>Showing records your role is permitted to read.</strong> The log is filtered by
-        permission level, so this is not the whole log — an event missing here may simply be one
-        your role cannot see. Searching the audit log is itself recorded in it.
-      </Notice>
-
-      <div className="filterBar">
+      <div className="filterBar filterBar--oneLine">
         <SelectField
           label="Actor"
           options={ACTORS}
@@ -179,11 +165,6 @@ export function AuditLog({ level }: { level: AdminLevel }) {
           onChange={(e) => setParam('entityType', e.target.value)}
         />
         <TextField
-          label="Entity id"
-          value={q.entityId}
-          onChange={(e) => setParam('entityId', e.target.value)}
-        />
-        <TextField
           label="From"
           type="date"
           value={q.from}
@@ -195,9 +176,11 @@ export function AuditLog({ level }: { level: AdminLevel }) {
           value={q.to}
           onChange={(e) => setParam('to', e.target.value)}
         />
-        <Button variant="ghost" icon="close" onClick={() => setParams({}, { replace: true })}>
-          Clear
-        </Button>
+        <a href={exportHref} download>
+          <Button variant="primary" icon="download">
+            Export
+          </Button>
+        </a>
       </div>
 
       <Async

@@ -59,6 +59,13 @@ const vars: Record<string, string> = {
    */
   '--c-soft-grey': '#F2F7F5',
 
+  // Brighter approve / reject colours for the panel's decision buttons; the
+  // brand tokens (--c-cta, --c-danger) read dull on a white desktop page.
+  '--c-action-ok': '#0FA968',
+  '--c-action-ok-pressed': '#0B8F58',
+  '--c-action-bad': '#E5333A',
+  '--c-action-bad-pressed': '#C92A30',
+
   // Web-only chrome the RN tokens have no equivalent for. Derived from the
   // brand shadow colour so they stay inside the palette.
   '--shadow-card': '0 2px 10px rgba(14, 118, 108, 0.06)',

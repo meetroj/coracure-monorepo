@@ -33,6 +33,28 @@ export type Doctor = {
   rejectionReason?: string | null;
   suspensionReason?: string | null;
   createdAt?: string;
+  /** What the doctor stated in the sign-up / KYC form. Private to admins. */
+  registration?: DoctorRegistration | null;
+};
+
+export type DoctorRegistration = {
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  /** Only the last four characters are ever held in the admin view. */
+  idType?: string | null;
+  idNumberLast4?: string | null;
+  abhaId?: string | null;
+  basicQualification?: string | null;
+  pgSpecialisation?: string | null;
+  superSpecialisation?: string | null;
+  fellowship?: string | null;
+  experience?: { designation: string; institution: string; years: number }[];
+  hasSignature?: boolean;
+  /** Optional single profile photo. */
+  hasPhoto?: boolean;
+  /** Mobile is OTP-verified at sign-up; email is verified by link. */
+  mobileVerified?: boolean;
+  emailVerified?: boolean;
 };
 
 export type DoctorDocument = {
@@ -106,6 +128,13 @@ export type Consultation = {
   doctorName?: string | null;
   language?: string | null;
   regionId?: string | null;
+  regionName?: string | null;
+  /** Initials and city only — the admin sees logistics, not identity. */
+  patientName?: string;
+  /** The patient record this case belongs to, so the page can open it. */
+  patientId?: string | null;
+  channel?: 'video' | 'audio';
+  paymentStatus?: 'paid' | 'pending' | 'failed' | 'refunded';
   createdAt?: string;
 };
 
@@ -158,6 +187,16 @@ export type PendingPayout = {
   doctorName?: string | null;
   amountInr?: number | null;
   completedAt?: string | null;
+};
+
+/** A patient's charge for one consultation. Initials only — no identity. */
+export type PatientPayment = {
+  consultationId: string;
+  referenceCode: string;
+  patientName: string;
+  at: string | null;
+  amountInr: number;
+  status: 'paid' | 'pending' | 'failed' | 'refunded';
 };
 
 export type Bill = {
