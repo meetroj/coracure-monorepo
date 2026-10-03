@@ -20,7 +20,7 @@ import {
 } from '../ui';
 
 /**
- * The safety-alert queue (§29) — care coordination's whole job.
+ * The safety-alert queue (§29) - care coordination's whole job.
  *
  * *** ACKNOWLEDGE AND CLOSE ARE TWO ACTIONS AND MUST STAY TWO. ***
  * Acknowledge puts your admin id on the row: someone has taken responsibility.
@@ -40,7 +40,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
   const [closing, setClosing] = useState<SafetyAlert | null>(null);
   const [ackingId, setAckingId] = useState<string | null>(null);
 
-  // Polls only while the tab is in front — a backgrounded tab stops.
+  // Polls only while the tab is in front - a backgrounded tab stops.
   usePoll(state.reload, POLL_MS);
 
   const acknowledge = useMutation(safety.acknowledge);
@@ -60,7 +60,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
     {
       key: 'raised',
       header: 'Raised',
-      render: (a) => (a.raisedAt ? new Date(a.raisedAt).toLocaleString() : '—'),
+      render: (a) => (a.raisedAt ? new Date(a.raisedAt).toLocaleString() : '-'),
     },
     {
       key: 'consultation',
@@ -69,7 +69,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
         a.consultationId ? (
           <Link to={`/consultations/${a.consultationId}`}>{a.consultationId}</Link>
         ) : (
-          <span className="muted">—</span>
+          <span className="muted">-</span>
         ),
     },
     {
@@ -104,7 +104,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
                 setAckingId(a.id);
                 try {
                   await acknowledge.mutate(a.id);
-                  toast.success('Acknowledged — this alert is now yours.');
+                  toast.success('Acknowledged - this alert is now yours.');
                   state.reload();
                 } catch (e) {
                   toast.fromError(e);
@@ -132,7 +132,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
     },
   ];
 
-  /** Unhandled first, then oldest — the order a coordinator works in. */
+  /** Unhandled first, then oldest - the order a coordinator works in. */
   const ordered = (rows: SafetyAlert[]) =>
     [...rows].sort((a, b) => {
       const rank = (x: SafetyAlert) => (x.closedAt ? 2 : x.acknowledgedAt ? 1 : 0);
@@ -182,7 +182,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
         consequence="Closing records the outcome against this alert. It does not notify the patient."
         reason={{
           label: 'What was done',
-          hint: 'The action taken — a call made, a consultation booked, an escalation. This is the audit answer.',
+          hint: 'The action taken - a call made, a consultation booked, an escalation. This is the audit answer.',
         }}
         onConfirm={async (what) => {
           if (!closing) return;

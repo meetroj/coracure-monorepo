@@ -21,13 +21,13 @@ import {
  * Case summaries.
  *
  * Summaries are written automatically after each consultation, so this is a
- * browsable record of what was produced and whether it needs a person — not a
+ * browsable record of what was produced and whether it needs a person - not a
  * backlog of missing write-ups. Filters live in the URL so Back, refresh and a
  * pasted link all keep the view.
  *
  * *** THE LIST CARRIES NO CLINICAL CONTENT. *** The patient is initials and a
  * city, and the summary text is shown only when the record is marked as
- * shareable with admins — the platform's de-identification rule.
+ * shareable with admins - the platform's de-identification rule.
  */
 
 const STATUS: Record<CaseSummaryStatus, { label: string; tone: BadgeTone }> = {
@@ -49,7 +49,7 @@ const RANGES = [
   { value: '30d', label: 'Last 30 days', hours: 24 * 30 },
 ];
 
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '—');
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '-');
 
 const isFlagged = (r: CaseSummaryRow) => r.status === 'failed' || r.editedAfterGeneration;
 
@@ -129,7 +129,7 @@ export function CaseSummaries(_props: { level: AdminLevel }) {
     {
       key: 'doctor',
       header: 'Doctor',
-      render: (r) => (r.doctorName ? <span style={{ whiteSpace: 'nowrap' }}>{r.doctorName}</span> : <span className="muted">—</span>),
+      render: (r) => (r.doctorName ? <span style={{ whiteSpace: 'nowrap' }}>{r.doctorName}</span> : <span className="muted">-</span>),
     },
     { key: 'patient', header: 'Patient', render: (r) => r.patientLabel },
     { key: 'service', header: 'Service', render: (r) => r.serviceName },

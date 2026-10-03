@@ -94,7 +94,7 @@ function Specialties({ level }: { level: AdminLevel }) {
       header: 'May prescribe',
       render: (s) =>
         s.mayPrescribe === undefined ? (
-          <span className="muted">—</span>
+          <span className="muted">-</span>
         ) : (
           <StatusBadge
             status={s.mayPrescribe ? 'verified' : 'rejected'}
@@ -114,7 +114,7 @@ function Specialties({ level }: { level: AdminLevel }) {
       <Notice tone="info">
         The specialty decides which registration form applies, which credentials are mandatory, and{' '}
         <strong>whether its providers may prescribe</strong>. It also carries the intake form the
-        patient app is meant to render — which it cannot read yet (gap G-4), so an intake form
+        patient app is meant to render - which it cannot read yet (gap G-4), so an intake form
         authored here does not reach a patient.
       </Notice>
 
@@ -194,7 +194,7 @@ function Concerns({ level }: { level: AdminLevel }) {
       render: (c) =>
         c.matchPhrases?.length ? c.matchPhrases.join(', ') : <span className="muted">None</span>,
     },
-    { key: 'weight', header: 'Weight', align: 'end', render: (c) => c.weight ?? '—' },
+    { key: 'weight', header: 'Weight', align: 'end', render: (c) => c.weight ?? '-' },
   ];
 
   return (
@@ -267,7 +267,7 @@ function Regions({ level }: { level: AdminLevel }) {
   return (
     <>
       <Notice tone="info">
-        A region is a row, not an enum — adding one and putting providers into it needs no code
+        A region is a row, not an enum - adding one and putting providers into it needs no code
         change and no app release.
       </Notice>
 
@@ -319,7 +319,7 @@ function Policy({ level }: { level: AdminLevel }) {
   const state = useResource<AllocationPolicy>(fetcher, []);
   const update = useMutation(catalogue.updateAllocationPolicy);
 
-  // Writing the policy is operations alone — reading is wider.
+  // Writing the policy is operations alone - reading is wider.
   const canWrite = may(level, ['operations']);
 
   return (
@@ -327,7 +327,7 @@ function Policy({ level }: { level: AdminLevel }) {
       {(policy) => (
         <Card title="Allocation policy">
           <Notice tone="warning">
-            <strong>Language is never relaxed.</strong> There is deliberately no toggle for it — a
+            <strong>Language is never relaxed.</strong> There is deliberately no toggle for it - a
             provider who does not speak the patient&apos;s language is never assignable. Region is
             the only dimension this policy can relax.
           </Notice>
@@ -353,7 +353,7 @@ function Policy({ level }: { level: AdminLevel }) {
 
           {!canWrite && (
             <p className="muted small">
-              Read-only for your role — the allocation policy is written by operations.
+              Read-only for your role - the allocation policy is written by operations.
             </p>
           )}
         </Card>

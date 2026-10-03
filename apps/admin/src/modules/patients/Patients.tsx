@@ -20,7 +20,7 @@ import {
  * The patient directory.
  *
  * Search and filters live in the URL, like the provider list, so Back and
- * refresh keep them. The admin sees logistics only — never clinical content.
+ * refresh keep them. The admin sees logistics only - never clinical content.
  */
 
 const PAGE = 10;
@@ -138,7 +138,7 @@ export function Patients(_props: { level: AdminLevel }) {
     <>
       <PageHeader
         title="Patients"
-        description="Who is on the platform and where they stand. Logistics and status only — clinical content is not shown here."
+        description="Who is on the platform and where they stand. Logistics and status only - clinical content is not shown here."
       />
 
       <div className="filterBar">

@@ -22,7 +22,7 @@ import {
  * Patient deletion requests (§42).
  *
  * *** TWO DECISIONS, TWO LEVELS, TWO QUEUES. *** Operations REVIEWS a request;
- * super_admin alone EXECUTES it. They are deliberately not on one screen —
+ * super_admin alone EXECUTES it. They are deliberately not on one screen -
  * approving a deletion and destroying the data are separate acts, and putting
  * them behind one button would collapse the control that makes the separation
  * meaningful.
@@ -41,27 +41,27 @@ export function DeletionRequests({ level }: { level: AdminLevel }) {
   const execute = useMutation(compliance.executeDeletion);
 
   const canReview = may(level, ['operations']);
-  // `assertPermission(actor, 'super_admin')` on the backend — nobody else.
+  // `assertPermission(actor, 'super_admin')` on the backend - nobody else.
   const canExecute = level === 'super_admin';
 
   const columns: Column<DeletionRequest>[] = [
     {
       key: 'requested',
       header: 'Requested',
-      render: (r) => (r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '—'),
+      render: (r) => (r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '-'),
     },
     {
       key: 'patient',
       header: 'Patient',
-      // The id and nothing more — this screen does not need a name, and a
+      // The id and nothing more - this screen does not need a name, and a
       // deletion queue is the last place to widen what is on display.
-      render: (r) => (r.patientId ? `${r.patientId.slice(0, 8)}…` : '—'),
+      render: (r) => (r.patientId ? `${r.patientId.slice(0, 8)}…` : '-'),
     },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
       key: 'note',
       header: 'Review note',
-      render: (r) => r.reviewNote ?? <span className="muted">—</span>,
+      render: (r) => r.reviewNote ?? <span className="muted">-</span>,
     },
     {
       key: 'actions',
@@ -116,7 +116,7 @@ export function DeletionRequests({ level }: { level: AdminLevel }) {
 
       <Notice tone="warning">
         Operations reviews a request; <strong>a super admin alone executes it</strong>. Approval
-        does not delete anything — it moves the request into the execution queue below.
+        does not delete anything - it moves the request into the execution queue below.
       </Notice>
 
       <Async
@@ -145,8 +145,8 @@ export function DeletionRequests({ level }: { level: AdminLevel }) {
               )}
             </Card>
 
-            {/* The execution queue is its own card — a different decision. */}
-            <Card title="Approved — awaiting execution">
+            {/* The execution queue is its own card - a different decision. */}
+            <Card title="Approved - awaiting execution">
               {approved(rows).length === 0 ? (
                 <p className="muted">Nothing approved and waiting.</p>
               ) : (

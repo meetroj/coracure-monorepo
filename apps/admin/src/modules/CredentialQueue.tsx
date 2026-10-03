@@ -17,7 +17,7 @@ import {
 } from '../ui';
 
 /**
- * The credential queue (§17) — clinical governance's home screen.
+ * The credential queue (§17) - clinical governance's home screen.
  *
  * Every provider with documents awaiting a decision, oldest submission first,
  * because how long someone has been waiting matters more than how many are in
@@ -41,7 +41,7 @@ export function CredentialQueue({ level }: { level: AdminLevel }) {
       render: (r) => (
         <span className="cellStack">
           <strong>{r.fullName}</strong>
-          <small>{r.specialtyName ?? '—'}</small>
+          <small>{r.specialtyName ?? '-'}</small>
         </span>
       ),
     },
@@ -63,7 +63,7 @@ export function CredentialQueue({ level }: { level: AdminLevel }) {
     {
       key: 'waiting',
       header: 'Waiting since',
-      render: (r) => (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '—'),
+      render: (r) => (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '-'),
     },
     {
       key: 'actions',

@@ -37,9 +37,9 @@ type CardProps = {
   value: string | number;
   sub?: string;
   to: string;
-  /** Reads as a problem when set — a red icon, and the sub line is the call to action. */
+  /** Reads as a problem when set - a red icon, and the sub line is the call to action. */
   alarm?: boolean;
-  /** Reads as fine — a green icon. */
+  /** Reads as fine - a green icon. */
   ok?: boolean;
 };
 

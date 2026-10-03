@@ -43,7 +43,7 @@ export type PatientFollowUp = {
   lastCheckInAt: string | null;
 };
 
-/** Names and categories only — never file content. */
+/** Names and categories only - never file content. */
 export type PatientFile = { id: string; name: string; category: string; uploadedAt: string };
 export type PatientReportRequest = {
   id: string;
@@ -80,11 +80,11 @@ export type PatientSummary = {
  * an optional section the patient may leave empty.
  */
 export type PatientProfile = {
-  // Basic details — `photoUploaded` is the only optional one.
+  // Basic details - `photoUploaded` is the only optional one.
   email: string;
   languages: string[];
   photoUploaded: boolean;
-  // Contact details — `addressLine2` and `district` are optional.
+  // Contact details - `addressLine2` and `district` are optional.
   addressLine1: string;
   addressLine2: string | null;
   city: string;
@@ -92,7 +92,7 @@ export type PatientProfile = {
   state: string;
   pinCode: string;
   country: string;
-  // Health profile — optional as a whole; any field may be empty.
+  // Health profile - optional as a whole; any field may be empty.
   health: {
     bloodGroup: string | null;
     heightCm: number | null;
@@ -175,7 +175,7 @@ export const patients = {
     return db.delay({ rows: copy(rows.slice(0, q.limit ?? rows.length)), total: rows.length });
   },
 
-  /** Corrects a profile on the patient's behalf. Only profile fields — never records. */
+  /** Corrects a profile on the patient's behalf. Only profile fields - never records. */
   update: (
     id: string,
     input: {

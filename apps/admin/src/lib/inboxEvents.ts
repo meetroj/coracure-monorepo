@@ -17,7 +17,7 @@ export function useInboxChanged(onChange: () => void) {
   }, [onChange]);
 }
 
-/** "5 min ago", "3 h ago", "2 d ago" — short enough for a dropdown row. */
+/** "5 min ago", "3 h ago", "2 d ago" - short enough for a dropdown row. */
 export const timeAgo = (iso?: string | null): string => {
   if (!iso) return '';
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));

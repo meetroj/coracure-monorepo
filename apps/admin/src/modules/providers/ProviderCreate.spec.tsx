@@ -29,7 +29,7 @@ describe('Add a doctor', () => {
     ]) {
       expect(await screen.findByRole('heading', { name: title })).toBeTruthy();
     }
-    // Four qualification fields, two certificate uploads — no per-degree uploads.
+    // Four qualification fields, two certificate uploads - no per-degree uploads.
     expect(screen.getByLabelText(/Basic qualification/)).toBeTruthy();
     expect(screen.getByLabelText(/^Degree certificate/)).toBeTruthy();
     expect(screen.getByLabelText(/^Registration certificate/)).toBeTruthy();

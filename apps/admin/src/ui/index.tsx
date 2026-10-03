@@ -23,7 +23,7 @@ export type { IconName } from './Icon';
  *
  * One definition per pattern, so a status pill, a table or a confirm dialog
  * looks and behaves the same on every screen. Anything that renders colour
- * reads a `var(--…)` token — no component holds a hex.
+ * reads a `var(--…)` token - no component holds a hex.
  */
 
 /* --------------------------------- Button -------------------------------- */
@@ -51,7 +51,7 @@ export function Button({
   return (
     <button
       {...rest}
-      // `loading` disables as well as spins — the guard is not left to the caller.
+      // `loading` disables as well as spins - the guard is not left to the caller.
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={`btn btn--${variant} btn--${size} ${className}`.trim()}
@@ -66,7 +66,7 @@ export function Button({
   );
 }
 
-/** Icon-only button. Always takes a label — never a bare glyph (§70). */
+/** Icon-only button. Always takes a label - never a bare glyph (§70). */
 export function IconButton({
   icon,
   label,
@@ -369,7 +369,7 @@ export type Crumb = { label: string; to?: string };
 /**
  * Page title, breadcrumbs and actions, aligned to the content grid (§67).
  *
- * `back` is always an explicit parent route, never `navigate(-1)` — §61. A
+ * `back` is always an explicit parent route, never `navigate(-1)` - §61. A
  * deep link opened cold must still land somewhere sensible rather than leaving
  * the app.
  */
@@ -408,7 +408,7 @@ export function PageHeader({
   const first = pathname.split('/').filter(Boolean)[0];
   const onSection = SECTIONS.some((s) => s.path === first);
   const showTitle = !(onSection && SHELL_TITLES.has(title));
-  // `back` is no longer drawn here — the top bar owns the Back button — but it still means
+  // `back` is no longer drawn here - the top bar owns the Back button - but it still means
   // "this page has somewhere to go back to", so crumbs stay hidden when it is passed.
   if (!showTitle && !actions && !(!back && crumbs && crumbs.length > 0)) return null;
   return (
@@ -674,7 +674,7 @@ export function DefinitionList({
       {items.map((item) => (
         <div key={item.label}>
           <dt>{item.label}</dt>
-          <dd>{item.value ?? <span className="muted">—</span>}</dd>
+          <dd>{item.value ?? <span className="muted">-</span>}</dd>
         </div>
       ))}
     </dl>
@@ -684,7 +684,7 @@ export function DefinitionList({
 /* --------------------------------- Modal ---------------------------------- */
 
 /**
- * Dialog built on `<dialog>` — the browser gives focus trapping, ESC and the
+ * Dialog built on `<dialog>` - the browser gives focus trapping, ESC and the
  * top layer for free, which is most of §51 without a focus-management library.
  */
 export function Modal({
@@ -840,7 +840,7 @@ export function ConfirmDialog({
 /**
  * Hides an action the level cannot use (§18, §34, §76).
  *
- * Hides — never renders a disabled control with a tooltip, which advertises a
+ * Hides - never renders a disabled control with a tooltip, which advertises a
  * capability the admin does not have. The server is still the authority.
  */
 export function PermissionGate({
@@ -893,7 +893,7 @@ export function Tabs({
   );
 }
 
-/** An inline notice — a product rule or a consequence, stated where it applies. */
+/** An inline notice - a product rule or a consequence, stated where it applies. */
 export function Notice({
   tone = 'info',
   children,

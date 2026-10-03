@@ -84,7 +84,7 @@ export function SendNotification() {
   return (
     <div className="stack">
       <Notice tone="danger">
-        Never name a diagnosis, a condition or a medication. This is a reminder, not a check — the
+        Never name a diagnosis, a condition or a medication. This is a reminder, not a check - the
         text is not scanned, and a push can be read on a lock screen by someone else.
       </Notice>
 

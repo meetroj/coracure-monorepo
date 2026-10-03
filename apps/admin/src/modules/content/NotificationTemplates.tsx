@@ -109,7 +109,7 @@ function TemplatesTab({ level }: { level: AdminLevel }) {
     {
       key: 'body',
       header: 'Current wording',
-      render: (t) => <span className="clamp">{t.body ?? '—'}</span>,
+      render: (t) => <span className="clamp">{t.body ?? '-'}</span>,
     },
     {
       key: 'customised',
@@ -142,7 +142,7 @@ function TemplatesTab({ level }: { level: AdminLevel }) {
   return (
     <>
       <Notice tone="danger">
-        No notification may name a diagnosis. A push arrives on a lock screen a stranger can read —
+        No notification may name a diagnosis. A push arrives on a lock screen a stranger can read -
         this is a clinical-confidentiality rule, not a style preference.
       </Notice>
 

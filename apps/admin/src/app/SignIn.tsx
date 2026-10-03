@@ -6,7 +6,7 @@ import logo from '../assets/brand/coracure-wide-twotone.svg';
 import hero from '../assets/login-hero.png';
 
 /**
- * Email and password, then an optional OTP. That is the whole admin sign-in —
+ * Email and password, then an optional OTP. That is the whole admin sign-in -
  * there is no self sign-up, no password reset endpoint and no 2FA setup screen,
  * because none of the three exists server-side (gap A-4).
  *
@@ -38,7 +38,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       setError(`Too many attempts. Try again in ${Math.ceil(wait / 60)} minute(s).`);
       return;
     }
-    // The second leg expiring is not a wrong code — it is start-over.
+    // The second leg expiring is not a wrong code - it is start-over.
     if (ApiError.of(e)?.code === 'TOKEN_INVALID') {
       setMfaToken(null);
       setCode('');
@@ -135,7 +135,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         </div>
       </section>
 
-      {/* No card — the form sits directly on the page, as in the comp. */}
+      {/* No card - the form sits directly on the page, as in the comp. */}
       <section className="auth__panel">
         <form className="auth__form" onSubmit={mfaToken ? submitCode : submitPassword}>
           <p className="eyebrow">Welcome to</p>
@@ -217,7 +217,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
                   A "remember me" that persists an admin session would mean
                   writing a token to localStorage, where it survives closing the
-                  browser — on a shared desktop that hands the next person an
+                  browser - on a shared desktop that hands the next person an
                   admin session, and this panel reads clinical records. The
                   session stays in sessionStorage and still dies with the tab.
                 */}
@@ -247,7 +247,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               */}
               {resetHint && (
                 <p className="note" role="status">
-                  Admin passwords are reset by a super admin — there is no
+                  Admin passwords are reset by a super admin - there is no
                   self-service reset. Ask one to set you a new password.
                 </p>
               )}

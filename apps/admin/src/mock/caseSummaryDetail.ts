@@ -89,7 +89,7 @@ export const detailFor = (summaryId: string): CaseSummaryDetail | null => {
       gender: i % 2 ? 'Female' : 'Male',
       age: 24 + (i % 30),
       mode: ['Video', 'Audio', 'Video'][i % 3],
-      duration: row.generatedAt ? `${20 + (i % 25)} min` : '—',
+      duration: row.generatedAt ? `${20 + (i % 25)} min` : '-',
       payment: row.status === 'awaiting' ? 'Not paid' : 'Paid',
       complaint: COMPLAINTS[i % COMPLAINTS.length],
       history: HISTORY[i % HISTORY.length],

@@ -21,7 +21,7 @@ export function AllocationDecisions({ level }: { level: AdminLevel }) {
     {
       key: 'when',
       header: 'Decided',
-      render: (d) => (d.decidedAt ? new Date(d.decidedAt).toLocaleString() : '—'),
+      render: (d) => (d.decidedAt ? new Date(d.decidedAt).toLocaleString() : '-'),
     },
     {
       key: 'consultation',
@@ -37,7 +37,7 @@ export function AllocationDecisions({ level }: { level: AdminLevel }) {
         d.doctorId ? (
           <Link to={`/providers/${d.doctorId}`}>{d.doctorName ?? d.doctorId}</Link>
         ) : (
-          <span className="muted">—</span>
+          <span className="muted">-</span>
         ),
     },
     {
@@ -56,7 +56,7 @@ export function AllocationDecisions({ level }: { level: AdminLevel }) {
     <>
       <PageHeader
         title="Allocation decisions"
-        description="Every assignment the platform made, and every one an admin changed — with the reason recorded at the time."
+        description="Every assignment the platform made, and every one an admin changed - with the reason recorded at the time."
       />
 
       <Notice tone="info">

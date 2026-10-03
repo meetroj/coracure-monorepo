@@ -48,16 +48,16 @@ export function LegalDocuments({ level }: { level: AdminLevel }) {
   const canPublish = may(level, ['content', 'clinical_governance']);
 
   const columns: Column<LegalDocument>[] = [
-    { key: 'version', header: 'Version', render: (d) => <strong>{d.version ?? '—'}</strong> },
+    { key: 'version', header: 'Version', render: (d) => <strong>{d.version ?? '-'}</strong> },
     {
       key: 'published',
       header: 'Published',
-      render: (d) => (d.publishedAt ? new Date(d.publishedAt).toLocaleString() : '—'),
+      render: (d) => (d.publishedAt ? new Date(d.publishedAt).toLocaleString() : '-'),
     },
     {
       key: 'preview',
       header: 'Opening',
-      render: (d) => <span className="clamp">{d.body?.slice(0, 120) ?? '—'}</span>,
+      render: (d) => <span className="clamp">{d.body?.slice(0, 120) ?? '-'}</span>,
     },
   ];
 
@@ -65,7 +65,7 @@ export function LegalDocuments({ level }: { level: AdminLevel }) {
     <>
       <PageHeader
         title="Legal documents"
-        description="Consent, policies and agreements. Every change is a new version — nothing is edited in place."
+        description="Consent, policies and agreements. Every change is a new version - nothing is edited in place."
         actions={
           canPublish && (
             <Button variant="primary" icon="plus" onClick={() => setDrafting(true)}>
@@ -150,9 +150,9 @@ function Draft({
 
   return (
     <>
-      <Card title={`New version — ${humanise(documentType)}`}>
+      <Card title={`New version - ${humanise(documentType)}`}>
         <p className="muted">
-          This will be published as <strong>version {nextVersion}</strong> — the number is set
+          This will be published as <strong>version {nextVersion}</strong> - the number is set
           automatically.
         </p>
         <TextArea

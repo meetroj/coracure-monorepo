@@ -2,7 +2,7 @@
  * The one HTTP client for the panel.
  *
  * The error shape, the code catalogue and the `ApiError` class are reused from
- * `@coracure/api/errors` — that file is plain TypeScript with no React Native
+ * `@coracure/api/errors` - that file is plain TypeScript with no React Native
  * imports, so the panel gets the same frozen contract the apps branch on
  * without pulling `react-native` into a browser bundle.
  *
@@ -23,7 +23,7 @@ import { LEVELS, type AdminLevel } from '../nav';
 /* -------------------------------- config --------------------------------- */
 
 /**
- * `VITE_API_URL` is Vite's own env mechanism — no `define` block and no
+ * `VITE_API_URL` is Vite's own env mechanism - no `define` block and no
  * `react-native-config`. Set it in `.env.local` to point at a deployed backend.
  *
  * *** NOTHING SECRET GOES HERE. *** Anything in a frontend bundle is readable
@@ -47,7 +47,7 @@ export type Session = {
   expiresAt: number;
   level: AdminLevel;
   /**
-   * The address the admin signed in with — echoed back for the header, not
+   * The address the admin signed in with - echoed back for the header, not
    * read from the token. There is no `GET /auth/admin/me` to ask for a display
    * name (gap A-4), so the panel shows what it already knows rather than
    * inventing a name.
@@ -64,7 +64,7 @@ export type Session = {
  *
  * ponytail: sessionStorage is the floor, not the ceiling. The right answer is a
  * refresh token in an httpOnly, SameSite=Strict cookie set by the backend, with
- * only the access token in memory — move to that when the deployment can serve
+ * only the access token in memory - move to that when the deployment can serve
  * the panel and the API from one origin. Until then this is one XSS away from a
  * stolen session, which is why the idle timeout below is not optional.
  */
@@ -147,7 +147,7 @@ const LEVEL_SET: ReadonlySet<string> = new Set(LEVELS);
 /**
  * Reads the permission level out of the access token's own claims.
  *
- * The access token is a JWT and `lvl` is one of its claims — see the backend's
+ * The access token is a JWT and `lvl` is one of its claims - see the backend's
  * `tokens.service.ts`, `interface Claims`. So the panel already holds the level
  * and needs no endpoint to ask for it.
  *
@@ -211,7 +211,7 @@ const refresh = async (): Promise<Session> => {
     expiresIn: number;
   };
   // The refreshed token carries its own `lvl`, so the level is re-read rather
-  // than carried forward — if an admin's level changed, the new token says so.
+  // than carried forward - if an admin's level changed, the new token says so.
   const next: Session = {
     accessToken: body.accessToken,
     refreshToken: body.refreshToken,
@@ -234,7 +234,7 @@ const refreshOnce = (): Promise<Session> => {
 
 type Options = {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
-  /** Built explicitly. NEVER spread form state — `forbidNonWhitelisted` 400s. */
+  /** Built explicitly. NEVER spread form state - `forbidNonWhitelisted` 400s. */
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
   /** Set by the retry after a refresh, so one 401 cannot loop. */
@@ -322,7 +322,7 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
 
   if (!response.ok) {
     const shape = parsed as Partial<ApiErrorBody> | null;
-    // TOKEN_INVALID means sign out cleanly — never loop the refresh.
+    // TOKEN_INVALID means sign out cleanly - never loop the refresh.
     if (shape?.code === 'TOKEN_INVALID') clearSession('revoked');
     throw new ApiError({
       statusCode: shape?.statusCode ?? response.status,
@@ -348,7 +348,7 @@ export type SignInResult =
 /**
  * `POST /auth/admin/sign-in`. Either completes, or hands back an `mfaToken` for
  * the second leg. `INVALID_CREDENTIALS` is the answer for both a wrong password
- * and an unknown address — the backend verifies against a decoy hash so the
+ * and an unknown address - the backend verifies against a decoy hash so the
  * timing does not leak which addresses exist, and the copy must not either.
  */
 /**
@@ -382,7 +382,7 @@ export const completeTwoFactor = async (mfaToken: string, code: string): Promise
   setSession(toSession(body, pendingEmail));
 };
 
-/** Ends the session on EVERY device — it is one `token_version` increment. */
+/** Ends the session on EVERY device - it is one `token_version` increment. */
 export const signOut = async (): Promise<void> => {
   try {
     await request<void>('/auth/sign-out', { method: 'POST' });

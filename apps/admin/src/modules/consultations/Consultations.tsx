@@ -134,18 +134,18 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
     },
     { key: 'patient', header: 'Patient', render: (c) => c.patientName },
     { key: 'doctor', header: 'Doctor', render: (c) => c.doctorName ?? <span className="muted">Unassigned</span> },
-    { key: 'service', header: 'Service', render: (c) => c.serviceName ?? '—' },
+    { key: 'service', header: 'Service', render: (c) => c.serviceName ?? '-' },
     {
       key: 'when',
       header: 'Scheduled',
-      render: (c) => (c.startsAt ? new Date(c.startsAt).toLocaleString() : '—'),
+      render: (c) => (c.startsAt ? new Date(c.startsAt).toLocaleString() : '-'),
     },
     {
       key: 'mode',
       header: 'Mode',
       render: (c) => (
         <span className="cellStack">
-          <span>{c.mode ? humanise(c.mode) : '—'}</span>
+          <span>{c.mode ? humanise(c.mode) : '-'}</span>
           <small>{humanise(c.channel)}</small>
         </span>
       ),

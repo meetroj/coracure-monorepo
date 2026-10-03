@@ -34,7 +34,7 @@ import { AvailabilityEditor } from '../availability/AvailabilityEditor';
  * One provider, in full (§20).
  *
  * The tab lives in the URL so refresh and Back keep it. Read-only panes use
- * `DefinitionList`; anything editable is a form — the two are visually
+ * `DefinitionList`; anything editable is a form - the two are visually
  * distinct, which is what §20 asks for.
  *
  * *** THE TWO GATES ARE SEPARATE AND IN ORDER. *** clinical_governance
@@ -104,7 +104,7 @@ export function ProviderDetail({ level }: { level: AdminLevel }) {
                 doctor={doctor}
                 section={tab}
               />
-              {/* Basic details has no documents to approve — just the one card. */}
+              {/* Basic details has no documents to approve - just the one card. */}
               {tab !== 'basic' && (
                 <CredentialReview
                   doctorId={doctor.id}
@@ -169,7 +169,7 @@ function VerificationActions({
 
   return (
     <>
-      {/* Verify / reject / reopen — clinical_governance ONLY. Operations does
+      {/* Verify / reject / reopen - clinical_governance ONLY. Operations does
           not see a disabled button with a tooltip; it sees nothing (§18). */}
       <PermissionGate level={level} allow={['clinical_governance']}>
         {!isVerified && !isRejected && (
@@ -201,7 +201,7 @@ function VerificationActions({
         )}
       </PermissionGate>
 
-      {/* Listing and suspension — operations. */}
+      {/* Listing and suspension - operations. */}
       <PermissionGate level={level} allow={['operations']}>
         {isVerified && (
           <Button
@@ -241,7 +241,7 @@ function VerificationActions({
         consequence={
           <>
             The provider stays on the platform but cannot be listed or assigned. This is{' '}
-            <strong>reversible</strong> — Reopen puts them back in Document verification.
+            <strong>reversible</strong> - Reopen puts them back in Document verification.
           </>
         }
         reason={{
@@ -264,7 +264,7 @@ function VerificationActions({
         consequence={
           <>
             They are removed from the assignment pool immediately.{' '}
-            <strong>Consultations already booked with them are not cancelled</strong> — each one
+            <strong>Consultations already booked with them are not cancelled</strong> - each one
             still needs an override or a cancellation.
           </>
         }
@@ -309,7 +309,7 @@ function RegistrationDetails({ doctor }: { doctor: Doctor }) {
           { label: 'Gender', value: r.gender },
           { label: 'Email', value: doctor.email },
           { label: 'Registration number', value: doctor.registrationNumber },
-          { label: 'Government ID', value: r.idType ? `${r.idType} · ending ${r.idNumberLast4 ?? '—'}` : null },
+          { label: 'Government ID', value: r.idType ? `${r.idType} · ending ${r.idNumberLast4 ?? '-'}` : null },
           { label: 'ABHA ID / address', value: r.abhaId },
           { label: 'Basic qualification', value: r.basicQualification },
           { label: 'PG specialisation', value: r.pgSpecialisation },
@@ -324,7 +324,7 @@ function RegistrationDetails({ doctor }: { doctor: Doctor }) {
           <ul>
             {r.experience.map((x, i) => (
               <li key={i}>
-                <strong>{x.designation}</strong> — {x.institution}, {x.years} {x.years === 1 ? 'year' : 'years'}
+                <strong>{x.designation}</strong> - {x.institution}, {x.years} {x.years === 1 ? 'year' : 'years'}
               </li>
             ))}
           </ul>
@@ -404,7 +404,7 @@ function VerifyDetails({
     ];
     note = (
       <p className="muted">
-        Shown to patients as: <strong>{shown || '—'}</strong>. The degree and registration
+        Shown to patients as: <strong>{shown || '-'}</strong>. The degree and registration
         certificates stay private and are used only for verification.
       </p>
     );
@@ -419,7 +419,7 @@ function VerifyDetails({
             <ul style={{ display: 'grid', gap: 10, margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.5 }}>
               {entries.map((x, i) => (
                 <li key={i}>
-                  <strong>{x.designation}</strong> — {x.institution}, {x.years} {x.years === 1 ? 'year' : 'years'}
+                  <strong>{x.designation}</strong> - {x.institution}, {x.years} {x.years === 1 ? 'year' : 'years'}
                 </li>
               ))}
             </ul>
@@ -428,7 +428,7 @@ function VerifyDetails({
     ];
     note = (
       <p className="muted">
-        Shown to patients as: <strong>{total} Years of Experience</strong> — nothing about the
+        Shown to patients as: <strong>{total} Years of Experience</strong> - nothing about the
         institution, designation or certificates.
       </p>
     );
@@ -536,7 +536,7 @@ function RegionsAndLanguages({
       <Card title="Seniority">
         <Notice tone="info">
           Expert seniority makes a provider <strong>eligible to be asked</strong> for case
-          clarification. It grants sight of nothing on its own — each case is assigned
+          clarification. It grants sight of nothing on its own - each case is assigned
           individually, and that assignment is what reveals that one de-identified case.
         </Notice>
 
@@ -629,7 +629,7 @@ function Commercials({
   return (
     <Card title="Commercials">
       <Notice tone="warning">
-        Duration feeds assignability directly — a provider whose remaining window is shorter than
+        Duration feeds assignability directly - a provider whose remaining window is shorter than
         the consultation plus its buffer is not assignable, so changing this changes who is
         bookable.
       </Notice>

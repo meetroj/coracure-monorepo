@@ -30,7 +30,7 @@ import {
  *
  * *** RESOLVED AND REJECTED ARE BOTH TERMINAL AND THEY ARE DIFFERENT. ***
  * "We looked and disagreed" is not "we fixed it", and the patient is owed the
- * distinction — two buttons, each demanding an outcome note.
+ * distinction - two buttons, each demanding an outcome note.
  */
 export function ComplaintDetail({ level }: { level: AdminLevel }) {
   const { complaintId = '' } = useParams();
@@ -71,7 +71,7 @@ function Detail({ complaint, onChanged }: { complaint: Complaint; onChanged: () 
         actions={
           !terminal && (
             <>
-              {/* Assign is the first action on an open ticket — it stops two
+              {/* Assign is the first action on an open ticket - it stops two
                   admins answering the same complaint. */}
               {!complaint.assignedAdminId && (
                 <Button
@@ -218,7 +218,7 @@ function Detail({ complaint, onChanged }: { complaint: Complaint; onChanged: () 
                 }
               }}
             >
-              {/* The button restates the audience — the last chance to catch it. */}
+              {/* The button restates the audience - the last chance to catch it. */}
               {visibleToPatient ? 'Send to patient' : 'Save internal note'}
             </Button>
           </div>
@@ -235,7 +235,7 @@ function Detail({ complaint, onChanged }: { complaint: Complaint; onChanged: () 
         consequence={
           closing === 'rejected' ? (
             <>
-              Rejecting records that the complaint was <strong>considered and declined</strong> —
+              Rejecting records that the complaint was <strong>considered and declined</strong> -
               which is a different outcome from being fixed, and the patient is owed that
               distinction.
             </>

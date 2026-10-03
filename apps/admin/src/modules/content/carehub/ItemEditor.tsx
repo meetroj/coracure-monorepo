@@ -188,7 +188,7 @@ function EditorForm({
               rows={3}
               value={form.summary}
               error={errors.summary}
-              hint={`${form.summary.length}/400 — shown on the patient shelf card.`}
+              hint={`${form.summary.length}/400 - shown on the patient shelf card.`}
               onChange={(e) => patch({ summary: e.target.value })}
             />
             <div className="formGrid">

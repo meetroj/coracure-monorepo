@@ -7,7 +7,7 @@ import { AllocationDecisions } from './AllocationDecisions';
 
 /**
  * Case clarification and allocation decisions, in one place: the two queues a
- * clinical lead works through together — who an expert case goes to, and who
+ * clinical lead works through together - who an expert case goes to, and who
  * every consultation was assigned to and why.
  */
 const TABS = [

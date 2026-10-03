@@ -9,7 +9,7 @@ import type { AdminLevel } from '../nav';
 import { Async, Button, EmptyState, Icon, Tabs } from '../ui';
 
 /**
- * This admin's own notifications — the page behind "View all notifications" in
+ * This admin's own notifications - the page behind "View all notifications" in
  * the header bell.
  *
  * SRS 2.3 gives admins no push device, so in-panel is the only place these are

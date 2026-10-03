@@ -5,7 +5,7 @@ import { extraConsultations } from './moreConsultations';
  * Fixtures for the Case summaries screen.
  *
  * Summaries are written automatically after a consultation, so this is a
- * list of what the generator produced — not a backlog of missing write-ups.
+ * list of what the generator produced - not a backlog of missing write-ups.
  * Kept out of `db.ts` so the screen can change without touching the shared store.
  *
  * *** NO CLINICAL CONTENT IS HELD HERE. *** The patient is initials plus a
@@ -21,7 +21,7 @@ export type CaseSummaryRow = {
   referenceCode: string;
   doctorId: string | null;
   doctorName: string | null;
-  /** Initials and city only — never a name or anything clinical. */
+  /** Initials and city only - never a name or anything clinical. */
   patientLabel: string;
   serviceName: string;
   consultationAt: string;

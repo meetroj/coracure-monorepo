@@ -49,7 +49,7 @@ const CheckIn = ({ colour }: { colour: CheckInColour | null }) =>
   colour ? (
     <StatusBadge status={colour} tone={CHECKIN_TONE[colour]} label={humanise(colour)} />
   ) : (
-    <span className="muted">—</span>
+    <span className="muted">-</span>
   );
 
 export function PatientDetail({ level }: { level: AdminLevel }) {
@@ -133,7 +133,7 @@ function Overview({ p }: { p: PatientDetailRecord }) {
   const events = [
     ...p.consultations.map((c) => ({
       at: c.startsAt,
-      text: `Consultation ${c.referenceCode} (${c.serviceName}) — ${humanise(c.status)}`,
+      text: `Consultation ${c.referenceCode} (${c.serviceName}) - ${humanise(c.status)}`,
     })),
     ...p.complaints.map((c) => ({ at: c.raisedAt, text: `Complaint raised: ${c.subject}` })),
     ...p.files.map((f) => ({ at: f.uploadedAt, text: `Uploaded ${f.name} (${f.category})` })),
@@ -233,7 +233,7 @@ function Consultations({ p }: { p: PatientDetailRecord }) {
       ),
     },
     { key: 'service', header: 'Service', render: (c) => c.serviceName },
-    { key: 'doctor', header: 'Doctor', render: (c) => c.doctorName ?? '—' },
+    { key: 'doctor', header: 'Doctor', render: (c) => c.doctorName ?? '-' },
     { key: 'when', header: 'When', render: (c) => dateTime(c.startsAt) },
     { key: 'status', header: 'Status', render: (c) => <StatusBadge status={c.status} /> },
   ];
@@ -263,7 +263,7 @@ function FollowUp({ p }: { p: PatientDetailRecord }) {
     { key: 'started', header: 'Started', render: (f) => date(f.startedAt) },
     { key: 'ended', header: 'Ended', render: (f) => date(f.endsAt) ?? <span className="muted">Ongoing</span> },
     { key: 'checkin', header: 'Check-in', render: (f) => <CheckIn colour={f.checkIn} /> },
-    { key: 'last', header: 'Last check-in', render: (f) => date(f.lastCheckInAt) ?? '—' },
+    { key: 'last', header: 'Last check-in', render: (f) => date(f.lastCheckInAt) ?? '-' },
   ];
   if (p.followUps.length === 0)
     return <EmptyState icon="clipboard" title="No follow-up plans" />;

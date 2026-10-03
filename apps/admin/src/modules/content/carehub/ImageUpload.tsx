@@ -5,7 +5,7 @@ import { IMAGE_TYPES, MAX_IMAGE_BYTES, readAsDataUrl, validateImage } from './im
 
 /**
  * Cover-image picker: file chooser plus drag-and-drop, with a live preview.
- * UI-only build — the file is read into a data URL and handed to the form;
+ * UI-only build - the file is read into a data URL and handed to the form;
  * nothing is uploaded.
  */
 export function ImageUpload({

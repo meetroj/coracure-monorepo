@@ -10,10 +10,10 @@ import { FileField } from './FileField';
 
 /**
  * Create a provider account (§16), collecting the same details the doctor's
- * own registration does — the sections match the review tabs in Document
+ * own registration does - the sections match the review tabs in Document
  * verification, so what is asked here is what gets reviewed there.
  *
- * The mobile number is the doctor's SIGN-IN IDENTIFIER — an unknown number at
+ * The mobile number is the doctor's SIGN-IN IDENTIFIER - an unknown number at
  * `POST /auth/doctor/otp/request` is refused rather than texted a code, so a
  * typo here means the doctor cannot sign in at all. That is why it is
  * validated against the backend's own E.164 pattern before the request goes.
@@ -128,7 +128,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
     const found = validate();
     setErrors(found);
     if (Object.keys(found).length > 0) {
-      toast.fromError(new Error('Some details are missing.'), 'Some details are missing — see the fields marked below.');
+      toast.fromError(new Error('Some details are missing.'), 'Some details are missing - see the fields marked below.');
       return;
     }
 
@@ -139,7 +139,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
     }));
 
     try {
-      // Built field by field — form state is never spread into the body (§55).
+      // Built field by field - form state is never spread into the body (§55).
       const created = await create.mutate({
         mobileNumber: mobileNumber.trim(),
         fullName: fullName.trim(),
@@ -191,7 +191,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
         <Card title="Basic details">
           <Notice tone="warning">
             The mobile number is the doctor’s sign-in identifier. If it is wrong they cannot sign
-            in at all — an unknown number is refused rather than sent a code.
+            in at all - an unknown number is refused rather than sent a code.
           </Notice>
 
           <FileField
@@ -288,7 +288,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
             file={idDocument}
             error={errors.idDocument}
             onChange={setIdDocument}
-            hint="PDF, JPG or PNG. Private — used only for verification."
+            hint="PDF, JPG or PNG. Private - used only for verification."
           />
         </Card>
 
@@ -308,7 +308,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
                     Decides{' '}
                     <strong>
                       whether this doctor may prescribe
-                      {selected.mayPrescribe === false ? ' — this one may not' : ''}
+                      {selected.mayPrescribe === false ? ' - this one may not' : ''}
                     </strong>
                     .
                   </>
@@ -320,7 +320,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
             <TextField
               label="Registration number"
               value={registrationNumber}
-              hint="Required by some specialties — the specialty decides."
+              hint="Required by some specialties - the specialty decides."
               onChange={(e) => setRegistrationNumber(e.target.value)}
             />
             <TextField
@@ -438,7 +438,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
             </Button>
           </div>
           <p className="fieldHint">
-            Patients see only <strong>{total} {total === 1 ? 'Year' : 'Years'} of Experience</strong> — never the
+            Patients see only <strong>{total} {total === 1 ? 'Year' : 'Years'} of Experience</strong> - never the
             institution, designation or certificates.
           </p>
         </Card>
@@ -469,7 +469,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
               inputMode="numeric"
               value={duration}
               error={errors.duration}
-              hint="Feeds assignability — duration plus buffer decides who is bookable for a slot."
+              hint="Feeds assignability - duration plus buffer decides who is bookable for a slot."
               onChange={(e) => setDuration(e.target.value)}
             />
           </div>

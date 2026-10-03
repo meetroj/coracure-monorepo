@@ -21,7 +21,7 @@ import {
  *
  * *** CASES ARE DE-IDENTIFIED AND MUST STAY THAT WAY. *** Nothing on this
  * screen renders a patient name, a consultation reference or anything else
- * re-identifying, even if a payload happens to carry it — de-identification is
+ * re-identifying, even if a payload happens to carry it - de-identification is
  * the module's whole premise.
  *
  * *** ASSIGNMENT IS THE GRANT. *** Expert seniority alone reveals nothing; it
@@ -52,7 +52,7 @@ export function Clarification({ level }: { level: AdminLevel }) {
     {
       key: 'posted',
       header: 'Posted',
-      render: (c) => (c.postedAt ? new Date(c.postedAt).toLocaleDateString() : '—'),
+      render: (c) => (c.postedAt ? new Date(c.postedAt).toLocaleDateString() : '-'),
     },
     {
       key: 'expert',
@@ -117,7 +117,7 @@ export function Clarification({ level }: { level: AdminLevel }) {
 
       <Notice tone="info">
         These cases carry no patient identity by design. Assigning an expert is what grants sight of
-        that one case — expert seniority on its own reveals nothing.
+        that one case - expert seniority on its own reveals nothing.
       </Notice>
 
       <Async
@@ -171,7 +171,7 @@ function AssignExpert({
 
   const columns: Column<Expert>[] = [
     { key: 'name', header: 'Expert', render: (e) => e.fullName },
-    { key: 'specialty', header: 'Specialty', render: (e) => e.specialtyName ?? '—' },
+    { key: 'specialty', header: 'Specialty', render: (e) => e.specialtyName ?? '-' },
     {
       key: 'pick',
       header: '',

@@ -157,8 +157,8 @@ function Guarded({
 export function App() {
   const [session, setSession] = useState<Session | null>(() => hydrateSession());
 
-  // Every route that ends a session — a failed refresh, TOKEN_INVALID, the
-  // idle timeout, the sign-out button — comes back through this one listener,
+  // Every route that ends a session - a failed refresh, TOKEN_INVALID, the
+  // idle timeout, the sign-out button - comes back through this one listener,
   // so there is a single path from "no session" to the sign-in screen.
   useEffect(() => onSignedOut(() => setSession(null)), []);
 
@@ -185,7 +185,7 @@ function SignedIn({
 
   /*
    * After sign-out the browser Back button returns to the previous URL. There
-   * is no session then, so `App` renders the sign-in screen for it — the
+   * is no session then, so `App` renders the sign-in screen for it - the
    * protected screen is never reachable again without signing in (§12).
    * This effect only keeps the in-memory copy in step when a refresh rotates
    * the tokens, which changes the object identity but not the level.
@@ -222,7 +222,7 @@ function SignedIn({
         })}
 
         {/* The admin's own alerts, reached from the header bell rather than
-            the sidebar — it is not a module, it is this account's inbox. */}
+            the sidebar - it is not a module, it is this account's inbox. */}
         <Route path="inbox" element={<Inbox level={level} />} />
 
         <Route path="*" element={<NotFound level={level} />} />

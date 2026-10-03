@@ -6,7 +6,7 @@ export type { CaseSummaryDetail } from '../mock/caseSummaryDetail';
 export type { CaseSummaryRow, CaseSummaryStatus } from '../mock/caseSummaries';
 
 /**
- * Case summaries — same shape as `api/admin.ts`: async, latency via `delay`,
+ * Case summaries - same shape as `api/admin.ts`: async, latency via `delay`,
  * and copies out so a screen can never mutate the store by accident.
  */
 export const summaries = {

@@ -45,7 +45,7 @@ type ToastApi = {
 
 const ToastContext = createContext<ToastApi | null>(null);
 
-/** How long a toast stays. Errors linger — they carry a request id to copy. */
+/** How long a toast stays. Errors linger - they carry a request id to copy. */
 const TTL = { success: 4000, info: 5000, error: 9000 } as const;
 
 export function ToastProvider({ children }: { children: ReactNode }) {

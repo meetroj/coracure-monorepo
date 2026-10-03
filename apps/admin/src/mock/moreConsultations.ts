@@ -3,8 +3,8 @@ import type { Consultation, ConsultationStatus } from '../api/types';
 /**
  * Extra consultation fixtures for the browsable list.
  *
- * `db.consultations` holds only three rows — too few to exercise filters or
- * paging — so the list merges these in. They are plain read-only rows;
+ * `db.consultations` holds only three rows - too few to exercise filters or
+ * paging - so the list merges these in. They are plain read-only rows;
  * `api/admin.ts` `consultations.get` also looks here so every listed row opens.
  * Patients are shown as initials only: the admin sees logistics, not identity.
  */

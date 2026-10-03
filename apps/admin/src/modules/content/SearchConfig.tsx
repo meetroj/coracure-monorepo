@@ -19,7 +19,7 @@ import {
  *
  * *** THE PATIENT APP RUNS NO KEYWORD LIST OF ITS OWN. *** It renders what
  * these endpoints return. So an empty crisis-keyword save silently disables
- * the crisis interrupt for every patient — the form refuses to submit an empty
+ * the crisis interrupt for every patient - the form refuses to submit an empty
  * list rather than trusting the admin, and says why.
  *
  * Crisis keywords and emergency guidance are clinical_governance only; the
@@ -124,7 +124,7 @@ function CrisisKeywords({
         </div>
       ) : (
         <p className="muted small">
-          Read-only for your role — safety-critical configuration is clinical governance&apos;s.
+          Read-only for your role - safety-critical configuration is clinical governance&apos;s.
         </p>
       )}
     </Card>
@@ -148,7 +148,7 @@ function Disclaimer({
     <Card title="Search disclaimer">
       <Notice tone="info">
         FR-5.8 requires this wording to appear with every search result. The AI assists navigation
-        only — it must not appear to screen, diagnose or triage.
+        only - it must not appear to screen, diagnose or triage.
       </Notice>
       <TextArea
         label="Disclaimer"

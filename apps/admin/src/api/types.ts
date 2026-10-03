@@ -129,7 +129,7 @@ export type Consultation = {
   language?: string | null;
   regionId?: string | null;
   regionName?: string | null;
-  /** Initials and city only — the admin sees logistics, not identity. */
+  /** Initials and city only - the admin sees logistics, not identity. */
   patientName?: string;
   /** The patient record this case belongs to, so the page can open it. */
   patientId?: string | null;
@@ -189,7 +189,7 @@ export type PendingPayout = {
   completedAt?: string | null;
 };
 
-/** A patient's charge for one consultation. Initials only — no identity. */
+/** A patient's charge for one consultation. Initials only - no identity. */
 export type PatientPayment = {
   consultationId: string;
   referenceCode: string;

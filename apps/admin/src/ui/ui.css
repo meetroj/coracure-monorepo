@@ -130,7 +130,7 @@
   }
 }
 
-/* Honour a reduced-motion preference — the spinner still reads as busy. */
+/* Honour a reduced-motion preference - the spinner still reads as busy. */
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2s;

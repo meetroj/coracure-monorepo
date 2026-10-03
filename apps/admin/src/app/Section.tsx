@@ -23,7 +23,7 @@ export function SectionPlaceholder(meta: Section): ComponentType<{ level: AdminL
         <Card title="Not built yet">
           <p className="muted">
             This section is specified but its screen has not been implemented. Nothing here
-            simulates the backend — the endpoints below are what it will call.
+            simulates the backend - the endpoints below are what it will call.
           </p>
           <ul className="endpoints">
             {meta.endpoints.map((e) => (

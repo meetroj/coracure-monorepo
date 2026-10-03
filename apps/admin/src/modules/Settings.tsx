@@ -12,15 +12,15 @@ import { Async, Button, Card, EmptyState, Notice, PageHeader, TextField } from '
  *
  * *** RENDERED ENTIRELY FROM THE RESPONSE. *** The backend returns only keys a
  * module actually registered, each with what it is for, the shape expected,
- * whether YOUR level may edit it, and — where it has a dedicated screen —
+ * whether YOUR level may edit it, and - where it has a dedicated screen -
  * `managedBy` naming that screen.
  *
  * So there is no local list of settings here, and no editor is offered for a
  * `managedBy` value. Two ways to change one value is how the two drift apart,
  * and the specialised screen validates things this one cannot.
  *
- * The audit entry (with before and after) IS the configuration history — there
- * is no versions table — which is why "history" links into the audit log
+ * The audit entry (with before and after) IS the configuration history - there
+ * is no versions table - which is why "history" links into the audit log
  * filtered to that key.
  */
 

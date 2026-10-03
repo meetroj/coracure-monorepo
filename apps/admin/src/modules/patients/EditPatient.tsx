@@ -149,7 +149,7 @@ function Form({
           onChange={(e) => setGender(e.target.value)}
           options={GENDERS.map((g) => ({ value: g, label: g }))}
         />
-        <TextField label="Mobile number" value={p.mobileNumber} disabled hint="The sign-in identifier — not editable here." onChange={() => undefined} />
+        <TextField label="Mobile number" value={p.mobileNumber} disabled hint="The sign-in identifier - not editable here." onChange={() => undefined} />
         <TextField label="Email address" required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <TextField
           label="Preferred language(s)"

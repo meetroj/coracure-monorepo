@@ -16,7 +16,7 @@ import {
 } from '../../ui';
 
 /**
- * Data retention (§43). **super_admin only** — `assertPermission(actor,
+ * Data retention (§43). **super_admin only** - `assertPermission(actor,
  * 'super_admin')` on the backend.
  *
  * *** THE SCOPE IS SHOWN BEFORE THE BUTTON, NOT AFTER. *** A retention sweep
@@ -58,7 +58,7 @@ export function Retention({ level }: { level: AdminLevel }) {
 
       <Notice tone="danger">
         Applying retention <strong>permanently deletes</strong> every record past the window. It
-        cannot be undone. A scheduled run does this routinely — use this only when it has not.
+        cannot be undone. A scheduled run does this routinely - use this only when it has not.
       </Notice>
 
       <Async state={state} resource="retention settings" skeletonRows={2}>
@@ -119,7 +119,7 @@ export function Retention({ level }: { level: AdminLevel }) {
               onConfirm={async () => {
                 try {
                   const result = await apply.mutate();
-                  toast.success(`Retention applied — ${result.deleted} record(s) deleted.`);
+                  toast.success(`Retention applied - ${result.deleted} record(s) deleted.`);
                   state.reload();
                 } catch (e) {
                   toast.fromError(e);

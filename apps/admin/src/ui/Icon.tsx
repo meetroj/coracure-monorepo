@@ -2,7 +2,7 @@
  * One icon system for the panel (§63).
  *
  * Outline, monoline, rounded caps and joins, all drawn on the same 24×24 grid
- * at a 1.8 stroke — the construction rule in the brand deck. `currentColor`
+ * at a 1.8 stroke - the construction rule in the brand deck. `currentColor`
  * throughout, so an icon takes the colour of whatever it sits in rather than
  * carrying a palette of its own.
  *

@@ -18,7 +18,7 @@ import {
  * Admin accounts (§44).
  *
  * *** THE BACKEND ONLY SUPPORTS CREATE. *** There is no list, no edit, no
- * suspend, no password reset and no 2FA toggle endpoint — gap A-4. So this
+ * suspend, no password reset and no 2FA toggle endpoint - gap A-4. So this
  * screen offers the one operation that exists and states plainly that the rest
  * does not, rather than rendering a table of nothing or faking CRUD against
  * local state.
@@ -41,7 +41,7 @@ export function AdminAccounts({ level }: { level: AdminLevel }) {
 
   const create = useMutation(adminAccounts.create);
 
-  // Creating an account that can create accounts is super_admin only — the
+  // Creating an account that can create accounts is super_admin only - the
   // backend's `assertPermission(actor)` with no levels named.
   if (level !== 'super_admin') {
     return (
@@ -74,13 +74,13 @@ export function AdminAccounts({ level }: { level: AdminLevel }) {
       <Notice tone="warning">
         The backend exposes <strong>only account creation</strong>. There is no endpoint to list,
         edit, suspend, reset a password or switch two-factor, so those cannot be offered here (gap
-        A-4) — including the per-account 2FA switch FR-1.10 describes. A super admin currently
+        A-4) - including the per-account 2FA switch FR-1.10 describes. A super admin currently
         cannot see who the other admins are.
       </Notice>
 
       <Card title="Create an admin">
         <p className="muted">
-          You set the password and hand it over — there is no invitation email. Who created the
+          You set the password and hand it over - there is no invitation email. Who created the
           account is this action&apos;s audit entry.
         </p>
 

@@ -2,8 +2,8 @@
  * YouTube link parsing for Care Hub video items.
  *
  * Accepts watch?v=, youtu.be/, /embed/ and /shorts/ (plus /live/ and /v/, which
- * share the shape). Anything else — another host, a channel, a playlist with no
- * video — is rejected with a message the editor shows under the field.
+ * share the shape). Anything else - another host, a channel, a playlist with no
+ * video - is rejected with a message the editor shows under the field.
  */
 
 export type YouTubeResult = { ok: true; id: string } | { ok: false; error: string };

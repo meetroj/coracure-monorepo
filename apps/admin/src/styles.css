@@ -3,7 +3,7 @@
  *
  * Every colour, radius, space and type size is a `var(--…)` written onto
  * `:root` by `brand-css.ts` from `@coracure/brand`. There is deliberately no
- * hex in this file — a second copy of the palette is how the panel and the apps
+ * hex in this file - a second copy of the palette is how the panel and the apps
  * stop matching.
  */
 
@@ -108,7 +108,7 @@ select:focus-visible,
   font: inherit;
   font-weight: 600;
   color: var(--c-white);
-  /* Flat, not gradient — the brand keeps the gradient for the logo tile. */
+  /* Flat, not gradient - the brand keeps the gradient for the logo tile. */
   background: var(--c-cta);
   border: 0;
   border-radius: var(--radius-pill);
@@ -142,7 +142,7 @@ select:focus-visible,
 .auth {
   display: grid;
   /*
-   * Artwork left, form right — the split in the supplied comp.
+   * Artwork left, form right - the split in the supplied comp.
    *
    * `minmax(0, …)` rather than a bare `55fr`: a grid track sized in `fr`
    * still refuses to shrink below its content's min-content width, so on a
@@ -163,13 +163,13 @@ select:focus-visible,
 /* ---- left: the brand artwork ---- */
 
 /*
- * The artwork fills the panel edge to edge — no band of flat colour anywhere,
+ * The artwork fills the panel edge to edge - no band of flat colour anywhere,
  * so the logo and the copy sit ON the image.
  *
  * `cover` is what fills it, and filling costs a crop: the artwork is 3:2 and
  * this panel is roughly 0.9:1, so only about 60% of the image's width fits.
  * Anchoring right keeps the doctor in frame and spends the crop on the left of
- * the image, which is the empty mint field — the part the scrim below recreates
+ * the image, which is the empty mint field - the part the scrim below recreates
  * anyway.
  */
 .auth__hero {
@@ -210,7 +210,7 @@ select:focus-visible,
   display: flex;
   flex-direction: column;
   /* Logo at the top, the message block in the middle, the strapline at the
-     bottom — the three-part spread in the comp. */
+     bottom - the three-part spread in the comp. */
   justify-content: space-between;
   gap: var(--space-lg);
   /* Fills the cell without asserting a viewport height of its own, so a short
@@ -465,7 +465,7 @@ select:focus-visible,
 
 /*
  * The split stops working when the artwork column can no longer hold the
- * headline — either because the window is narrow, or because it is short
+ * headline - either because the window is narrow, or because it is short
  * enough that the panel has nothing left to show. Either way the form takes
  * the whole window and the artwork goes; the form is the part that has a job.
  */

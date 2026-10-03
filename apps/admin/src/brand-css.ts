@@ -2,7 +2,7 @@
  * The bridge from `@coracure/brand` to CSS custom properties.
  *
  * `libs/brand` is the single source of truth for every app in this workspace,
- * but it is written for React Native — numbers for spacing, no units. Rather
+ * but it is written for React Native - numbers for spacing, no units. Rather
  * than fork the palette into a `.css` file (where it would drift the first time
  * a token changes), this walks the tokens once at boot and writes them onto
  * `:root`. `styles.css` then refers to `var(--c-cta)` and never holds a hex.
@@ -40,7 +40,7 @@ const vars: Record<string, string> = {
   ...px('text', typography.size),
 
   /*
-   * The deck names Rounded (headings) and Montserrat (body) — the same two
+   * The deck names Rounded (headings) and Montserrat (body) - the same two
    * `libs/typography` declares. Neither binary exists anywhere in the repo, so
    * both are listed FIRST and fall through to the system stack until the files
    * land. Adding an `@font-face` for either makes it take effect with no change
@@ -51,8 +51,8 @@ const vars: Record<string, string> = {
   '--font-body': `'${typography.body.family ?? 'Montserrat'}', system-ui, -apple-system, 'Segoe UI', sans-serif`,
 
   /*
-   * The deck's flat Soft Grey. `libs/brand` has no token for it — its surface
-   * scale is green-tinted — and the panel needs a quiet neutral for page
+   * The deck's flat Soft Grey. `libs/brand` has no token for it - its surface
+   * scale is green-tinted - and the panel needs a quiet neutral for page
    * ground, table headers and read-only rows. Declared here rather than added
    * to `libs/brand`, which the two native apps consume and this work does not
    * own.

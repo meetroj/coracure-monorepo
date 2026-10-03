@@ -91,7 +91,7 @@ function ComplaintQueue({
     {
       key: 'raised',
       header: 'Raised',
-      render: (c) => (c.raisedAt ? new Date(c.raisedAt).toLocaleDateString() : '—'),
+      render: (c) => (c.raisedAt ? new Date(c.raisedAt).toLocaleDateString() : '-'),
     },
     {
       key: 'owner',
@@ -116,7 +116,7 @@ function ComplaintQueue({
     },
   ];
 
-  /** Unassigned and open first — the order a handler works in. */
+  /** Unassigned and open first - the order a handler works in. */
   const ordered = (rows: Complaint[]) =>
     [...rows].sort((a, b) => {
       const rank = (c: Complaint) =>
@@ -178,7 +178,7 @@ function FeedbackList() {
             label={`${f.rating} / 5`}
           />
         ) : (
-          <span className="muted">—</span>
+          <span className="muted">-</span>
         ),
     },
     {
@@ -189,7 +189,7 @@ function FeedbackList() {
     {
       key: 'when',
       header: 'Submitted',
-      render: (f) => (f.submittedAt ? new Date(f.submittedAt).toLocaleDateString() : '—'),
+      render: (f) => (f.submittedAt ? new Date(f.submittedAt).toLocaleDateString() : '-'),
     },
   ];
 

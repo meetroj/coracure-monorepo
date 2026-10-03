@@ -24,7 +24,7 @@ export const SECTIONS: { id: string; title: string; types: string[] }[] = [
   // Nothing to approve here: the profile photo is not a reviewed document.
   { id: 'basic', title: 'Basic details', types: [] },
   { id: 'identity', title: 'Proof of identity', types: ['identity_proof', 'address_proof'] },
-  // Two uploads cover the whole qualification section — never one per degree.
+  // Two uploads cover the whole qualification section - never one per degree.
   {
     id: 'qualification',
     title: 'Professional qualifications',
@@ -42,7 +42,7 @@ export const SECTIONS: { id: string; title: string; types: string[] }[] = [
  * One provider's credentials, reviewed a document at a time (§17).
  *
  * *** THE REJECTION REASON IS SHOWN TO THE DOCTOR, VERBATIM. *** It is not an
- * internal note, and the dialog says so — a reviewer who thinks otherwise
+ * internal note, and the dialog says so - a reviewer who thinks otherwise
  * writes the wrong thing. Maximum 255 characters, enforced by the backend's
  * `ReviewCredentialDto`.
  *
@@ -128,7 +128,7 @@ export function CredentialReview({
             </Button>
           </>
           ) : (
-            <span className="muted small">{d.reviewedAt ? 'Reviewed' : canReview ? '—' : 'View only'}</span>
+            <span className="muted small">{d.reviewedAt ? 'Reviewed' : canReview ? '-' : 'View only'}</span>
           )}
         </span>
       ),
@@ -199,7 +199,7 @@ export function CredentialReview({
         confirmLabel="Reject document"
         consequence={
           <>
-            The provider can re-upload this document. Only this document is rejected —{' '}
+            The provider can re-upload this document. Only this document is rejected -{' '}
             <strong>the provider’s own status does not change</strong>.
           </>
         }
@@ -208,7 +208,7 @@ export function CredentialReview({
           hint: (
             <>
               <strong>Shown to the doctor word for word.</strong> Write instructions they can act
-              on, e.g. “the registration certificate is cropped — re-upload the full page”.
+              on, e.g. “the registration certificate is cropped - re-upload the full page”.
             </>
           ),
           maxLength: 255,

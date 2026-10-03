@@ -11,7 +11,7 @@ import { Button, Modal, SelectField, TextField, may } from '../../ui';
  * like the rest of `PATCH /admin/doctors/:id`).
  *
  * Not editable here: the sign-in mobile number (a typo would lock the doctor out
- * — create a new account instead), the government ID number (only its last four
+ * - create a new account instead), the government ID number (only its last four
  * characters are ever held), and the uploaded documents (the doctor re-uploads).
  */
 const GENDERS = ['Female', 'Male', 'Other', 'Prefer not to say'];
@@ -100,7 +100,7 @@ function Form({
       years: Number(x.years),
     }));
     try {
-      // Built field by field — form state is never spread into the body (§55).
+      // Built field by field - form state is never spread into the body (§55).
       await update.mutate(doctor.id, {
         fullName: fullName.trim(),
         email: email.trim() ? email.trim().toLowerCase() : null,
@@ -162,7 +162,7 @@ function Form({
           hint="Comma separated. A doctor with none set cannot be matched to anyone."
           onChange={(e) => setLanguages(e.target.value)}
         />
-        <TextField label="Mobile number" value={doctor.mobileNumber ?? ''} disabled hint="The sign-in identifier — not editable here." onChange={() => undefined} />
+        <TextField label="Mobile number" value={doctor.mobileNumber ?? ''} disabled hint="The sign-in identifier - not editable here." onChange={() => undefined} />
       </div>
 
       <h3 className="subhead">Proof of identity</h3>

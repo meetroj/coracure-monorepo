@@ -15,7 +15,7 @@ const PREVIEW = 5;
  *
  * *** IT OPENS A SHORT LIST, NOT A PAGE. *** Pressing it drops down the latest
  * few notifications; only "View all notifications" opens the full page. The
- * count is real (`GET /me/notifications/unread-count`) — SRS 2.3 gives admins no
+ * count is real (`GET /me/notifications/unread-count`) - SRS 2.3 gives admins no
  * push, so this is where they find out.
  *
  * Closes on an outside press, Escape, or choosing something, and returns focus

@@ -60,7 +60,7 @@ export function Payments({ level }: { level: AdminLevel }) {
         p.doctorId ? (
           <Link to={`/providers/${p.doctorId}`}>{p.doctorName ?? p.doctorId}</Link>
         ) : (
-          <span className="muted">—</span>
+          <span className="muted">-</span>
         ),
     },
     {
@@ -73,13 +73,13 @@ export function Payments({ level }: { level: AdminLevel }) {
     {
       key: 'completed',
       header: 'Completed',
-      render: (p) => (p.completedAt ? new Date(p.completedAt).toLocaleDateString() : '—'),
+      render: (p) => (p.completedAt ? new Date(p.completedAt).toLocaleDateString() : '-'),
     },
     {
       key: 'amount',
       header: 'Owed',
       align: 'end',
-      render: (p) => (p.amountInr != null ? `₹${p.amountInr.toLocaleString('en-IN')}` : '—'),
+      render: (p) => (p.amountInr != null ? `₹${p.amountInr.toLocaleString('en-IN')}` : '-'),
     },
     {
       key: 'actions',
@@ -107,7 +107,7 @@ export function Payments({ level }: { level: AdminLevel }) {
     {
       key: 'date',
       header: 'Date',
-      render: (p) => (p.at ? new Date(p.at).toLocaleDateString() : '—'),
+      render: (p) => (p.at ? new Date(p.at).toLocaleDateString() : '-'),
     },
     {
       key: 'amount',
@@ -233,7 +233,7 @@ export function Payments({ level }: { level: AdminLevel }) {
         consequence={
           <>
             This marks the transfer as done in the platform&apos;s books.{' '}
-            <strong>It does not transfer any money</strong> — only record it once you have actually
+            <strong>It does not transfer any money</strong> - only record it once you have actually
             sent it.
           </>
         }
@@ -259,7 +259,7 @@ export function Payments({ level }: { level: AdminLevel }) {
 
 /**
  * A refund is raised against one consultation. The amount is typed, never
- * derived — see the note at the top of this file.
+ * derived - see the note at the top of this file.
  */
 function RefundForm({
   initialConsultationId,
@@ -283,7 +283,7 @@ function RefundForm({
   return (
     <Card title="Raise a refund">
       <Notice tone="info">
-        Enter the amount from the patient&apos;s invoice. The bill is frozen at checkout — do not
+        Enter the amount from the patient&apos;s invoice. The bill is frozen at checkout - do not
         recalculate it here, or the refund stops matching what they were charged.
       </Notice>
 
@@ -317,7 +317,7 @@ function RefundForm({
         </Button>
         <Button
           variant="primary"
-          // Disabled while in flight — a double click cannot double-refund,
+          // Disabled while in flight - a double click cannot double-refund,
           // and the backend's unique gatewayRefundId is the second guard.
           loading={refund.busy}
           disabled={!valid}

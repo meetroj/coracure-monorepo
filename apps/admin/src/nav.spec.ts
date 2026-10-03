@@ -5,7 +5,7 @@ import { brandVars } from './brand-css';
 
 /**
  * The nav map is a transcription of the backend's `assertPermission` calls. A
- * wrong row here does not fail a build — it shows an admin a link that 403s, or
+ * wrong row here does not fail a build - it shows an admin a link that 403s, or
  * hides a section they are paid to use. These are the checks that catch that.
  */
 

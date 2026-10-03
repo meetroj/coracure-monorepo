@@ -18,7 +18,7 @@ import {
 const when = (iso: string) => new Date(iso).toLocaleString();
 const audienceLabel = (a: string) => (a === 'doctor' ? 'Doctors' : 'Patients');
 
-/** Every notification that went out — manual sends and automatic template ones. */
+/** Every notification that went out - manual sends and automatic template ones. */
 export function NotificationHistory() {
   const [query, setQuery] = useState<HistoryQuery>({ audience: '', type: '', status: '', since: '' });
   const [open, setOpen] = useState<SentNotification | null>(null);

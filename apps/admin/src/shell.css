@@ -2,7 +2,7 @@
  * The signed-in shell: sidebar, header, dashboard tiles, and the few
  * module-specific pieces that are not general enough for the component kit.
  *
- * Same rule as everywhere else — every colour is a `var(--…)` written by
+ * Same rule as everywhere else - every colour is a `var(--…)` written by
  * `brand-css.ts` from `@coracure/brand`. No hex in this file.
  */
 
@@ -86,7 +86,7 @@
 }
 
 /*
- * Navigation items are links, not buttons — only the active one gets a
+ * Navigation items are links, not buttons - only the active one gets a
  * container. That is what keeps the sidebar light rather than turning every
  * row into a chip.
  */
@@ -126,8 +126,8 @@
 /* ------------------------------ account menu ------------------------------ */
 
 /*
- * The account block sits at the top right of the header — where a desktop
- * admin looks for it — which also leaves the sidebar's full height for
+ * The account block sits at the top right of the header - where a desktop
+ * admin looks for it - which also leaves the sidebar's full height for
  * navigation.
  */
 .account {
@@ -232,7 +232,7 @@
 }
 
 /*
- * Wayfinding, not the page's heading — the content below carries that. Small
+ * Wayfinding, not the page's heading - the content below carries that. Small
  * and quiet so it reads as "where you are" rather than duplicating the h1 a
  * few pixels underneath it.
  */
@@ -386,7 +386,7 @@
 
 .weekGrid__row {
   display: grid;
-  /* Day, start, "to", end — packed to the left, not stretched across the card. */
+  /* Day, start, "to", end - packed to the left, not stretched across the card. */
   grid-template-columns: 170px 150px 24px 150px;
   justify-content: start;
   align-items: center;

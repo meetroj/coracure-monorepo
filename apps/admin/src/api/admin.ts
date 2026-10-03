@@ -50,8 +50,8 @@ export * from './types';
  *
  * The shape of this module is exactly what a wired-up version would be: same
  * names, same arguments, same return types, same async signature. Pointing it
- * at the real API is a body-swap in this one file —
- * `return request<Doctor[]>('/admin/doctors', { query })` — with no screen
+ * at the real API is a body-swap in this one file -
+ * `return request<Doctor[]>('/admin/doctors', { query })` - with no screen
  * changing. `api/http.ts` already holds the client that would do it, including
  * the single-flight refresh.
  *
@@ -388,7 +388,7 @@ export const consultations = {
     if (!found) return notFound('Consultation');
     const regionName = db.regions.find((r) => r.id === found.regionId)?.name ?? null;
     const owner = ownerOf(found.id);
-    // Full name here — this is a record an admin acts on, not a queue to skim.
+    // Full name here - this is a record an admin acts on, not a queue to skim.
     return ok(
       copy({ ...found, ...(baseExtras[found.id] ?? {}), regionName, patientId: owner.id, patientName: owner.fullName }),
     );
@@ -426,8 +426,8 @@ export const consultations = {
 
   offers: (id: string) =>
     ok([
-      { doctorId: 'dr-2', fullName: 'Dr Vikram Sethi', offeredAt: '—', outcome: 'accepted' },
-      { doctorId: 'dr-6', fullName: 'Dr Kabir Nair', offeredAt: '—', outcome: 'no_response' },
+      { doctorId: 'dr-2', fullName: 'Dr Vikram Sethi', offeredAt: '-', outcome: 'accepted' },
+      { doctorId: 'dr-6', fullName: 'Dr Kabir Nair', offeredAt: '-', outcome: 'no_response' },
       { consultationId: id },
     ] as unknown[]),
 
@@ -443,7 +443,7 @@ export const consultations = {
   careRecord: (id: string) =>
     ok({
       consultationId: id,
-      caseSummary: 'Fixture record — no real clinical data in a UI build.',
+      caseSummary: 'Fixture record - no real clinical data in a UI build.',
       prescription: null,
     } as unknown),
 
@@ -539,7 +539,7 @@ export const payments = {
     return ok({} as unknown);
   },
 
-  /** No file to serve in a UI build — the button explains that. */
+  /** No file to serve in a UI build - the button explains that. */
   exportUrl: (kind: 'transactions' | 'refunds') => `#export-${kind}-unavailable-in-ui-build`,
 };
 
@@ -790,7 +790,7 @@ export const pathways = {
   },
 };
 
-/** The next whole version: 1.0, then 2.0, 3.0 … — never 2.1 or 2.2, and never a repeat. */
+/** The next whole version: 1.0, then 2.0, 3.0 … - never 2.1 or 2.2, and never a repeat. */
 export const nextLegalVersion = (existing: { version?: string | number | null }[]): string => {
   const highest = existing.reduce((max, d) => Math.max(max, Math.floor(parseFloat(String(d.version ?? 0))) || 0), 0);
   return `${highest + 1}.0`;

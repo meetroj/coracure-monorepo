@@ -28,7 +28,7 @@ type Counts = { refresh: number; protected: number };
 /**
  * A JWT the way the backend issues one: base64url, no padding, `typ` and `lvl`
  * in the payload. The signature is a placeholder because nothing client-side
- * verifies it — the backend does that on every request.
+ * verifies it - the backend does that on every request.
  */
 const jwt = (claims: Record<string, unknown>): string => {
   const b64url = (o: unknown) =>
@@ -40,7 +40,7 @@ const adminToken = (lvl: string) => jwt({ sub: 'a1', typ: 'admin', ver: 0, kind:
 
 /**
  * Answers 401 on the protected path until a refresh has happened, then 200.
- * Every refresh returns a NEW token pair, exactly as the backend does — which
+ * Every refresh returns a NEW token pair, exactly as the backend does - which
  * is precisely why more than one refresh would break the session.
  */
 const backend = (counts: Counts) =>
@@ -212,7 +212,7 @@ describe('error handling', () => {
     );
 
     await expect(request('/admin/doctors')).rejects.toBeDefined();
-    // One refresh attempt at most — never a loop.
+    // One refresh attempt at most - never a loop.
     expect(refreshes).toBeLessThanOrEqual(1);
     expect(getSession()).toBeNull();
   });
@@ -243,7 +243,7 @@ describe('the level comes from the token, not from the form', () => {
       ),
     );
 
-    // No level argument exists to pass — that is the point.
+    // No level argument exists to pass - that is the point.
     await expect(signIn('a@b.test', 'pw')).resolves.toEqual({ status: 'complete' });
     expect(getSession()?.level).toBe('care_coordinator');
   });
@@ -251,11 +251,11 @@ describe('the level comes from the token, not from the form', () => {
   it('refuses a token that names no known level', async () => {
     __resetForTests();
     // A hand-edited payload cannot be re-signed, so the backend would reject it
-    // anyway — but the panel must not build a sidebar from it either.
+    // anyway - but the panel must not build a sidebar from it either.
     expect(levelFromToken(adminToken('root'))).toBeNull();
     // A doctor's token is not an admin session.
     expect(levelFromToken(jwt({ sub: 'd1', typ: 'doctor', ver: 0 }))).toBeNull();
-    // Garbage in, null out — never a throw into the sign-in flow.
+    // Garbage in, null out - never a throw into the sign-in flow.
     expect(levelFromToken('not-a-jwt')).toBeNull();
     expect(levelFromToken('')).toBeNull();
 

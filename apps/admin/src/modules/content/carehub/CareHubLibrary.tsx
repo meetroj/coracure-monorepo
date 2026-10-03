@@ -30,7 +30,7 @@ const STATUSES = [
   { value: 'archived', label: 'Archived' },
 ];
 
-const date = (iso: string) => (iso ? new Date(iso).toLocaleDateString() : '—');
+const date = (iso: string) => (iso ? new Date(iso).toLocaleDateString() : '-');
 
 /** Thumbnail, type, status, concern and text filters, then the chosen sort. */
 function useVisible(rows: CareHubItem[], f: { type: string; status: string; concern: string; q: string; sort: string }) {

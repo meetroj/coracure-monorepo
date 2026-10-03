@@ -38,8 +38,8 @@ import type {
  * This is a UI build: every screen reads and writes this in-memory store
  * instead of calling the API. Nothing here reaches the network.
  *
- * It is deliberately STATEFUL — verifying a provider really does flip their
- * status, closing an alert really does remove it from the queue — so the flows
+ * It is deliberately STATEFUL - verifying a provider really does flip their
+ * status, closing an alert really does remove it from the queue - so the flows
  * can be clicked through end to end and reviewed as they will actually behave.
  * The trade-off is that everything resets on a page reload, because the store
  * lives in memory only.
@@ -56,7 +56,7 @@ const LATENCY_MS = 260;
 export const delay = <T>(value: T, ms = LATENCY_MS): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(value), ms));
 
-/** Stable ids — `Math.random` would change the data on every render. */
+/** Stable ids - `Math.random` would change the data on every render. */
 let sequence = 1000;
 const nextId = (prefix: string) => `${prefix}-${++sequence}`;
 
@@ -231,7 +231,7 @@ export const doctors: Doctor[] = [
     verificationStatus: 'rejected',
     isListed: false,
     seniority: 'standard',
-    rejectionReason: 'Registration certificate was cropped — the council number is not legible.',
+    rejectionReason: 'Registration certificate was cropped - the council number is not legible.',
     createdAt: daysAgo(48),
   },
   {
@@ -271,7 +271,7 @@ export const documents: Record<string, DoctorDocument[]> = {
       id: 'doc-8',
       documentType: 'registration_certificate',
       status: 'rejected',
-      rejectionReason: 'The certificate is cropped — re-upload the full page.',
+      rejectionReason: 'The certificate is cropped - re-upload the full page.',
       uploadedAt: daysAgo(50),
       reviewedAt: daysAgo(48),
     },
@@ -534,7 +534,7 @@ export const complaints: Complaint[] = [
       },
       {
         id: 'm-3',
-        body: 'Checked the video session record — the provider disconnected at 08:12 and did not rejoin.',
+        body: 'Checked the video session record - the provider disconnected at 08:12 and did not rejoin.',
         authorType: 'admin',
         visibleToPatient: false,
         createdAt: daysAgo(4),

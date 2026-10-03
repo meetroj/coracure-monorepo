@@ -15,7 +15,7 @@ import { NotificationBell } from './NotificationBell';
  * below (§6, §7).
  *
  * The sidebar is built from `sectionsFor(level)` so a level never sees a link
- * it cannot use — hidden, not disabled. The server gate is still the real one.
+ * it cannot use - hidden, not disabled. The server gate is still the real one.
  */
 export function Shell({
   session,
@@ -191,7 +191,7 @@ function AccountMenu({
           {initials}
         </span>
         <span className="profile__text">
-          {/* No display name exists to show — gap A-4. The address the admin
+          {/* No display name exists to show - gap A-4. The address the admin
               signed in with is what the panel actually knows. */}
           <strong>{session.email || 'Signed in'}</strong>
           <small>{LEVEL_LABEL[session.level]}</small>

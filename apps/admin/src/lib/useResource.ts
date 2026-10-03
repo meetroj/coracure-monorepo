@@ -21,7 +21,7 @@ export type ResourceState<T> = {
 };
 
 /**
- * @param fetcher Must be stable or memoised — it is the effect's dependency.
+ * @param fetcher Must be stable or memoised - it is the effect's dependency.
  * @param deps    Anything the fetcher closes over (filters, ids, page).
  * @param enabled Skips the fetch entirely, for a tab that is not open yet.
  */
@@ -37,7 +37,7 @@ export function useResource<T>(
   const [nonce, setNonce] = useState(0);
 
   // Held in a ref so changing the fetcher identity does not retrigger the
-  // effect — `deps` is what declares a real change.
+  // effect - `deps` is what declares a real change.
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -163,7 +163,7 @@ export function useMutation<Args extends unknown[], R>(
 
 /**
  * Polls while the tab is visible. Used by the safety-alert queue (§29), which
- * must not need a manual refresh — and must not keep hammering the backend
+ * must not need a manual refresh - and must not keep hammering the backend
  * from a tab nobody is looking at.
  */
 export function usePoll(reload: () => void, intervalMs: number, enabled = true): void {

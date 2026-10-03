@@ -22,13 +22,13 @@ import {
 } from '../../ui';
 
 /**
- * Follow-up pathways — the daily check-in question sets and the red-flag rules
+ * Follow-up pathways - the daily check-in question sets and the red-flag rules
  * that turn an answer into a safety alert (§37, FR-13.7).
  *
  * *** POSTING PUBLISHES A NEW VERSION. IT NEVER EDITS THE LIVE ONE. ***
  * So the editor is "duplicate the current version, change it, publish", and
  * patients already on a pathway stay on the version they started. There is
- * deliberately no in-place edit form — building one would imply the live
+ * deliberately no in-place edit form - building one would imply the live
  * version can be changed under a patient mid-course, which it cannot.
  */
 export function Pathways({ level }: { level: AdminLevel }) {
@@ -38,7 +38,7 @@ export function Pathways({ level }: { level: AdminLevel }) {
 
   const canPublish = may(level, ['clinical_governance', 'content']);
 
-  /** Newest version of each code first — §37. */
+  /** Newest version of each code first - §37. */
   const ordered = useMemo(
     () => (rows: Pathway[]) =>
       [...rows].sort((a, b) => {
@@ -55,14 +55,14 @@ export function Pathways({ level }: { level: AdminLevel }) {
       render: (p) => (
         <span className="cellStack">
           <strong>{p.code}</strong>
-          <small>Version {p.version ?? '—'}</small>
+          <small>Version {p.version ?? '-'}</small>
         </span>
       ),
     },
     {
       key: 'published',
       header: 'Published',
-      render: (p) => (p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : '—'),
+      render: (p) => (p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : '-'),
     },
     {
       key: 'live',
@@ -156,7 +156,7 @@ const TYPES: { value: QType; label: string }[] = [
   { value: 'text', label: 'Free text' },
 ];
 
-/** The backend's own list — an admin picks from these, they cannot invent another. */
+/** The backend's own list - an admin picks from these, they cannot invent another. */
 const CATEGORIES = [
   { value: 'self_harm', label: 'Self-harm' },
   { value: 'severe_worsening', label: 'Severe worsening' },
@@ -222,7 +222,7 @@ const answersFor = (q: Question | undefined): { value: string; label: string }[]
 /**
  * Duplicate-and-publish. The current version's content is pre-loaded so the
  * admin edits a copy rather than starting from nothing. Questions and rules are
- * edited as fields — the JSON the backend wants is built only when publishing.
+ * edited as fields - the JSON the backend wants is built only when publishing.
  */
 function NewVersion({
   from,
@@ -284,7 +284,7 @@ function NewVersion({
     <>
       <Card title={`New version of ${from.code}`}>
         <p className="muted">
-          Starting from version {from.version ?? '—'}. Publishing makes this the version every new
+          Starting from version {from.version ?? '-'}. Publishing makes this the version every new
           patient is put on.
         </p>
 
@@ -354,7 +354,7 @@ function NewVersion({
 
         <h3 className="subhead">Red-flag rules</h3>
         <p className="fieldHint">These turn a check-in answer into a safety alert.</p>
-        {rules.length === 0 && <p className="muted">No rules yet — no answer will raise an alert.</p>}
+        {rules.length === 0 && <p className="muted">No rules yet - no answer will raise an alert.</p>}
         {rules.map((r, i) => {
           const q = questions.find((x) => x.id === r.questionId);
           return (

@@ -81,7 +81,7 @@ export function CaseSummaryDetail(props: {
                 }
               />
               <span className="muted">
-                {row.doctorName ?? "—"} · {row.patientLabel} · {row.serviceName}
+                {row.doctorName ?? "-"} · {row.patientLabel} · {row.serviceName}
               </span>
               {row.status === "failed" && (
                 <Button size="sm" variant="secondary" icon="refresh" onClick={regenerate}>
@@ -108,7 +108,7 @@ export function CaseSummaryDetail(props: {
             actions={
               <>
                 <span className="muted">
-                  {row.doctorName ?? "—"} · {row.patientLabel} · {row.serviceName}
+                  {row.doctorName ?? "-"} · {row.patientLabel} · {row.serviceName}
                 </span>
                 {row.status === "failed" && (
                   <Button variant="secondary" icon="refresh" onClick={regenerate}>

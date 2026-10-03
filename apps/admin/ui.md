@@ -69,7 +69,7 @@ The server remains the final authority.
 If an API responds with 403 INSUFFICIENT_PERMISSION, handle it gracefully even if the client-side navigation already hides that action.
 
 ==================================================
-2. FIRST STEP — INSPECT THE EXISTING PROJECT
+2. FIRST STEP - INSPECT THE EXISTING PROJECT
 ==================================================
 
 Before changing anything:
@@ -107,7 +107,7 @@ If something already works, keep it working.
 Only improve the implementation where required.
 
 ==================================================
-3. BRAND DIRECTION — CORACURE
+3. BRAND DIRECTION - CORACURE
 ==================================================
 
 The visual system must feel:
@@ -2460,7 +2460,7 @@ The UI reads from this.
 The backend remains authoritative.
 
 ==================================================
-92. FINAL REQUIREMENT — NOTHING SHOULD BREAK
+92. FINAL REQUIREMENT - NOTHING SHOULD BREAK
 ==================================================
 
 This is the most important instruction.

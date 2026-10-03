@@ -5,7 +5,7 @@
  * *** THE SERVER IS THE AUTHORITY. *** `assertPermission` in the backend
  * (`src/common/auth.ts`) is what actually decides, and `super_admin` passes
  * everything there unconditionally. This table exists so the sidebar can hide
- * what a level cannot use — it is a UX affordance, not a security boundary.
+ * what a level cannot use - it is a UX affordance, not a security boundary.
  * Every screen must still treat `INSUFFICIENT_PERMISSION` as the real answer.
  *
  * Levels come straight from `AdminPermissionLevel` in the backend's
@@ -43,7 +43,7 @@ export type Section = {
   label: string;
   group: 'Overview' | 'People' | 'Care' | 'Money' | 'Content' | 'Support' | 'System';
   /**
-   * Levels that reach this section. `super_admin` is never listed — it passes
+   * Levels that reach this section. `super_admin` is never listed - it passes
    * everything, the same way the backend's `assertPermission` does.
    */
   levels: readonly AdminLevel[];
@@ -122,7 +122,7 @@ export const SECTIONS: readonly Section[] = [
     group: 'Care',
     levels: ['operations', 'care_coordinator', 'clinical_governance'],
     blurb:
-      'BLOCKED by gap A-2 — there is no admin list endpoint, only fetch-by-id. Reach consultations from the queues until it lands.',
+      'BLOCKED by gap A-2 - there is no admin list endpoint, only fetch-by-id. Reach consultations from the queues until it lands.',
     endpoints: [
       'GET /admin/consultations/:consultationId',
       'POST /admin/consultations/:consultationId/override-provider',
@@ -198,7 +198,7 @@ export const SECTIONS: readonly Section[] = [
     group: 'Money',
     levels: ['finance', 'operations'],
     blurb:
-      'Never recompute a total — the bill is frozen at checkout. Payouts are RECORDED, not paid.',
+      'Never recompute a total - the bill is frozen at checkout. Payouts are RECORDED, not paid.',
     endpoints: [
       'GET /admin/payments/payouts/pending',
       'POST /admin/payments/:consultationId/refund   (finance + operations)',
@@ -310,7 +310,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     label: 'General',
     levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
     blurb:
-      'Values the platform reads at runtime, rendered from the response — `editable` and `managedBy` decide the form, not a local list.',
+      'Values the platform reads at runtime, rendered from the response - `editable` and `managedBy` decide the form, not a local list.',
     endpoints: ['GET /admin/config', 'PUT /admin/config/:key'],
     spec: '§10.7'
   },
@@ -333,7 +333,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     label: 'Audit log',
     levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
     blurb:
-      'Rows are filtered to what your level may read — say so. Searching the log is itself audited.',
+      'Rows are filtered to what your level may read - say so. Searching the log is itself audited.',
     endpoints: [
       'GET /admin/compliance/audit',
       'GET /admin/compliance/audit/export',
@@ -347,7 +347,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     label: 'Deletion requests',
     levels: ['operations'],
     blurb:
-      'Operations reviews. super_admin alone executes — a separate queue, never the same screen.',
+      'Operations reviews. super_admin alone executes - a separate queue, never the same screen.',
     endpoints: [
       'GET /admin/deletion-requests',
       'POST /admin/deletion-requests/:id/review',
@@ -361,7 +361,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     label: 'Retention & data rights',
     levels: [],
     blurb:
-      'super_admin only. `retention/apply` is destructive — typed confirmation, and show the window first.',
+      'super_admin only. `retention/apply` is destructive - typed confirmation, and show the window first.',
     endpoints: [
       'GET /admin/compliance/retention',
       'POST /admin/compliance/retention/apply',
@@ -375,7 +375,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     label: 'Admin accounts',
     levels: [],
     blurb:
-      'BLOCKED by gap A-4 — only POST exists. No list, no edit, no 2FA toggle, so a super admin cannot see the other admins.',
+      'BLOCKED by gap A-4 - only POST exists. No list, no edit, no 2FA toggle, so a super admin cannot see the other admins.',
     endpoints: ['POST /auth/admin/accounts'],
     spec: '§3'
   },
@@ -390,7 +390,7 @@ export const canSee = (level: AdminLevel, section: Pick<Section, 'levels'>): boo
 export const sectionsFor = (level: AdminLevel): Section[] =>
   SECTIONS.filter((s) => canSee(level, s));
 
-/** Where a level lands after sign-in — its first visible section. */
+/** Where a level lands after sign-in - its first visible section. */
 export const landingFor = (level: AdminLevel): string =>
   sectionsFor(level)[0]?.path ?? 'no-access';
 

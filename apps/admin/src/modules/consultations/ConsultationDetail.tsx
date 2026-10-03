@@ -66,7 +66,7 @@ export function ConsultationDetail({ level }: { level: AdminLevel }) {
           {c.status === 'pending_payment' && (
             <Notice tone="warning">
               A <strong>pending payment is the slot hold</strong>, and it expires. Refresh before
-              acting — this may already have become <code>expired</code>.
+              acting - this may already have become <code>expired</code>.
             </Notice>
           )}
 
@@ -84,7 +84,7 @@ export function ConsultationDetail({ level }: { level: AdminLevel }) {
           <Modal
             open={summaryId !== null}
             onClose={() => setSummaryId(null)}
-            title={`Case summary — ${c.referenceCode ?? c.id}`}
+            title={`Case summary - ${c.referenceCode ?? c.id}`}
             width={920}
           >
             {summaryId && <CaseSummaryDetail level={level} summaryId={summaryId} embedded />}
@@ -117,7 +117,7 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
               {c.patientId ? (
                 <Link to={`/patients/${c.patientId}`}>{c.patientName ?? 'Open patient'}</Link>
               ) : (
-                (c.patientName ?? '—')
+                (c.patientName ?? '-')
               )}
             </span>
             <span className="keyFact__hint">Open patient details</span>
@@ -128,7 +128,7 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
               {c.doctorId ? (
                 <Link to={`/providers/${c.doctorId}`}>{c.doctorName ?? c.doctorId}</Link>
               ) : (
-                (c.doctorName ?? '—')
+                (c.doctorName ?? '-')
               )}
             </span>
             <span className="keyFact__hint">Open doctor details</span>
@@ -143,14 +143,14 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
                   <span className="keyFact__time">{new Date(c.startsAt).toLocaleTimeString()}</span>
                 </>
               ) : (
-                '—'
+                '-'
               )}
             </span>
           </div>
           <div className="keyFact">
             <span className="keyFact__label">Payment</span>
             <span className="keyFact__value">
-              {c.paymentStatus ? <StatusBadge status={c.paymentStatus} /> : '—'}
+              {c.paymentStatus ? <StatusBadge status={c.paymentStatus} /> : '-'}
             </span>
           </div>
         </div>
@@ -188,7 +188,7 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
   );
 }
 
-/** The stored figures are frozen at checkout — shown as written, never recomputed. */
+/** The stored figures are frozen at checkout - shown as written, never recomputed. */
 function Billing({
   consultationId,
   status,
@@ -243,7 +243,7 @@ function ChatWindow({
   const fetcher = useCallback(() => consultations.chat(consultationId), [consultationId]);
   const state = useResource<ChatMessage[]>(fetcher, [consultationId]);
   return (
-    <Modal open onClose={onClose} title={`Chat — ${doctor} and ${patient}`} width={620}>
+    <Modal open onClose={onClose} title={`Chat - ${doctor} and ${patient}`} width={620}>
       <Notice tone="info">Read-only. Opening a chat is recorded against your admin account.</Notice>
       <Async
         state={state}

@@ -22,7 +22,7 @@ import {
  *
  * Search and both filters live in the URL (§59, §62), so Back restores them,
  * a refresh keeps them, and a filtered view can be pasted to another admin.
- * Every parameter is one the backend actually accepts — `AdminDoctorQueryDto`
+ * Every parameter is one the backend actually accepts - `AdminDoctorQueryDto`
  * takes `verificationStatus`, `isListed` and `search` and nothing else.
  */
 
@@ -73,7 +73,7 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
       render: (d) => (
         <span className="cellStack">
           <strong>{d.fullName}</strong>
-          <small>{d.specialtyName ?? d.qualification ?? '—'}</small>
+          <small>{d.specialtyName ?? d.qualification ?? '-'}</small>
         </span>
       ),
     },
@@ -82,7 +82,7 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
       header: 'Mobile',
       render: (d) => (
         <span className="cellStack">
-          <span>{d.mobileNumber ?? '—'}</span>
+          <span>{d.mobileNumber ?? '-'}</span>
           <small>{d.registrationNumber ? `Reg ${d.registrationNumber}` : 'No reg. number'}</small>
         </span>
       ),
@@ -101,7 +101,7 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
     {
       key: 'seniority',
       header: 'Seniority',
-      render: (d) => (d.seniority ? <StatusBadge status={d.seniority} /> : <span className="muted">—</span>),
+      render: (d) => (d.seniority ? <StatusBadge status={d.seniority} /> : <span className="muted">-</span>),
     },
     {
       key: 'languages',
@@ -171,7 +171,7 @@ export function ProvidersList({ level }: { level: AdminLevel }) {
             description={
               filtered
                 ? 'Try a wider verification status, or clear the search.'
-                : 'Doctors are created here — there is no self sign-up for a doctor.'
+                : 'Doctors are created here - there is no self sign-up for a doctor.'
             }
             action={
               filtered ? (

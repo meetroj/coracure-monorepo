@@ -20,7 +20,7 @@ import {
  * A provider's diary, edited on their behalf (§21).
  *
  * *** THE WEEKLY PUT REPLACES THE WHOLE PATTERN. *** It is not a merge. So the
- * editor loads the current pattern first and always sends it complete — a
+ * editor loads the current pattern first and always sends it complete - a
  * partial send would silently delete the rest of the week. That is the single
  * most dangerous thing on this screen and it is why there is no "save this one
  * day" button.
@@ -56,7 +56,7 @@ const nextRange = (ranges: Range[]): Range => {
   return { from, to: from < '19:00' ? '19:00' : '23:00' };
 };
 
-/** One message per day, naming it — same wording style as the doctor's own app. */
+/** One message per day, naming it - same wording style as the doctor's own app. */
 const checkDay = (row: WeeklyRow): string | null => {
   if (!row.enabled) return null;
   const day = DAYS[row.dayOfWeek];
@@ -173,7 +173,7 @@ function Weekly({
       }
     }
     try {
-      // The COMPLETE pattern, every time — the endpoint replaces, not merges.
+      // The COMPLETE pattern, every time - the endpoint replaces, not merges.
       await save.mutate(
         doctorId,
         enabled.flatMap((r) =>

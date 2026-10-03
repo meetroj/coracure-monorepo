@@ -18,7 +18,7 @@ import {
 } from '../../ui';
 
 /**
- * Assignability — a real screen, not a modal (§22).
+ * Assignability - a real screen, not a modal (§22).
  *
  * It answers the question an admin is always actually asking when a patient
  * says nobody was available: who is assignable for this service, language,
@@ -51,7 +51,7 @@ export function Availability({ level }: { level: AdminLevel }) {
   const regionsFetcher = useCallback(() => catalogue.regions(), []);
   const regions = useResource<Region[]>(regionsFetcher, []);
 
-  // The lookup only runs once there is something to look up — an unfiltered
+  // The lookup only runs once there is something to look up - an unfiltered
   // "who is free, ever" is not a question this endpoint answers.
   const ready = Boolean(at);
   const fetcher = useCallback(
@@ -78,7 +78,7 @@ export function Availability({ level }: { level: AdminLevel }) {
       header: 'Unbroken time left',
       render: (p) =>
         p.remainingMinutes === null || p.remainingMinutes === undefined ? (
-          <span className="muted">—</span>
+          <span className="muted">-</span>
         ) : (
           `${p.remainingMinutes} min`
         ),

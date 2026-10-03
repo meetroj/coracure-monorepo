@@ -5,7 +5,7 @@ import { ownerOf } from '../mock/patients';
 export type { ListedConsultation };
 
 /**
- * The consultation list (§23) — UI-only, like the rest of `api/admin.ts`.
+ * The consultation list (§23) - UI-only, like the rest of `api/admin.ts`.
  *
  * Same async / `db.delay` / copy style. A wired-up version would be one
  * `request('/admin/consultations', { query })` call with these same arguments.
@@ -46,7 +46,7 @@ const all = (): ListedConsultation[] =>
   [
     ...db.consultations.map((c) => ({
       ...c,
-      ...(baseExtras[c.id] ?? { patientName: '—', channel: 'video' as const, paymentStatus: 'paid' as const }),
+      ...(baseExtras[c.id] ?? { patientName: '-', channel: 'video' as const, paymentStatus: 'paid' as const }),
     })),
     ...extraConsultations,
   ].map(withPatient);

@@ -12,7 +12,7 @@ export type { Audience, Channel, Recipient, SendStatus, SentNotification };
 export { deepLinks } from '../mock/manualNotifications';
 
 /**
- * Manually sent notifications — UI-only, served from `mock/manualNotifications`.
+ * Manually sent notifications - UI-only, served from `mock/manualNotifications`.
  * Same async + `db.delay` + copy style as `api/admin.ts`.
  */
 

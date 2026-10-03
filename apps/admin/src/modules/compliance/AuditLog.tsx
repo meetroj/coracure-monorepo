@@ -105,7 +105,7 @@ export function AuditLog({ level }: { level: AdminLevel }) {
       width: '190px',
       render: (e) => {
         const at = e.at ?? e.createdAt;
-        return at ? new Date(at).toLocaleString() : '—';
+        return at ? new Date(at).toLocaleString() : '-';
       },
     },
     {
@@ -113,7 +113,7 @@ export function AuditLog({ level }: { level: AdminLevel }) {
       header: 'Actor',
       render: (e) => (
         <span className="cellStack">
-          <span>{e.actorType ? humanise(e.actorType) : '—'}</span>
+          <span>{e.actorType ? humanise(e.actorType) : '-'}</span>
           {e.actorId && <small>{e.actorId.slice(0, 8)}…</small>}
         </span>
       ),
@@ -121,14 +121,14 @@ export function AuditLog({ level }: { level: AdminLevel }) {
     {
       key: 'action',
       header: 'Action',
-      render: (e) => (e.action ? <StatusBadge status={e.action} tone="neutral" /> : '—'),
+      render: (e) => (e.action ? <StatusBadge status={e.action} tone="neutral" /> : '-'),
     },
     {
       key: 'entity',
       header: 'Entity',
       render: (e) => (
         <span className="cellStack">
-          <span>{e.entityType ? humanise(e.entityType) : '—'}</span>
+          <span>{e.entityType ? humanise(e.entityType) : '-'}</span>
           {e.entityId && <small>{e.entityId.slice(0, 12)}…</small>}
         </span>
       ),
