@@ -1,0 +1,12 @@
+**/node_modules
+dist
+.nx
+.git
+.env
+**/.env
+apps/backend
+apps/doctor
+apps/patient
+**/android
+**/ios
+**/*.log
