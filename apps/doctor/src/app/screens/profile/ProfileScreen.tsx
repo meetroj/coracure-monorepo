@@ -12,6 +12,9 @@ import { selectDoctor, selectLiveStatus } from '../../../state/selectors';
 import { signOut } from '../../../state/actions';
 import { STATUS_LABEL, inr } from '../../../data/doctor';
 import { supportContact } from '../../../data/support';
+import { useAvailability } from '../../../data/availability';
+import { useVerification } from '../../../data/verification';
+import { useSpecialtyName } from '../../../data/profile';
 import { TabHeader } from '../../navigation/TabHeader';
 import { openContact } from '../HelpSupportScreen';
 import type { ProfileDestination } from './ProfileRouter';
@@ -44,7 +47,14 @@ export const ProfileScreen = ({ onOpen }: { onOpen: (key: ProfileDestination) =>
   const duration = useStore((s) => s.availability.durationMin);
   const schedule = useStore((s) => s.availability.schedule);
   const pendingChanges = useStore((s) => s.profile.changeRequests.length);
-  const account = useStore((s) => (s.verification.status === 'notSubmitted' ? 'pending' : s.verification.status));
+  // The week is the server's; until it loads the subtitle says nothing rather
+  // than describing a schedule nobody has read.
+  const diary = useAvailability();
+  // The same server read Account Status shows; the store only until it answers.
+  const verification = useVerification();
+  const stored = useStore((s) => (s.verification.status === 'notSubmitted' ? 'pending' : s.verification.status));
+  const account = verification.status ?? stored;
+  const speciality = useSpecialtyName() ?? doctor.speciality;
 
   const logout = () =>
     confirm({
@@ -68,7 +78,7 @@ export const ProfileScreen = ({ onOpen }: { onOpen: (key: ProfileDestination) =>
               <Text style={s.name}>{doctor.name}</Text>
               {doctor.registrationVerified && <Icon name="checkCircle" size={17} color={colors.paris} filled />}
             </View>
-            <Text style={s.spec}>{doctor.speciality}</Text>
+            <Text style={s.spec}>{speciality}</Text>
             <Text style={s.qual}>
               {doctor.qualification} · {doctor.yearsExperience} years experience
             </Text>
@@ -108,7 +118,7 @@ export const ProfileScreen = ({ onOpen }: { onOpen: (key: ProfileDestination) =>
       <Card style={s.listCard}>
         <ListRow compact testID="row-fee" icon="tag" title="Consultation fee" subtitle={inr(fee)} onPress={() => onOpen('fee')} />
         <ListRow compact testID="row-duration" icon="clock" title="Consultation duration" subtitle={`${duration} minutes`} onPress={() => onOpen('duration')} />
-        <ListRow compact testID="row-availability" icon="calendar" title="Availability" subtitle={workingDays(schedule)} onPress={() => onOpen('availability')} last />
+        <ListRow compact testID="row-availability" icon="calendar" title="Availability" subtitle={diary.data ? workingDays(schedule) : undefined} onPress={() => onOpen('availability')} last />
       </Card>
 
       <Text style={s.section}>Account</Text>

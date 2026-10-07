@@ -5,6 +5,7 @@ import App from '../app/App';
 import { resetStore, type AppState } from '../state/store';
 import { DEMO_MOBILE } from '../state/actions';
 import { appointments as fixtureAppointments } from '../data/doctor';
+import { demoFixtures } from './fixtures';
 
 /**
  * Spec helpers for driving the whole app.
@@ -23,6 +24,7 @@ export const signedIn = (over: Partial<AppState> = {}) =>
     // The store no longer ships with sample patients — a signed-in spec seeds
     // them here, which is the one place fixtures belong.
     appointments: fixtureAppointments,
+    ...demoFixtures(),
     ...over,
   });
 

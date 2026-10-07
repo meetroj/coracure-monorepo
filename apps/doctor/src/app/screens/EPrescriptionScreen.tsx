@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
@@ -11,6 +13,7 @@ import { PatientStrip, Section, NoteInput, Notice } from '../../components/clini
 import { ActionSheet } from '../../components/BottomSheet';
 import { confirm } from '../../components/confirm';
 import { toast } from '../../components/Toast';
+import { SaveAsTemplate } from '../../components/SaveAsTemplate';
 import { MedicineSheet } from './MedicineSheet';
 import { useStore } from '../../state/store';
 import { selectDoctor, selectRecord } from '../../state/selectors';
@@ -25,6 +28,7 @@ import {
   updateMedicine,
 } from '../../state/actions';
 import { detailFor, type Appointment } from '../../data/doctor';
+import { saveWriteUp, useClinicalRecordSync } from '../../data/clinicalRecord';
 import {
   ADVICE_ITEM_MAX,
   canPrescribe,
@@ -232,9 +236,12 @@ export const EPrescriptionScreen = ({
   const d = detailFor(a);
   const doctor = useStore(selectDoctor);
   const professionalType = typeProp ?? doctor.professionalType;
+  useClinicalRecordSync(a.id);
   const record = useStore((st) => selectRecord(st, a.id));
   const prescriber = canPrescribe(professionalType);
   const locked = record.rxStatus === 'finalised';
+  // Only the case-summary submit finalises the server record; that is when the PDF exists.
+  const issued = record.summaryStatus === 'submitted';
 
   const [sheet, setSheet] = useState<{ open: boolean; editing?: Medicine }>({ open: false });
   const [menuFor, setMenuFor] = useState<Medicine | null>(null);
@@ -246,6 +253,27 @@ export const EPrescriptionScreen = ({
   const medicines = prescriber ? record.medicines : [];
   const hasContent = medicines.length > 0 || record.advice.length > 0;
   const docLabel = outputLabel(professionalType);
+  const [saving, setSaving] = useState(false);
+
+  /** PUT the whole record. The backend's one lock comes later, at the case summary. */
+  const persist = async (): Promise<boolean> => {
+    setSaving(true);
+    try {
+      await saveWriteUp(a.id, prescriber);
+      return true;
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!(await persist())) return;
+    saveRxDraft(a.id);
+    toast.show('Draft saved');
+  };
 
   const finalise = () => {
     if (!hasContent) {
@@ -254,9 +282,12 @@ export const EPrescriptionScreen = ({
     }
     confirm({
       title: `Finalise ${docLabel.toLowerCase()}?`,
-      message: `${medicines.length ? `${medicines.length} medicine${medicines.length > 1 ? 's' : ''}, ` : ''}${record.advice.length} advice item${record.advice.length === 1 ? '' : 's'}. Once finalised it is locked and shared with ${a.name} as a PDF.`,
+      message: `${medicines.length ? `${medicines.length} medicine${medicines.length > 1 ? 's' : ''}, ` : ''}${record.advice.length} advice item${record.advice.length === 1 ? '' : 's'}. Once the case summary is submitted it is locked and shared with ${a.name} as a PDF.`,
       confirmLabel: 'Finalise',
-      onConfirm: () => {
+      onConfirm: async () => {
+        // Saved, not locked: finalising the backend record here would close it
+        // before a case summary exists, and the summary would then be refused.
+        if (!(await persist())) return;
         finaliseRx(a.id);
         toast.show(`${docLabel} finalised`);
         onFinalised();
@@ -289,18 +320,16 @@ export const EPrescriptionScreen = ({
         <ScreenHeader
           onBack={onBack}
           inline
-          title={prescriber ? 'E-Prescription' : 'Therapy Plan'}
+          title={docLabel}
           subtitle={savedLine}
           right={
             locked ? undefined : (
               <HeaderTextAction
                 testID="save-draft"
-                label="Save Draft"
+                label={saving ? 'Saving…' : 'Save Draft'}
                 icon="document"
-                onPress={() => {
-                  saveRxDraft(a.id);
-                  toast.show('Draft saved');
-                }}
+                onPress={saveDraft}
+                disabled={saving}
               />
             )
           }
@@ -315,13 +344,14 @@ export const EPrescriptionScreen = ({
             accessibilityRole="button"
           >
             <Icon name="lock" size={16} color={colors.surfie} />
-            <Text style={s.lockedCtaText}>Finalised · View patient PDF</Text>
+            <Text style={s.lockedCtaText}>{issued ? 'Issued · View patient PDF' : 'Finalised · Preview'}</Text>
           </Pressable>
         ) : (
           <Pressable
             testID="finalise"
             onPress={finalise}
-            style={({ pressed }) => [s.cta, !hasContent && s.ctaOff, pressed && s.pressed]}
+            disabled={saving}
+            style={({ pressed }) => [s.cta, (!hasContent || saving) && s.ctaOff, pressed && s.pressed]}
             accessibilityRole="button"
             accessibilityHint={hasContent ? undefined : 'Add a medicine or advice item first'}
             onLayout={(e) => {
@@ -361,42 +391,62 @@ export const EPrescriptionScreen = ({
 
       {locked && (
         <Notice icon="lock" testID="rx-locked">
-          Finalised {record.rxFinalisedAt}. This version is locked; the patient has the PDF.
+          {issued
+            ? 'Issued with the case summary. This version is locked; the patient has the PDF.'
+            : `${docLabel} ready${record.rxFinalisedAt ? ` (${record.rxFinalisedAt})` : ''} — it is issued to the patient when you submit the case summary.`}
         </Notice>
       )}
 
-      <Section
-        testID="section-complaint"
-        icon="message"
-        title="Presenting Complaint"
-        open={open('complaint')}
-        onToggle={() => toggle('complaint')}
-      >
-        <Text style={s.readText}>{record.notes.complaint || 'Not written yet.'}</Text>
-        <Pressable testID="edit-in-notes" onPress={onOpenNotes} hitSlop={8} style={s.inlineLink} accessibilityRole="button">
-          <Text style={s.inlineLinkText}>From clinical notes · Edit</Text>
-          <Icon name="chevronRight" size={13} color={colors.surfie} />
-        </Pressable>
-      </Section>
+      {prescriber && (
+        <>
+          <Section
+            testID="section-complaint"
+            icon="message"
+            title="Chief Complaint"
+            open={open('complaint')}
+            onToggle={() => toggle('complaint')}
+          >
+            <Text style={s.readText}>{record.notes.complaint || 'Not written yet.'}</Text>
+            <Pressable testID="edit-in-notes" onPress={onOpenNotes} hitSlop={8} style={s.inlineLink} accessibilityRole="button">
+              <Text style={s.inlineLinkText}>From clinical notes · Edit</Text>
+              <Icon name="chevronRight" size={13} color={colors.surfie} />
+            </Pressable>
+          </Section>
 
-      <Section
-        testID="section-history-allergies"
-        icon="folder"
-        title="Diagnosis History & Allergies"
-        open={open('history')}
-        onToggle={() => toggle('history')}
-      >
-        <NoteInput
-          testID="history-allergies"
-          value={record.allergies}
-          onChangeText={(v) => setAllergies(a.id, v)}
-          placeholder="Past diagnoses, ongoing conditions and known allergies…"
-          max={HISTORY_MAX}
-          minHeight={64}
-          editable={!locked}
-          accessibilityLabel="Diagnosis history and allergies"
-        />
-      </Section>
+          <Section
+            testID="section-diagnosis"
+            icon="document"
+            title="Provisional Diagnosis"
+            open={open('diagnosis')}
+            onToggle={() => toggle('diagnosis')}
+          >
+            <Text style={s.readText}>{record.notes.diagnosis || 'Not written yet.'}</Text>
+            <Pressable testID="edit-in-notes-diagnosis" onPress={onOpenNotes} hitSlop={8} style={s.inlineLink} accessibilityRole="button">
+              <Text style={s.inlineLinkText}>From clinical notes · Edit</Text>
+              <Icon name="chevronRight" size={13} color={colors.surfie} />
+            </Pressable>
+          </Section>
+
+          <Section
+            testID="section-history-allergies"
+            icon="folder"
+            title="History of Allergies"
+            open={open('history')}
+            onToggle={() => toggle('history')}
+          >
+            <NoteInput
+              testID="history-allergies"
+              value={record.allergies}
+              onChangeText={(v) => setAllergies(a.id, v)}
+              placeholder="Known allergies and reactions…"
+              max={HISTORY_MAX}
+              minHeight={64}
+              editable={!locked}
+              accessibilityLabel="History of allergies"
+            />
+          </Section>
+        </>
+      )}
 
       {!locked && (
         <>
@@ -411,6 +461,7 @@ export const EPrescriptionScreen = ({
             <Text style={s.rowBtnText}>Load from Template</Text>
             <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </Pressable>
+          <SaveAsTemplate appointmentId={a.id} />
           <Pressable
             testID="recommend-resources"
             onPress={onRecommendResources}
@@ -463,14 +514,14 @@ export const EPrescriptionScreen = ({
       ) : (
         <Notice testID="no-prescribe" icon="lock">
           Your professional type is {PROFESSIONAL_LABEL[professionalType]}, which does not include prescribing.
-          Complete the advice and therapy plan below — it becomes the patient document for this consultation.
+          Complete the care plan below — it becomes the patient document for this consultation.
         </Notice>
       )}
 
       <Section
         testID="section-advice"
         icon="heart"
-        title="Advice & Lifestyle Instructions"
+        title={prescriber ? 'Advice & Instructions' : 'Recommendations / Interventions'}
         open={open('advice')}
         onToggle={() => toggle('advice')}
       >
@@ -478,7 +529,7 @@ export const EPrescriptionScreen = ({
           testID="advice"
           items={record.advice}
           onChange={(next) => setAdvice(a.id, next)}
-          addPlaceholder="Add advice for the patient"
+          addPlaceholder={prescriber ? 'Add advice for the patient' : 'Add a recommendation or intervention'}
           locked={locked}
         />
       </Section>
@@ -486,7 +537,7 @@ export const EPrescriptionScreen = ({
       <Section
         testID="section-warnings"
         icon="alertTriangle"
-        title="Don'ts"
+        title={prescriber ? 'Warning Signs' : 'Precautions & Warning Signs'}
         open={open('warnings')}
         onToggle={() => toggle('warnings')}
       >

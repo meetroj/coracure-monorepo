@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Linking } from 'react-native';
+import { messageFor } from '@coracure/api/errors';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
@@ -9,7 +10,7 @@ import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
 import { FilePickerSheet, type PickedFile } from '../../components/upload';
 import { toast } from '../../components/Toast';
 import { useStore, type ThreadLive } from '../../state/store';
-import { sendMessage } from '../../state/actions';
+import { chatAttachmentUrl, isServerThread, sendFileToThread, sendToThread, useChatThread } from '../../data/chat';
 import { MESSAGE_MAX } from '../../data/messaging';
 import { patientDocs } from '../../data/documents';
 
@@ -24,35 +25,60 @@ const docForFile = (thread: ThreadLive, file: string) =>
  * clarification case, and an expert thread says it is internal so the doctor
  * is never unsure whether the patient can see it. Sent messages are kept on
  * the thread, and the view opens at the latest one.
+ *
+ * A real conversation is the server's (`data/chat`): loaded on open, polled
+ * while `active`, and a message is on the thread once the server has it.
  */
 export const ChatThreadScreen = ({
   thread,
+  active = true,
   onBack,
   onOpenDoc,
   onOpenContext,
 }: {
   thread: ThreadLive;
+  /** False while another screen covers this one: nothing is fetched, and nothing is marked read unseen. */
+  active?: boolean;
   onBack: () => void;
   onOpenDoc: (docId: string) => void;
-  /** The consultation or clarification the thread belongs to. */
-  onOpenContext: () => void;
+  /** The consultation or clarification the thread belongs to. Absent when none of them is loaded. */
+  onOpenContext?: () => void;
 }) => {
   const live = useStore((st) => st.threads.find((t) => t.id === thread.id)) ?? thread;
+  const server = isServerThread(live.id);
+  const chat = useChatThread(live.id, active);
   const [draft, setDraft] = useState('');
   const [picking, setPicking] = useState(false);
   const scroll = useRef<ScrollView>(null);
+  /** Follow new messages to the bottom — but not the earlier page the doctor just asked for. */
+  const follow = useRef(true);
 
   const send = () => {
     const body = draft.trim();
     if (!body) return;
-    sendMessage(live.id, body);
     setDraft('');
+    sendToThread(live.id, body).catch((e) => {
+      // back in the box rather than lost, unless the doctor has started another
+      setDraft((d) => d || body);
+      toast.show(messageFor(e, 'That message could not be sent. Please try again.'), 'error');
+    });
   };
 
   const attach = (f: PickedFile) => {
     setPicking(false);
-    sendMessage(live.id, '', f.name);
-    toast.show(`${f.name} sent`);
+    sendFileToThread(live.id, f)
+      .then(() => toast.show(`${f.name} sent`))
+      .catch((e) => toast.show(messageFor(e, `${f.name} could not be sent. Please try again.`), 'error'));
+  };
+
+  const openAttachment = (messageId: string) =>
+    chatAttachmentUrl(live.id, messageId)
+      .then((url) => Linking.openURL(url))
+      .catch((e) => toast.show(messageFor(e, 'Could not open this file.'), 'error'));
+
+  const loadEarlier = () => {
+    follow.current = false;
+    chat.loadEarlier().catch((e) => toast.show(messageFor(e, 'Could not load earlier messages.'), 'error'));
   };
 
   return (
@@ -68,12 +94,14 @@ export const ChatThreadScreen = ({
           title={live.name}
           subtitle={live.context}
           right={
-            <HeaderAction
-              testID="thread-context"
-              icon={live.kind === 'expert' ? 'message' : 'user'}
-              label={live.kind === 'expert' ? 'Open clarification' : `Open ${live.name}'s appointment`}
-              onPress={onOpenContext}
-            />
+            onOpenContext ? (
+              <HeaderAction
+                testID="thread-context"
+                icon={live.kind === 'expert' ? 'message' : 'user'}
+                label={live.kind === 'expert' ? 'Open clarification' : `Open ${live.name}'s appointment`}
+                onPress={onOpenContext}
+              />
+            ) : undefined
           }
         />
       }
@@ -127,23 +155,39 @@ export const ChatThreadScreen = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         // open at the latest message, and follow new ones
-        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+        onContentSizeChange={() => {
+          if (follow.current) scroll.current?.scrollToEnd({ animated: false });
+          follow.current = true;
+        }}
       >
+        {chat.hasEarlier && (
+          <Pressable testID="load-earlier" onPress={loadEarlier} style={s.earlier} accessibilityRole="button">
+            <Text style={s.earlierText}>Load earlier messages</Text>
+          </Pressable>
+        )}
         {live.messages.length === 0 && (
-          <Text style={s.empty}>No messages yet. Messages here stay with {live.context}.</Text>
+          <Text testID="thread-empty" style={s.empty}>
+            {chat.loading
+              ? 'Loading messages…'
+              : chat.error
+                ? messageFor(chat.error, 'Could not load this conversation.')
+                : `No messages yet. Messages here stay with ${live.context || live.name}.`}
+          </Text>
         )}
         {live.messages.map((m) => {
           const mine = m.from === 'me';
-          const doc = m.file ? docForFile(live, m.file) : undefined;
+          const doc = m.file && !server ? docForFile(live, m.file) : undefined;
+          // a real attachment has no document row to open — it is fetched through a link minted on the tap
+          const open = doc ? () => onOpenDoc(doc.id) : server ? () => void openAttachment(m.id) : undefined;
           return (
             <View key={m.id} testID={`message-${m.id}`} style={[s.bubbleRow, mine && s.bubbleRowMine]}>
               <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
                 {!!m.body && <Text style={[s.body, mine && s.bodyMine]}>{m.body}</Text>}
                 {!!m.file &&
-                  (doc ? (
+                  (open ? (
                     <Pressable
                       testID={`file-${m.id}`}
-                      onPress={() => onOpenDoc(doc.id)}
+                      onPress={open}
                       style={[s.fileRow, mine && s.fileRowMine]}
                       accessibilityRole="button"
                       accessibilityLabel={`Open ${m.file}`}
@@ -187,6 +231,8 @@ const s = StyleSheet.create({
   internalText: { ...typeStyles.caption, color: colors.inkMuted },
   scroll: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
   empty: { ...typeStyles.bodySmall, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.xl },
+  earlier: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md },
+  earlierText: { ...typeStyles.caption, color: colors.surfie, fontWeight: fontWeight.semibold },
   bubbleRow: { flexDirection: 'row' },
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 },

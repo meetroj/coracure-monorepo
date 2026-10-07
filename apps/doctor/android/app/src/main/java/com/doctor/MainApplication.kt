@@ -12,6 +12,8 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
+import com.livekit.reactnative.LiveKitReactNative
+import com.livekit.reactnative.audio.AudioType
 
 class MainApplication : Application(), ReactApplication {
 
@@ -36,6 +38,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // LiveKit asks for this ahead of any other React Native initialisation.
+    LiveKitReactNative.setup(this, AudioType.CommunicationAudioType())
     ReactFontManager.getInstance().addCustomFont(this, "Outfit", R.font.outfit)
     ReactFontManager.getInstance().addCustomFont(this, "Inter", R.font.inter)
     SoLoader.init(this, OpenSourceMergedSoMapping)

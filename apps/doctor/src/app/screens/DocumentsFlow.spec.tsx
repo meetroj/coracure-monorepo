@@ -1,6 +1,7 @@
 import React from 'react';
+import { doctorFilesApi } from '@coracure/api';
 import { confirm } from '../../components/confirm';
-import { render, fireEvent, screen } from '@testing-library/react-native';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import PatientDocumentsScreen from './PatientDocumentsScreen';
 import DocumentViewerScreen from './DocumentViewerScreen';
@@ -8,7 +9,7 @@ import RequestReportScreen from './RequestReportScreen';
 import { getState } from '../../state/store';
 import { selectAppointment } from '../../state/selectors';
 import { addReportRequest } from '../../state/actions';
-import { docById } from '../../data/documents';
+import { docById, patientDocs } from '../../data/documents';
 
 const docs = (patientId: string, appointmentId?: string, over: Record<string, jest.Mock> = {}) => {
   const props = {
@@ -95,7 +96,7 @@ test('an open request can be withdrawn after confirming', () => {
 
 test('the viewer describes the file and is honest that there is no preview', () => {
   const onOpenAllDocuments = jest.fn();
-  render(<DocumentViewerScreen doc={docById('d6')!} consultationLabel="CON-10459 · 15 May 2026" onBack={jest.fn()} onOpenAllDocuments={onOpenAllDocuments} />);
+  render(<DocumentViewerScreen doc={docById(patientDocs, 'd6')!} consultationLabel="CON-10459 · 15 May 2026" onBack={jest.fn()} onOpenAllDocuments={onOpenAllDocuments} />);
   expect(screen.getByText('Anita Patel · PT-10459')).toBeTruthy();
   expect(screen.getByText('CON-10459 · 15 May 2026')).toBeTruthy();
   expect(screen.getByText('Document preview is not available in this demo build.')).toBeTruthy();
@@ -110,7 +111,17 @@ const request = (id = 'a2') => {
   return { props, ...render(<RequestReportScreen {...props} />) };
 };
 
-test('a request is raised for the consultation it was opened from', () => {
+test('a request is raised for the consultation it was opened from', async () => {
+  jest.spyOn(doctorFilesApi, 'raiseReportRequest').mockResolvedValue({
+    id: 'rr-1',
+    consultationId: 'a2',
+    title: 'Thyroid profile',
+    category: 'lab',
+    reason: 'To check thyroid function before adjusting the dose.',
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    fulfilledBy: [],
+  });
   const { props } = request('a2');
   expect(screen.getByText('Anita Patel')).toBeTruthy();
   expect(screen.getAllByText('CON-10459').length).toBeGreaterThan(0);
@@ -124,8 +135,13 @@ test('a request is raised for the consultation it was opened from', () => {
   fireEvent.changeText(screen.getByTestId('reason'), 'To check thyroid function before adjusting the dose.');
   fireEvent.press(screen.getByTestId('send'));
 
-  const r = getState().reportRequests[0];
-  expect(r).toEqual(expect.objectContaining({ patientId: 'PT-10459', appointmentId: 'a2', consultationId: 'CON-10459', docType: 'lab', status: 'open' }));
+  // `appointment.id` ('a2') is the real consultation id sent to the backend —
+  // 'CON-10459' is only the reference code shown on screen.
+  await waitFor(() =>
+    expect(doctorFilesApi.raiseReportRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ consultationId: 'a2', title: 'Thyroid profile', category: 'lab' })
+    )
+  );
   expect(props.onDone).toHaveBeenCalled();
 });
 

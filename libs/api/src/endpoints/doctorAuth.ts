@@ -3,13 +3,11 @@ import { api, clearSession, hydrateSession, onSignedOut, setSession } from '../h
 /**
  * Doctor sign-in (API_CONTRACT §7.1).
  *
- * *** THERE IS NO DOCTOR SIGN-UP, AND THERE MUST NEVER BE ONE HERE. *** An
- * administrator creates the account (`POST /v1/admin/doctors`), so a number
- * nobody has enrolled is REFUSED rather than texted a code. The backend answers
- * an unknown number and a wrong code with the SAME `INVALID_CREDENTIALS`, on
- * purpose: a different code for "no such doctor" would let anyone test whether
- * a given clinician is on the platform. The app must not try to tell them
- * apart either, which is why nothing in this module branches on it.
+ * *** SIGN-IN AND SIGN-UP ARE THE SAME CALL. *** Any number gets a code, and
+ * the first verified code for a new number CREATES the account (`pending`,
+ * no name yet). What follows is onboarding and KYC, then an admin approves or
+ * rejects it. `isNewAccount` says which happened, but the app does not need
+ * it to route: `verificationStatus` decides.
  *
  * Both calls are `auth: false`: there is no session yet, and sending a stale
  * bearer would make the request 401 before it reached the handler.
@@ -27,13 +25,15 @@ export type OtpChallenge = { challengeId: string };
 
 export type DoctorSignIn = {
   /**
-   * *** WHAT THE APP ROUTES ON. *** Anything but `verified` lands on the
-   * credential screen, not the dashboard. `rejected` and `suspended` never
-   * reach here — the backend refuses those at sign-in with
-   * `ACCOUNT_NOT_ACTIVE` — so in practice this is pending, under_review or
-   * verified.
+   * *** WHAT THE APP ROUTES ON. *** `pending` opens onboarding; anything
+   * submitted opens the shell on Account Status; only `verified` reaches the
+   * dashboard. `rejected` DOES reach here: that doctor signs in to read the
+   * admin's reason and resubmit. `suspended` is refused at sign-in with
+   * `ACCOUNT_NOT_ACTIVE`.
    */
   verificationStatus: DoctorVerificationStatus;
+  /** True when this verification created the account. */
+  isNewAccount: boolean;
 };
 
 export type VerifyInput = {
@@ -47,10 +47,10 @@ export type VerifyInput = {
 };
 
 /**
- * Sends a code to a number an admin has already enrolled.
+ * Sends a code to any number — a new one is how sign-up starts.
  *
- * `TOO_MANY_ATTEMPTS` is counted per number, not per device, so a second phone
- * cannot get around it — and the wait is in the message rather than in
+ * `TOO_MANY_ATTEMPTS` is counted per number AND per client address, so neither
+ * a second phone nor a different number gets around it — and the wait is in the message rather than in
  * `details`, which is why callers render `messageFor(e)` here instead of
  * building their own "try again in N minutes".
  */
@@ -74,6 +74,7 @@ export const verifyOtp = async (input: VerifyInput): Promise<DoctorSignIn> => {
     refreshToken: string;
     expiresIn: number;
     verificationStatus: DoctorVerificationStatus;
+    isNewAccount: boolean;
   }>(
     '/auth/doctor/otp/verify',
     {
@@ -89,7 +90,7 @@ export const verifyOtp = async (input: VerifyInput): Promise<DoctorSignIn> => {
   // `setSession` lives in the module that owns the refresh, so the persisted
   // pair and the in-memory one can never disagree.
   await setSession(body);
-  return { verificationStatus: body.verificationStatus };
+  return { verificationStatus: body.verificationStatus, isNewAccount: body.isNewAccount };
 };
 
 /**

@@ -1,9 +1,12 @@
+import { useContext, useEffect } from 'react';
+import { NavigationContext } from '@react-navigation/native';
 import { doctorProfileApi } from '@coracure/api';
 import type { CredentialSummary, DoctorDocumentType, VerificationProgress } from '@coracure/api';
 
 import type { VerificationItem } from './doctor';
 import { useResource } from './useResource';
-import { OTHER_ID, maskId, type RegistrationDraft } from './registration';
+import { OTHER_ID, maskId, type RegistrationDraft, type StepKey } from './registration';
+import { latestByType, useRegistrationDraft } from './session';
 
 /**
  * What the verification team is actually looking at.
@@ -20,36 +23,53 @@ import { OTHER_ID, maskId, type RegistrationDraft } from './registration';
  * `GET /me/doctor/credentials`.
  */
 
-/** Which document type stands behind each section of the form. */
-const SECTION_DOCUMENT: Record<string, DoctorDocumentType> = {
-  basic: 'profile_photo',
-  identity: 'identity_proof',
-  qualifications: 'degree_certificate',
-  experience: 'experience_letter',
+/**
+ * Which document types stand behind each section of the form. The keys are
+ * the onboarding step keys, so a flagged row opens the step that fixes it.
+ */
+const SECTION_DOCUMENTS: Record<StepKey, DoctorDocumentType[]> = {
+  basic: ['profile_photo'],
+  identity: ['identity_proof'],
+  qualifications: ['degree_certificate', 'registration_certificate'],
+  experience: ['experience_letter'],
+  signature: ['signature'],
 };
 
-const stateOf = (
-  docs: CredentialSummary[],
-  type: DoctorDocumentType,
-): { state: VerificationItem['state']; issueLabel?: string } => {
-  const forType = docs.filter((d) => d.documentType === type);
-  if (!forType.length) return { state: 'underReview' };
+/** Named in the label when it is not the section's main document. */
+const SECONDARY_LABEL: Partial<Record<DoctorDocumentType, string>> = {
+  registration_certificate: 'Registration certificate',
+};
 
-  // A rejection wins over anything else in the same section: it is the one
-  // thing the doctor has to act on, and burying it under an approved sibling
-  // is how a resubmission goes out still missing the fix.
-  const rejected = forType.find((d) => d.reviewStatus === 'rejected');
-  if (rejected) {
-    return {
-      state: 'issue',
-      // The admin's own words. Never a canned sentence — an invented reason
-      // sends a doctor to correct something nobody objected to.
-      issueLabel: rejected.rejectionReason ?? 'Needs correction',
-    };
+type RowState = { state: VerificationItem['state']; issueLabel?: string };
+
+/** One type's state, or null when it is neither required nor on file. */
+const stateOf = (progress: VerificationProgress, latest: CredentialSummary | undefined, type: DoctorDocumentType): RowState | null => {
+  // "Not yet uploaded" only when nothing of the type exists. `outstanding` is
+  // "not yet APPROVED", so it also lists files sitting in the review queue.
+  if (!latest) return progress.outstanding?.includes(type) ? { state: 'issue', issueLabel: 'Not yet uploaded' } : null;
+  if (latest.reviewStatus === 'rejected') {
+    // The admin's own words. Never a canned sentence — an invented reason
+    // sends a doctor to correct something nobody objected to.
+    const reason = latest.rejectionReason ?? 'Needs correction';
+    return { state: 'issue', issueLabel: SECONDARY_LABEL[type] ? `${SECONDARY_LABEL[type]}: ${reason}` : reason };
   }
+  return { state: latest.reviewStatus === 'approved' ? 'verified' : 'underReview' };
+};
 
-  if (forType.every((d) => d.reviewStatus === 'approved')) return { state: 'verified' };
-  return { state: 'underReview' };
+/**
+ * A section's state from its types. An issue wins over anything else: it is
+ * the one thing the doctor has to act on, and burying it under an approved
+ * sibling is how a resubmission goes out still missing the fix.
+ */
+const sectionState = (progress: VerificationProgress, latest: Map<DoctorDocumentType, CredentialSummary>, section: StepKey): RowState | null => {
+  const states = SECTION_DOCUMENTS[section]
+    .map((type) => stateOf(progress, latest.get(type), type))
+    .filter((x): x is RowState => x !== null);
+  if (!states.length) return null;
+  return (
+    states.find((x) => x.state === 'issue') ??
+    (states.every((x) => x.state === 'verified') ? { state: 'verified' } : { state: 'underReview' })
+  );
 };
 
 /**
@@ -64,7 +84,7 @@ export const itemsFromProgress = (
   progress: VerificationProgress,
   draft?: RegistrationDraft,
 ): VerificationItem[] => {
-  const docs = progress.documents ?? [];
+  const latest = latestByType(progress.documents ?? []);
 
   const identity = draft?.identity;
   const idName = identity
@@ -73,7 +93,7 @@ export const itemsFromProgress = (
       : identity.idType || 'Government ID'
     : 'Government ID';
 
-  const rows: (VerificationItem & { section: keyof typeof SECTION_DOCUMENT })[] = [
+  const rows: (VerificationItem & { section: StepKey })[] = [
     {
       key: 'basic',
       section: 'basic',
@@ -99,7 +119,7 @@ export const itemsFromProgress = (
       section: 'qualifications',
       icon: 'document',
       title: 'Qualifications',
-      body: draft?.qualifications.map((q) => q.degree).join(', ') || 'Your degree certificates',
+      body: draft?.qualifications.basicQualification || 'Your degree certificates',
       state: 'underReview',
     },
     {
@@ -112,15 +132,22 @@ export const itemsFromProgress = (
         : 'Your employment proof',
       state: 'underReview',
     },
+    {
+      key: 'signature',
+      section: 'signature',
+      icon: 'document',
+      title: 'Digital signature',
+      body: 'Placed on the prescriptions you issue',
+      state: 'underReview',
+    },
   ];
 
-  const items: VerificationItem[] = rows.map(({ section, ...row }) => {
-    const type = SECTION_DOCUMENT[section]!;
-    const outstanding = progress.outstanding?.includes(type);
-    if (outstanding) {
-      return { ...row, state: 'issue', issueLabel: 'Not yet uploaded' };
-    }
-    return { ...row, ...stateOf(docs, type) };
+  const items: VerificationItem[] = rows.flatMap(({ section, ...row }) => {
+    const state = sectionState(progress, latest, section);
+    // The four core sections always show; the optional signature only once
+    // it is on file or the specialty requires it.
+    if (!state) return section === 'signature' ? [] : [row];
+    return [{ ...row, ...state }];
   });
 
   /**
@@ -151,7 +178,10 @@ export const screenStatus = (
   if (progress.status === 'rejected') return 'rejected';
   // A document an admin rejected puts the whole submission back on the doctor,
   // even while the ACCOUNT is still `under_review`: there is something to fix.
-  if ((progress.documents ?? []).some((d) => d.reviewStatus === 'rejected')) return 'rejected';
+  // Only the LATEST row of a type counts — a rejection a newer upload replaced
+  // is history. (`progress.rejected` does not fit: it still lists a type whose
+  // replacement is waiting in the queue.)
+  if ([...latestByType(progress.documents ?? []).values()].some((d) => d.reviewStatus === 'rejected')) return 'rejected';
   return 'pending';
 };
 
@@ -170,12 +200,29 @@ export const fetchVerification = (): Promise<VerificationProgress> =>
  * yet. `status` is null until the server answers, so a caller falls back to
  * what the store remembers rather than to an invented value.
  */
-export const useVerification = (draft?: RegistrationDraft) => {
+export const useVerification = () => {
   const resource = useResource(KEYS.credentials, fetchVerification);
+  // The rows are described with the doctor's own registration — the real
+  // one, read from the server when this session has not submitted one.
+  const registration = useRegistrationDraft(resource.data?.documents);
+  // An admin decides while the app is open: re-read whenever the screen comes
+  // back into view, so an approval shows without a restart. The context, not
+  // `useFocusEffect`, because a screen rendered outside a navigator (a spec)
+  // has none.
+  const navigation = useContext(NavigationContext);
+  const { refresh } = resource;
+  useEffect(() => navigation?.addListener('focus', refresh), [navigation, refresh]);
   return {
     ...resource,
-    items: itemsFromProgress(resource.data ?? EMPTY_PROGRESS, draft),
+    showSkeleton: resource.showSkeleton || registration.showSkeleton,
+    /** Undefined until the registration has loaded. Never a fixture. */
+    draft: registration.draft,
+    registrationError: registration.error,
+    retryRegistration: registration.retry,
+    items: itemsFromProgress(resource.data ?? EMPTY_PROGRESS, registration.draft),
     status: resource.data ? screenStatus(resource.data) : null,
+    /** The admin's own words when the whole application was turned down; null otherwise. */
+    rejectionReason: resource.data?.rejectionReason ?? null,
   };
 };
 
@@ -183,6 +230,7 @@ export const useVerification = (draft?: RegistrationDraft) => {
 const EMPTY_PROGRESS = {
   doctorId: '',
   status: 'under_review',
+  rejectionReason: null,
   required: [],
   approved: [],
   outstanding: [],

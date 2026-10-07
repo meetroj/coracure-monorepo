@@ -84,7 +84,7 @@ test('a rejection outranks an approved document in the same section', () => {
   const items = itemsFromProgress(
     progress({
       documents: [
-        doc({ id: 'a', documentType: 'degree_certificate', reviewStatus: 'approved' }),
+        doc({ id: 'a', documentType: 'registration_certificate', reviewStatus: 'approved' }),
         doc({
           id: 'b',
           documentType: 'degree_certificate',
@@ -104,6 +104,38 @@ test('a rejection outranks an approved document in the same section', () => {
   });
 });
 
+test('a rejection a newer upload replaced is history, not an issue', () => {
+  const p = progress({
+    // The backend lists newest first and keeps the refused row.
+    documents: [
+      doc({ id: 'new', documentType: 'degree_certificate', reviewStatus: 'pending', uploadedAt: '2026-05-16T00:00:00.000Z' }),
+      doc({ id: 'old', documentType: 'degree_certificate', reviewStatus: 'rejected', rejectionReason: 'Blurred.' }),
+    ],
+    rejected: ['degree_certificate'],
+    outstanding: ['degree_certificate'],
+  });
+
+  expect(byKey(itemsFromProgress(p, draft), 'qualifications').state).toBe('underReview');
+  // ...and it no longer holds the whole account at "changes required".
+  expect(screenStatus(p)).toBe('pending');
+});
+
+test('a registration certificate or signature the admin rejected surfaces as an issue', () => {
+  const items = itemsFromProgress(
+    progress({
+      documents: [
+        doc({ id: 'r', documentType: 'registration_certificate', reviewStatus: 'rejected', rejectionReason: 'Expired.' }),
+        doc({ id: 's', documentType: 'signature', reviewStatus: 'rejected', rejectionReason: 'Not legible.' }),
+      ],
+    }),
+    draft,
+  );
+
+  expect(byKey(items, 'qualifications')).toMatchObject({ state: 'issue', issueLabel: 'Registration certificate: Expired.' });
+  // `signature` is the step key, so Resubmit opens the step that fixes it.
+  expect(byKey(items, 'signature')).toMatchObject({ state: 'issue', issueLabel: 'Not legible.' });
+});
+
 /* -------------------------------- the states ------------------------------ */
 
 test('a section is verified only when every document in it is approved', () => {
@@ -111,13 +143,24 @@ test('a section is verified only when every document in it is approved', () => {
     progress({
       documents: [
         doc({ id: 'a', documentType: 'degree_certificate', reviewStatus: 'approved' }),
-        doc({ id: 'b', documentType: 'degree_certificate', reviewStatus: 'pending' }),
+        doc({ id: 'b', documentType: 'registration_certificate', reviewStatus: 'pending' }),
       ],
     }),
     draft,
   );
 
   expect(byKey(items, 'qualifications').state).toBe('underReview');
+});
+
+test('a required document waiting in the queue reads as under review, not as missing', () => {
+  // `outstanding` is "not yet approved", which includes a file just uploaded.
+  const items = itemsFromProgress(
+    progress({ outstanding: ['identity_proof'], documents: [doc({ reviewStatus: 'pending' })] }),
+    draft,
+  );
+
+  expect(byKey(items, 'identity')).toMatchObject({ state: 'underReview' });
+  expect(byKey(items, 'identity').issueLabel).toBeUndefined();
 });
 
 test('a document the server still wants reads as not uploaded, not as under review', () => {

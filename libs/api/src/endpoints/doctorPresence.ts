@@ -47,7 +47,10 @@ export type InstantOffer = {
   patientGender: string;
   specialtyName: string;
   concernName: string | null;
+  /** The first of the patient's languages. */
   preferredLanguage: string;
+  /** Every language the patient consults in, in their order. Never empty. */
+  languages: string[];
   paymentStatus: 'unpaid' | 'paid' | 'not_applicable';
   doctorId: string;
   /** Which attempt this is. Rising means the request is being re-routed. */

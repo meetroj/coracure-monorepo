@@ -3,6 +3,8 @@ import {
   CommonActions,
   StackActions,
   usePreventRemove,
+  useFocusEffect,
+  useIsFocused,
   useNavigation,
   type CompositeNavigationProp,
   type NavigationAction,
@@ -10,15 +12,16 @@ import {
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
-import { NotFound } from '../../components/NotFound';
+import { NotFound, RouteLoading } from '../../components/NotFound';
 import { confirm, confirmDiscard } from '../../components/confirm';
 import { toast } from '../../components/Toast';
-import { useStore, getState } from '../../state/store';
+import { useStore, getState, setState, type ThreadLive } from '../../state/store';
 import {
   selectAppointment,
   selectAppointments,
-  selectAlert,
+  selectAppointmentByConsultation,
   selectCaseByAppointment,
+  selectLiveStatus,
   selectRecord,
 } from '../../state/selectors';
 import {
@@ -27,23 +30,46 @@ import {
   assignPlan,
   endCall,
   leaveCall,
-  markAlertRead,
-  markNotificationRead,
   markThreadRead,
-  recordOutcome,
-  closeClarification,
   resubmitVerification,
-  reviewAlert,
-  saveClarification,
   setInstant,
   setLiveStatus,
   setRecommendations,
   startCall,
   threadForAppointment,
 } from '../../state/actions';
-import { patientById } from '../../data/patients';
+import type { InstantOffer, SafetyAlert } from '@coracure/api';
+import { ApiError, messageFor } from '@coracure/api/errors';
+
 import { docById } from '../../data/documents';
-import { demoRegistration, type StepKey } from '../../data/registration';
+import { usePatientFiles, usePatientIdentity } from '../../data/patientFiles';
+import { UUID } from '../../data/clinicalRecord';
+import { useConsultation } from '../../data/consultationDetail';
+import { useSafetyAlert, useSafetyAlerts } from '../../data/safetyAlerts';
+import { toAppointment, useDoctorDay } from '../../data/appointments';
+import { useCareHubItems } from '../../data/followup';
+import { isServerThread, refreshChatThreads } from '../../data/chat';
+import {
+  identifierProblem,
+  isServerId,
+  recordDecision,
+  saveCase,
+  useAuthorClarification,
+  useAuthorClarifications,
+  useExpertReviews,
+  useIsExpert,
+} from '../../data/clarifications';
+import {
+  OFFER_POLL_MS,
+  acceptOffer,
+  declineOffer,
+  fetchOffers,
+  isActionable,
+  setStatus,
+  toInstantRequest,
+  useInstantOfferPoll,
+} from '../../data/presence';
+import type { StepKey } from '../../data/registration';
 import type { AppNotification } from '../../data/messaging';
 import type { ClinicalTask } from '../../state/selectors';
 
@@ -73,6 +99,8 @@ import ClarificationsScreen from '../screens/ClarificationsScreen';
 import CreateClarificationScreen from '../screens/CreateClarificationScreen';
 import ExpertClarificationScreen from '../screens/ExpertClarificationScreen';
 import ExpertResponseScreen from '../screens/ExpertResponseScreen';
+import ExpertInboxScreen from '../screens/ExpertInboxScreen';
+import ExpertCaseReviewScreen from '../screens/ExpertCaseReviewScreen';
 import InstantRequestScreen from '../screens/InstantRequestScreen';
 import InstantAcceptedScreen from '../screens/InstantAcceptedScreen';
 import InstantDeclinedScreen from '../screens/InstantDeclinedScreen';
@@ -176,6 +204,12 @@ const openConsultation = (nav: Dispatcher, appointmentId: string) => {
   else go(nav, 'AppointmentDetails', { appointmentId });
 };
 
+/** A draft reopens in the editor — it has no thread yet, and the backend will not close one. */
+const openClarification = (nav: Dispatcher, clarificationId: string) =>
+  getState().clarifications.find((c) => c.id === clarificationId)?.status === 'draft'
+    ? go(nav, 'CreateClarification', { clarificationId })
+    : go(nav, 'Clarification', { clarificationId });
+
 const backToDashboard = (nav: RootNav) => {
   nav.popToTop();
   nav.navigate('Tabs', { screen: 'DashboardTab', params: { screen: 'Dashboard' } });
@@ -185,6 +219,11 @@ const backToDashboard = (nav: RootNav) => {
 
 export const DashboardRoute = () => {
   const nav = useNavigation<DashNav>();
+  // No push for offers yet: while this screen is in front and the doctor is
+  // Available Now, ask every few seconds and open the first new one.
+  const focused = useIsFocused();
+  const available = useStore((s) => selectLiveStatus(s) === 'available');
+  useInstantOfferPoll(focused && available, () => nav.navigate('InstantRequest'));
   return (
     <DashboardScreen
       onOpenTasks={() => nav.navigate('PendingTasks')}
@@ -202,6 +241,7 @@ export const DashboardRoute = () => {
 
 export const PendingTasksRoute = () => {
   const nav = useNavigation<DashNav>();
+  useDoctorDay();
   const open = (t: ClinicalTask) => {
     const appointmentId = t.appointmentId;
     if (t.category === 'summary') nav.navigate('CaseSummary', { appointmentId });
@@ -236,16 +276,33 @@ export const AppointmentsRoute = () => {
 
 export const CasesRoute = () => {
   const nav = useNavigation<TabNav>();
+  // which write-ups the server still has open — the case list reads it
+  useDoctorDay();
   return <CasesScreen onOpenCase={(appointmentId) => nav.navigate('CaseDetail', { appointmentId })} />;
 };
 
 export const ClarificationsRoute = () => {
   const nav = useNavigation<TabNav>();
+  // the author's real cases replace the list once they load; a failure says so and offers a retry
+  const cases = useAuthorClarifications();
+  // Back on the tab: an expert may have written since, so ask again. Not on the first focus — it has just loaded.
+  const seen = useRef(false);
+  const { refresh } = cases;
+  useFocusEffect(
+    useCallback(() => {
+      if (seen.current) refresh();
+      seen.current = true;
+    }, [refresh])
+  );
+  // only experts are ever assigned cases, so only they get the way in
+  const isExpert = useIsExpert();
   return (
     <ClarificationsScreen
-      onOpen={(c) =>
-        c.status === 'draft' ? nav.navigate('CreateClarification', { clarificationId: c.id }) : nav.navigate('Clarification', { clarificationId: c.id })
-      }
+      error={cases.error}
+      loading={cases.showSkeleton}
+      onRetry={cases.retry}
+      onOpenExpertInbox={isExpert ? () => nav.navigate('ExpertInbox') : undefined}
+      onOpen={(c) => openClarification(nav, c.id)}
       onNewQuery={() => nav.navigate('CreateClarification')}
     />
   );
@@ -294,7 +351,7 @@ export const AppointmentDetailsRoute = ({ route, navigation: nav }: Props<'Appoi
       onBack={nav.goBack}
       onJoin={(id) => joinCall(nav, id)}
       onMessage={() => openThread(nav, a.id)}
-      onOpenDoc={(docId) => nav.navigate('DocumentViewer', { docId })}
+      onOpenDoc={(docId) => nav.navigate('DocumentViewer', { docId, patientId: a.patientId })}
       onViewAllDocs={() => nav.navigate('PatientDocuments', { patientId: a.patientId, appointmentId: a.id })}
       onRequestDoc={() => nav.navigate('RequestReport', { appointmentId: a.id })}
       onOpenCase={(id) => openConsultation(nav, id)}
@@ -349,9 +406,9 @@ export const ConsultationRoomRoute = ({ route, navigation: nav }: Props<'Consult
           nav.goBack();
         })
       }
-      onEnd={() =>
+      onEnd={(log) =>
         go(() => {
-          endCall(a.id);
+          endCall(a.id, log.durationSeconds);
           toast.show('Consultation ended — complete the notes');
           nav.replace('ClinicalNotes', { appointmentId: a.id });
         })
@@ -379,7 +436,7 @@ export const ClinicalNotesRoute = ({ route, navigation: nav }: Props<'ClinicalNo
       onViewProfile={() => nav.navigate('AppointmentDetails', { appointmentId: a.id })}
       onReferForClarification={() => {
         const existing = selectRecord(getState(), a.id).clarificationId;
-        if (existing) nav.navigate('Clarification', { clarificationId: existing });
+        if (existing) openClarification(nav, existing);
         else nav.navigate('CreateClarification', { appointmentId: a.id });
       }}
       onOpenCaseSummary={() => openOrReturn(nav, 'CaseSummary', { appointmentId: a.id })}
@@ -446,10 +503,15 @@ export const CaseSummaryRoute = ({ route, navigation: nav }: Props<'CaseSummary'
 export const CareHubRoute = ({ route, navigation: nav }: Props<'CareHub'>) => {
   const a = useStore((s) => selectAppointment(s, route.params?.appointmentId));
   const rec = useStore((s) => (a ? selectRecord(s, a.id).recommendations : undefined));
+  // picks travel only inside the write-up PUT, which a finalised record refuses
+  const finalised = useStore((s) => (a ? selectRecord(s, a.id).summaryStatus === 'submitted' : false));
   const { setDirty, leave } = useLeaveGuard();
+  const library = useCareHubItems();
   if (!a || !rec) return <NotFound onBack={nav.goBack} what="consultation" />;
   return (
     <CareHubScreen
+      readOnly={finalised}
+      library={library}
       onBack={nav.goBack}
       onDirtyChange={setDirty}
       patientName={a.name}
@@ -473,9 +535,18 @@ export const AssignPlanRoute = ({ route, navigation: nav }: Props<'AssignPlan'>)
       appointment={a}
       initialPlan={plan}
       onBack={nav.goBack}
-      onAssign={(p) => {
-        assignPlan(a.id, p);
+      onAssign={(result) => {
+        assignPlan(a.id, {
+          pathway: result.pathway?.name ?? '',
+          duration: result.durationDays ?? 0,
+          start: result.startsOn ?? '',
+        });
         toast.show(plan ? 'Follow-up plan updated' : 'Follow-up plan assigned');
+        nav.goBack();
+      }}
+      onCancelled={() => {
+        assignPlan(a.id, undefined);
+        toast.show('Follow-up plan stopped');
         nav.goBack();
       }}
       onViewConsultation={() => openConsultation(nav, a.id)}
@@ -496,13 +567,12 @@ export const CaseDetailRoute = ({ route, navigation: nav }: Props<'CaseDetail'>)
       onOpenNotes={() => nav.navigate('ClinicalNotes', { appointmentId: a.id })}
       onOpenPrescription={() => nav.navigate('Prescription', { appointmentId: a.id })}
       onOpenSummary={() => nav.navigate('CaseSummary', { appointmentId: a.id })}
-      onOpenAlert={(alertId) => nav.navigate('AlertDetail', { alertId })}
-      onAssignPlan={() => nav.navigate('AssignPlan', { appointmentId: a.id })}
-      onOpenClarification={(clarificationId) => nav.navigate('Clarification', { clarificationId })}
+      onOpenClarification={(clarificationId) => openClarification(nav, clarificationId)}
       onNewClarification={() => nav.navigate('CreateClarification', { appointmentId: a.id })}
       onOpenRecommended={() => nav.navigate('CareHub', { appointmentId: a.id })}
       onOpenDocuments={() => nav.navigate('PatientDocuments', { patientId: a.patientId, appointmentId: a.id })}
       onOpenAppointment={() => nav.navigate('AppointmentDetails', { appointmentId: a.id })}
+      onAssignPlan={() => nav.navigate('AssignPlan', { appointmentId: a.id })}
     />
   );
 };
@@ -511,29 +581,49 @@ export const CaseDetailRoute = ({ route, navigation: nav }: Props<'CaseDetail'>)
 
 export const AlertDetailRoute = ({ route, navigation: nav }: Props<'AlertDetail'>) => {
   const id = route.params?.alertId;
-  const alert = useStore((s) => selectAlert(s, id));
-  useEffect(() => {
-    if (id && alert && !alert.live.read) markAlertRead(id);
-  }, [id, alert]);
+  // The list is open alerts only; a closed one (from a notification, or just
+  // closed here) is only reachable by id. The list row shows first when cached.
+  const list = useSafetyAlerts();
+  const one = useSafetyAlert(id);
+  const alert = one.data ?? list.data?.find((a) => a.id === id);
+  const pending = !!id && ((!one.data && !one.error) || (!list.data && !list.error));
+  if (!alert && pending) return <RouteLoading onBack={nav.goBack} />;
   if (!alert) return <NotFound onBack={nav.goBack} what="alert" />;
-  return <AlertDetailForm alert={alert} nav={nav} />;
+  const refresh = () => {
+    one.refresh();
+    list.retry();
+  };
+  return <AlertDetailForm alert={alert} refresh={refresh} nav={nav} />;
 };
 
-/** The review form, guarded so a half-written review is not dropped on Back. */
-const AlertDetailForm = ({ alert, nav }: { alert: NonNullable<ReturnType<typeof selectAlert>>; nav: Props<'AlertDetail'>['navigation'] }) => {
+/** The review form, guarded so a half-written closing note is not dropped on Back. */
+const AlertDetailForm = ({
+  alert,
+  refresh,
+  nav,
+}: {
+  alert: SafetyAlert;
+  refresh: () => void;
+  nav: Props<'AlertDetail'>['navigation'];
+}) => {
   const { setDirty, leave } = useLeaveGuard();
+  const appt = useStore((s) => selectAppointmentByConsultation(s, alert.consultationId));
   return (
     <PatientFollowUpDetailScreen
       alert={alert}
       onBack={nav.goBack}
       onDirtyChange={setDirty}
-      onReview={(action, note) => {
-        reviewAlert(alert.id, action, note);
-        toast.show('Alert reviewed');
+      onAcknowledged={() => {
+        toast.show('Alert acknowledged');
+        refresh();
+      }}
+      onClosed={() => {
+        toast.show('Alert closed');
+        refresh();
         leave(nav.goBack);
       }}
-      onMessage={() => openThread(nav, alert.appointmentId)}
-      onOpenConsultation={() => openConsultation(nav, alert.appointmentId)}
+      onMessage={appt ? () => openThread(nav, appt.id) : undefined}
+      onOpenConsultation={appt ? () => openConsultation(nav, appt.id) : undefined}
     />
   );
 };
@@ -553,24 +643,42 @@ export const PatientDocumentsRoute = ({ route, navigation: nav }: Props<'Patient
       .filter((x) => x.patientId === patientId && x.state !== 'cancelled')
       .sort((x, y) => y.dayOffset - x.dayOffset || y.minutes - x.minutes)[0]
   );
-  if (!patientById(patientId)) return <NotFound onBack={nav.goBack} what="patient" />;
+  // the demo fixture, a loaded appointment, or the server's patient card — NotFound only when none of them knows the patient
+  const { patient, loading } = usePatientIdentity(patientId);
+  if (!patient) return loading ? <RouteLoading onBack={nav.goBack} /> : <NotFound onBack={nav.goBack} what="patient" />;
   const viewId = appointmentId ?? latest?.id;
   return (
     <PatientDocumentsScreen
       patientId={patientId}
       appointmentId={appointmentId}
       onBack={nav.goBack}
-      onOpenDoc={(docId) => nav.navigate('DocumentViewer', { docId })}
+      onOpenDoc={(docId) => nav.navigate('DocumentViewer', { docId, patientId })}
       onViewPatient={() => (viewId ? openOrReturn(nav, 'AppointmentDetails', { appointmentId: viewId }) : nav.goBack())}
       onRequestReport={appointmentId ? () => nav.navigate('RequestReport', { appointmentId }) : undefined}
     />
   );
 };
 
+/**
+ * A real backend file never lives in `state.documents` — that array is this
+ * session's own local, doctor-added documents. It lives in whatever list
+ * fetched it, keyed by patient, so a direct open (not via the list) has to
+ * ask for that same list itself: `usePatientFiles` shares its cache key with
+ * `PatientDocumentsScreen`, so this is instant whenever the list already ran.
+ * A real (UUID) file opened without its patient cannot be found that way, and
+ * says so — it never falls back to a demo fixture.
+ */
 export const DocumentViewerRoute = ({ route, navigation: nav }: Props<'DocumentViewer'>) => {
-  const doc = docById(route.params?.docId);
+  const { docId, patientId } = route.params ?? { docId: undefined, patientId: undefined };
+  const real = !!docId && UUID.test(docId);
+  const localDoc = useStore((s) => (real ? undefined : docById(s.documents, docId)));
+  const files = usePatientFiles(real ? patientId : undefined);
+  const doc = localDoc ?? files.data?.find((f) => f.id === docId);
   const a = useStore((s) => selectAppointment(s, doc?.appointmentId));
-  if (!doc) return <NotFound onBack={nav.goBack} what="document" />;
+  if (!doc) {
+    const loading = real && !!patientId && !files.data && !files.error;
+    return loading ? <RouteLoading onBack={nav.goBack} /> : <NotFound onBack={nav.goBack} what="document" />;
+  }
   return (
     <DocumentViewerScreen
       doc={doc}
@@ -590,38 +698,62 @@ export const DocumentViewerRoute = ({ route, navigation: nav }: Props<'DocumentV
 
 export const NotificationsRoute = ({ navigation: nav }: Props<'Notifications'>) => {
   const open = (n: AppNotification) => {
-    markNotificationRead(n.id);
+    // The screen has already marked it read (`markOneRead`), row and badge both.
     const t = n.target;
-    if (t.route === 'document') nav.navigate('DocumentViewer', { docId: t.docId });
+    if (t.route === 'document') nav.navigate('DocumentViewer', { docId: t.docId, patientId: t.patientId });
     else if (t.route === 'expertResponse') nav.navigate('ExpertResponse', { clarificationId: t.clarificationId });
+    else if (t.route === 'clarification') openClarification(nav, t.clarificationId);
+    else if (t.route === 'expertReview') nav.navigate('ExpertReview', { caseId: t.caseId });
     else if (t.route === 'alertDetail') nav.navigate('AlertDetail', { alertId: t.alertId });
     else if (t.route === 'instantRequest') nav.navigate('InstantRequest');
     else if (t.route === 'apptDetails') nav.navigate('AppointmentDetails', { appointmentId: t.appointmentId });
-    else nav.navigate('Earnings');
+    else if (t.route === 'earnings') nav.navigate('Earnings');
+    else if (t.route === 'chat') nav.navigate('ChatThread', { threadId: t.patientId });
+    // `{ route: 'none' }`: an unrecognised real notification — marking it read is all there is to do.
   };
   return <NotificationsScreen onBack={nav.goBack} onOpen={open} />;
 };
 
-export const ChatListRoute = ({ navigation: nav }: Props<'ChatList'>) => (
-  <ChatListScreen onBack={nav.goBack} onOpenThread={(threadId) => nav.navigate('ChatThread', { threadId })} />
-);
+export const ChatListRoute = ({ navigation: nav }: Props<'ChatList'>) => {
+  // the tabs poll this list, but opening Messages should not wait for the next tick
+  useEffect(() => {
+    refreshChatThreads().catch(() => undefined);
+  }, []);
+  return <ChatListScreen onBack={nav.goBack} onOpenThread={(threadId) => nav.navigate('ChatThread', { threadId })} />;
+};
 
 export const ChatThreadRoute = ({ route, navigation: nav }: Props<'ChatThread'>) => {
   const id = route.params?.threadId;
   const thread = useStore((s) => s.threads.find((t) => t.id === id));
+  // A real conversation opened cold — from a notification, before the list has
+  // loaded — is not in the store yet: ask for the list once before giving up.
+  const [asked, setAsked] = useState(false);
+  const missing = !thread && isServerThread(id);
+  useEffect(() => {
+    if (missing) refreshChatThreads().catch(() => undefined).finally(() => setAsked(true));
+  }, [missing]);
   useEffect(() => {
     if (id && thread && thread.unread > 0) markThreadRead(id);
   }, [id, thread]);
-  if (!thread) return <NotFound onBack={nav.goBack} what="conversation" />;
+  if (!thread) return missing && !asked ? <RouteLoading onBack={nav.goBack} /> : <NotFound onBack={nav.goBack} what="conversation" />;
+  return <ChatThreadOpen thread={thread} nav={nav} />;
+};
+
+/** The thread itself, which reads and polls only while it is the screen in front. */
+const ChatThreadOpen = ({ thread, nav }: { thread: ThreadLive; nav: Props<'ChatThread'>['navigation'] }) => {
+  const focused = useIsFocused();
+  const context = thread.clarificationId
+    ? () => openClarification(nav, thread.clarificationId!)
+    : thread.appointmentId
+      ? () => nav.navigate('AppointmentDetails', { appointmentId: thread.appointmentId! })
+      : undefined;
   return (
     <ChatThreadScreen
       thread={thread}
+      active={focused}
       onBack={nav.goBack}
-      onOpenDoc={(docId) => nav.navigate('DocumentViewer', { docId })}
-      onOpenContext={() => {
-        if (thread.clarificationId) nav.navigate('Clarification', { clarificationId: thread.clarificationId });
-        else if (thread.appointmentId) nav.navigate('AppointmentDetails', { appointmentId: thread.appointmentId });
-      }}
+      onOpenDoc={(docId) => nav.navigate('DocumentViewer', { docId, patientId: thread.patientId })}
+      onOpenContext={context}
     />
   );
 };
@@ -634,23 +766,42 @@ export const CreateClarificationRoute = ({ route, navigation: nav }: Props<'Crea
   const appointmentId = route.params?.appointmentId;
   const knownAppointment = useStore((s) => (appointmentId ? selectAppointment(s, appointmentId) : undefined));
   const { setDirty, leave } = useLeaveGuard();
+  const [busy, setBusy] = useState(false);
+  // The case's id once the server has it. A post that fails after the create
+  // succeeded is retried against this one, not created a second time.
+  const savedId = useRef(existingId);
   if ((existingId && !existing) || (appointmentId && !knownAppointment)) return <NotFound onBack={nav.goBack} what="clarification" />;
+
+  /** Server first; the screen leaves only once the case really exists there. */
+  const save = async (draft: Parameters<typeof saveCase>[0], post: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const id = await saveCase(draft, post, savedId.current, (saved) => (savedId.current = saved));
+      if (post) {
+        toast.show('Posted — an administrator will assign a reviewer');
+        leave(() => nav.replace('Clarification', { clarificationId: id }));
+      } else {
+        toast.show('Draft saved', 'info');
+        leave(nav.goBack);
+      }
+    } catch (e) {
+      // an identifier the server found is said in words, with the fields it is in
+      toast.show(identifierProblem(e) ?? messageFor(e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <CreateClarificationScreen
       initialAppointmentId={appointmentId}
       existing={existing}
       onCancel={nav.goBack}
       onDirtyChange={setDirty}
-      onSubmit={(draft) => {
-        const id = saveClarification(draft, true, existing?.id);
-        toast.show('Sent to the expert panel');
-        leave(() => nav.replace('Clarification', { clarificationId: id }));
-      }}
-      onSaveDraft={(draft) => {
-        saveClarification(draft, false, existing?.id);
-        toast.show('Draft saved', 'info');
-        leave(nav.goBack);
-      }}
+      busy={busy}
+      onSubmit={(draft) => save(draft, true)}
+      onSaveDraft={(draft) => save(draft, false)}
     />
   );
 };
@@ -658,6 +809,9 @@ export const CreateClarificationRoute = ({ route, navigation: nav }: Props<'Crea
 export const ClarificationRoute = ({ route, navigation: nav }: Props<'Clarification'>) => {
   const id = route.params?.clarificationId;
   const c = useStore((s) => s.clarifications.find((x) => x.id === id));
+  // the case itself, read fresh — opened cold from a notification it may not be in the store at all
+  const one = useAuthorClarification(id ?? '');
+  if (!c && isServerId(id ?? '') && !one.error) return <RouteLoading onBack={nav.goBack} />;
   if (!c) return <NotFound onBack={nav.goBack} what="clarification" />;
   return <ExpertClarificationScreen clarification={c} onBack={nav.goBack} onRecordDecision={() => nav.navigate('ExpertResponse', { clarificationId: c.id })} />;
 };
@@ -665,44 +819,130 @@ export const ClarificationRoute = ({ route, navigation: nav }: Props<'Clarificat
 export const ExpertResponseRoute = ({ route, navigation: nav }: Props<'ExpertResponse'>) => {
   const id = route.params?.clarificationId;
   const c = useStore((s) => s.clarifications.find((x) => x.id === id));
+  const one = useAuthorClarification(id ?? '');
   const { setDirty, leave } = useLeaveGuard();
+  const [busy, setBusy] = useState(false);
+  if (!c && isServerId(id ?? '') && !one.error) return <RouteLoading onBack={nav.goBack} />;
   if (!c) return <NotFound onBack={nav.goBack} what="clarification" />;
   return (
     <ExpertResponseScreen
       clarification={c}
       onBack={nav.goBack}
       onDirtyChange={setDirty}
-      onDecide={(outcome, note, close) => {
-        recordOutcome(c.id, outcome, note);
-        if (close) closeClarification(c.id);
-        toast.show(close ? 'Decision recorded and clarification closed' : 'Decision recorded');
-        leave(nav.goBack);
+      busy={busy}
+      onDecide={async (outcome, note, close) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          // There is no decision field: the case is marked reviewed, then the decision is posted on the thread.
+          await recordDecision(c, outcome, note, close);
+          toast.show(close ? 'Decision recorded and clarification closed' : 'Decision recorded');
+          leave(nav.goBack);
+        } catch (e) {
+          toast.show(identifierProblem(e) ?? messageFor(e), 'error');
+        } finally {
+          setBusy(false);
+        }
       }}
     />
   );
 };
 
+export const ExpertInboxRoute = ({ navigation: nav }: Props<'ExpertInbox'>) => {
+  const reviews = useExpertReviews();
+  // Coming back from answering a case: its status changed, so ask again.
+  // Not on the first focus — the resource has just loaded on mount.
+  const seen = useRef(false);
+  const { refresh } = reviews;
+  useFocusEffect(
+    useCallback(() => {
+      if (seen.current) refresh();
+      seen.current = true;
+    }, [refresh])
+  );
+  return <ExpertInboxScreen reviews={reviews} onBack={nav.goBack} onOpen={(caseId) => nav.navigate('ExpertReview', { caseId })} />;
+};
+
+export const ExpertReviewRoute = ({ route, navigation: nav }: Props<'ExpertReview'>) => (
+  <ExpertCaseReviewScreen caseId={route.params.caseId} onBack={nav.goBack} />
+);
+
 /* ---------------------------------- instant ------------------------------- */
 
+/**
+ * The notification that opens this route carries no offer id (M-08 is not
+ * wired yet), so the screen asks the backend what is actually waiting rather
+ * than trusting what a stale local flag or a push payload might claim. Whoever
+ * is first and still actionable (`isActionable`) is the one shown.
+ */
 export const InstantRequestRoute = ({ navigation: nav }: Props<'InstantRequest'>) => {
-  const pending = useStore((s) => s.instant === 'pending');
-  const [answered, setAnswered] = useState(false);
-  if (!pending && !answered) return <NotFound onBack={nav.goBack} what="request" />;
+  const [offer, setOffer] = useState<InstantOffer | null | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    fetchOffers()
+      .then((offers) => {
+        if (!alive) return;
+        const next = offers.find((o) => isActionable(o)) ?? null;
+        // a new offer starts unanswered, whatever happened to the last one
+        if (next) setInstant('pending');
+        setOffer(next);
+      })
+      .catch(() => alive && setOffer(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (offer === undefined) return null;
+  // the server's list is the truth, not a flag left over from the last request
+  if (!offer) return <NotFound onBack={nav.goBack} what="request" />;
+
+  /**
+   * `OFFER_CLOSED` / `OFFER_NOT_FOUND` mean the window already moved it to
+   * someone else between render and the tap — not a server error the doctor
+   * can fix by pressing again. Every other failure leaves the screen
+   * unanswered so a flaky connection can be retried.
+   */
+  const offerGone = (e: unknown) => ApiError.is(e) && (e.code === 'OFFER_CLOSED' || e.code === 'OFFER_NOT_FOUND');
+  const handle = async <T,>(action: () => Promise<T>, onOk: (result: T) => void) => {
+    try {
+      const result = await action();
+      onOk(result);
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+      if (offerGone(e)) {
+        setInstant('expired');
+        nav.replace('InstantDeclined', { expired: true });
+        return;
+      }
+      throw e;
+    }
+  };
+
   return (
     <InstantRequestScreen
+      request={toInstantRequest(offer)}
       onBack={nav.goBack}
-      onAccept={() => {
-        setAnswered(true);
-        setInstant('accepted');
-        nav.replace('InstantAccepted');
-      }}
-      onDecline={() => {
-        setAnswered(true);
-        setInstant('declined');
-        nav.replace('InstantDeclined');
-      }}
+      onAccept={() =>
+        handle(
+          () => acceptOffer(offer.consultationId),
+          () => {
+            setInstant('accepted');
+            nav.replace('InstantAccepted', { consultationId: offer.consultationId, request: toInstantRequest(offer) });
+          }
+        )
+      }
+      onDecline={() =>
+        handle(
+          () => declineOffer(offer.consultationId),
+          ({ rerouted }) => {
+            setInstant('declined');
+            nav.replace('InstantDeclined', { rerouted });
+          }
+        )
+      }
       onExpire={() => {
-        setAnswered(true);
         setInstant('expired');
         nav.replace('InstantDeclined', { expired: true });
       }}
@@ -710,36 +950,78 @@ export const InstantRequestRoute = ({ navigation: nav }: Props<'InstantRequest'>
   );
 };
 
-export const InstantAcceptedRoute = ({ navigation: nav }: Props<'InstantAccepted'>) => (
-  <InstantAcceptedScreen onBack={nav.goBack} onReturn={() => backToDashboard(nav)} />
-);
+export const InstantAcceptedRoute = ({ route, navigation: nav }: Props<'InstantAccepted'>) => {
+  const { data, error, retry, refresh } = useConsultation(route.params?.consultationId);
+  // No push for payment or consent yet: ask again until the patient has done both.
+  const cleared = data?.paymentStatus === 'paid' && !!data.doctorContext?.hasCurrentTeleconsultationConsent;
+  useEffect(() => {
+    if (cleared) return;
+    const timer = setInterval(refresh, OFFER_POLL_MS);
+    return () => clearInterval(timer);
+  }, [cleared, refresh]);
+  if (!route.params) return <NotFound onBack={nav.goBack} what="request" />;
+  return (
+    <InstantAcceptedScreen
+      request={route.params.request}
+      consultation={data}
+      loadError={error ? messageFor(error) : undefined}
+      onRetry={retry}
+      onJoin={
+        data && cleared
+          ? () => {
+              // The room reads its appointment from the store, and an instant consultation is not in the day's list until that reloads.
+              setState((s) =>
+                s.appointments.some((x) => x.id === data.id) ? s : { ...s, appointments: [...s.appointments, toAppointment(data)] }
+              );
+              joinCall(nav, data.id);
+            }
+          : undefined
+      }
+      onBack={nav.goBack}
+      onReturn={() => backToDashboard(nav)}
+    />
+  );
+};
 
-export const InstantDeclinedRoute = ({ route, navigation: nav }: Props<'InstantDeclined'>) => (
-  <InstantDeclinedScreen
-    expired={!!route.params?.expired}
-    onBack={nav.goBack}
-    onReturn={() => backToDashboard(nav)}
-    onPause={() => {
-      setLiveStatus('scheduledOnly');
-      toast.show('Instant requests paused — status set to Scheduled Only', 'info');
-      backToDashboard(nav);
-    }}
-  />
-);
+export const InstantDeclinedRoute = ({ route, navigation: nav }: Props<'InstantDeclined'>) => {
+  const [pausing, setPausing] = useState(false);
+  return (
+    <InstantDeclinedScreen
+      expired={!!route.params?.expired}
+      rerouted={route.params?.rerouted ?? true}
+      onBack={nav.goBack}
+      onReturn={() => backToDashboard(nav)}
+      pausing={pausing}
+      onPause={async () => {
+        setPausing(true);
+        try {
+          // the server stops routing offers; the pill follows only once it has
+          await setStatus('scheduledOnly');
+          setLiveStatus('scheduledOnly');
+          toast.show('Instant requests paused — status set to Scheduled Only', 'info');
+          backToDashboard(nav);
+        } catch (e) {
+          toast.show(messageFor(e), 'error');
+          setPausing(false);
+        }
+      }}
+    />
+  );
+};
 
 /* ---------------------------------- profile ------------------------------- */
 
 export const AccountStatusRoute = ({ navigation: nav }: Props<'AccountStatus'>) => {
   const verification = useStore((s) => s.verification);
-  const submission = useStore((s) => s.submission);
-  const mobile = useStore((s) => s.session.mobile);
-  const live = useVerification(submission ?? demoRegistration(mobile));
+  const live = useVerification();
   const status = live.status ?? (verification.status === 'notSubmitted' ? 'pending' : verification.status);
+  if (live.showSkeleton) return <RouteLoading onBack={nav.goBack} />;
   return (
     <AccountStatusScreen
       status={status}
       acknowledged={verification.acknowledged}
       submittedAt={verification.submittedAt}
+      rejectionReason={live.rejectionReason}
       items={live.items}
       onBack={nav.goBack}
       onAcknowledge={() => {
@@ -753,25 +1035,30 @@ export const AccountStatusRoute = ({ navigation: nav }: Props<'AccountStatus'>) 
 };
 
 export const ResubmitRoute = ({ navigation: nav }: Props<'Resubmit'>) => {
-  const submission = useStore((s) => s.submission);
   const mobile = useStore((s) => s.session.mobile);
-  const draft = submission ?? demoRegistration(mobile);
   // What to correct is the ADMIN's list, not a guess: each label is the reason
   // they typed against that document. A resubmission built from anything else
   // sends the doctor back with the same problem.
-  const live = useVerification(draft);
+  const live = useVerification();
   const flagged = live.items
     .filter((i) => i.state === 'issue')
     .map((i) => ({ step: i.key as StepKey, label: i.issueLabel ?? 'Needs correction' }));
+  // The form takes its draft once, so it waits for the real registration and
+  // the files on record — never a fixture, never a blank that a replace-style
+  // save would then write over the doctor's details.
+  if (!live.draft) {
+    return live.registrationError ? <NotFound onBack={nav.goBack} what="registration" /> : <RouteLoading onBack={nav.goBack} />;
+  }
+  if (!live.data && !live.error) return <RouteLoading onBack={nav.goBack} />;
   return (
     <OnboardingFlow
       mode="resubmit"
       mobile={mobile}
       flagged={flagged}
-      initialDraft={draft}
+      initialDraft={live.draft}
       onExit={nav.goBack}
-      onSubmitted={(draft) => {
-        resubmitVerification(draft);
+      onSubmitted={(draft, outcome) => {
+        resubmitVerification(draft, outcome);
         nav.goBack();
       }}
     />
@@ -782,10 +1069,9 @@ export const ProfileDetailsRoute = ({ navigation: nav }: Props<'ProfileDetails'>
   <DoctorProfileDetailsScreen onBack={nav.goBack} onEditFee={() => nav.navigate('ConsultationFee')} onRequestChange={() => nav.navigate('RequestChanges')} />
 );
 
-export const ConsultationFeeRoute = ({ navigation: nav }: Props<'ConsultationFee'>) => {
-  const { setDirty, leave } = useLeaveGuard();
-  return <ConsultationFeeScreen onBack={nav.goBack} onDirtyChange={setDirty} onSaved={() => leave(nav.goBack)} />;
-};
+export const ConsultationFeeRoute = ({ navigation: nav }: Props<'ConsultationFee'>) => (
+  <ConsultationFeeScreen onBack={nav.goBack} onRequestChange={() => nav.navigate('RequestChanges')} />
+);
 
 export const ConsultationDurationRoute = ({ navigation: nav }: Props<'ConsultationDuration'>) => {
   const { setDirty, leave } = useLeaveGuard();

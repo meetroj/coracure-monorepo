@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+
+import type { SafetyAlert } from '@coracure/api';
+import { messageFor } from '@coracure/api/errors';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
@@ -7,76 +10,116 @@ import { Icon } from '../../components/Icon';
 import { Screen, Button, StatusPill } from '../../components/ui';
 import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
 import { NoteInput } from '../../components/clinical';
-import { useStore } from '../../state/store';
-import { selectDoctor, type AlertView } from '../../state/selectors';
-import { patientById } from '../../data/patients';
-import {
-  ALERT_ACTIONS,
-  ALERT_CATEGORY,
-  ALERT_STATUS,
-  DAY_STATE,
-  NOTE_LIMIT,
-  actionsFor,
-  alertCheckInLabel,
-  pathwayByKey,
-  type AlertAction,
-  type DayState,
-} from '../../data/followup';
+import { ALERT_STATE_LABEL, ALERT_TYPE_LABEL, acknowledgeAlert, closeAlert, NOTE_LIMIT } from '../../data/safetyAlerts';
+import { useCheckins, useFollowupPlan } from '../../data/followupPlan';
 
-const STATE_COLOR: Record<DayState, string> = {
-  stable: colors.paris,
-  attention: '#E9A93B',
-  redFlag: colors.danger,
-  pending: '#C9D4D0',
+const STATUS_COLOR: Record<'green' | 'amber' | 'red', string> = {
+  green: colors.paris,
+  amber: '#E9A93B',
+  red: colors.danger,
 };
+
+const CLOSE_NOTE_MIN = 10;
 
 /**
  * Patient Follow-up Detail — Critical Findings.
  *
- * Read top to bottom the way a clinician triages:
- *   1. what happened — the alert, when, in the patient's own words;
- *   2. why it fired — the answers that triggered it;
- *   3. what to do — reach the patient, then record what was done;
- * with the plan and the week's check-ins underneath as context.
- *
- * Marking the alert reviewed records who acted, how and when. It does not
- * assert that the concern is resolved, and the screen says so.
+ * The real alert carries a `reason` in the patient's own words and nothing
+ * more structured underneath it — there is no per-question breakdown to show.
+ * The workflow is exactly the two steps the backend models: acknowledge, then
+ * close with a note of what was done. Closing records an outcome; it does not
+ * assert the underlying concern is resolved.
  */
 export const PatientFollowUpDetailScreen = ({
   alert,
   onBack,
-  onReview,
+  onAcknowledged,
+  onClosed,
   onMessage,
   onOpenConsultation,
   onDirtyChange,
 }: {
-  alert: AlertView;
+  alert: SafetyAlert;
   onBack: () => void;
-  onReview: (action: AlertAction, note: string) => void;
-  /** Opens this patient's chat thread. */
-  onMessage: () => void;
-  /** The consultation whose follow-up plan raised the alert. */
-  onOpenConsultation: () => void;
-  /** Reports an unsaved review so the route can ask before it is dropped. */
+  onAcknowledged: () => void;
+  onClosed: () => void;
+  /** Opens this patient's chat thread. Absent when the consultation isn't one of this doctor's loaded days. */
+  onMessage?: () => void;
+  onOpenConsultation?: () => void;
+  /** Reports an unsaved closing note so the route can ask before it is dropped. */
   onDirtyChange?: (dirty: boolean) => void;
 }) => {
   const a = alert;
-  const patient = patientById(a.patientId);
-  const doctor = useStore(selectDoctor);
-  const tone = ALERT_CATEGORY[a.category].tone;
-  const fg = tone === 'danger' ? colors.danger : tone === 'warn' ? colors.warn : colors.surfie;
-  const bg = tone === 'danger' ? colors.dangerSoft : tone === 'warn' ? colors.warnSoft : colors.successSoft;
-  const options = actionsFor(a.category);
-  const reviewed = a.live.status === 'reviewed' || a.live.status === 'escalated';
-  const [action, setAction] = useState<AlertAction | null>(null);
+  const redFlag = a.alertType === 'red_flag';
+  const fg = redFlag ? colors.danger : a.alertType === 'amber' || a.alertType === 'medication_side_effect' ? colors.warn : colors.surfie;
+  const bg = redFlag ? colors.dangerSoft : a.alertType === 'amber' || a.alertType === 'medication_side_effect' ? colors.warnSoft : colors.successSoft;
+
   const [note, setNote] = useState('');
-  const redFlag = a.category === 'redFlag';
-  const flagged = a.responses.filter((r) => r.flagged);
-  const pathway = pathwayByKey(a.pathway);
-  // a red flag needs a written account of what was done
-  const canSave = !!action && (!redFlag || note.trim().length >= 10);
-  const dirty = !!action || note.trim().length > 0;
+  const [busy, setBusy] = useState(false);
+
+  const canClose = note.trim().length >= CLOSE_NOTE_MIN;
+  const dirty = a.state === 'acknowledged' && note.trim().length > 0;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  const plan = useFollowupPlan(a.consultationId);
+  const checkins = useCheckins(a.consultationId);
+
+  const planDays = useMemo(() => {
+    const starts = plan.data?.startsOn;
+    const total = plan.data?.durationDays;
+    if (!starts || !total) return [];
+    const start = new Date(starts);
+    return Array.from({ length: total }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      const iso = d.toISOString().slice(0, 10);
+      const c = checkins.data?.find((r) => r.checkinDate.slice(0, 10) === iso);
+      return { day: i + 1, iso, status: c?.status };
+    });
+  }, [plan.data?.startsOn, plan.data?.durationDays, checkins.data]);
+
+  const [error, setError] = useState<string | undefined>();
+
+  const acknowledge = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await acknowledgeAlert(a.id);
+      onAcknowledged();
+    } catch (e) {
+      // left on screen — the error surfaces inline below, not as a toast that vanishes
+      setError(messageFor(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const close = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await closeAlert(a.id, note.trim());
+      onClosed();
+    } catch (e) {
+      setError(messageFor(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const footer =
+    a.state === 'open' ? (
+      <View>
+        <Button testID="acknowledge" label="Acknowledge" icon="check" onPress={acknowledge} disabled={busy} />
+        {!!error && <Text style={s.errorText}>{error}</Text>}
+      </View>
+    ) : a.state === 'acknowledged' ? (
+      <View>
+        <Button testID="save" label="Close & record outcome" icon="check" onPress={close} disabled={!canClose || busy} />
+        <Text style={s.footNote}>Closing records what you did. It does not assert the concern is resolved.</Text>
+        {!!error && <Text style={s.errorText}>{error}</Text>}
+      </View>
+    ) : undefined;
 
   return (
     <Screen
@@ -87,44 +130,29 @@ export const PatientFollowUpDetailScreen = ({
           onBack={onBack}
           inline
           title="Critical Findings"
-          subtitle={patient?.name}
-          right={<HeaderAction testID="open-chat" icon="message" label={`Message ${patient?.name}`} onPress={onMessage} />}
+          subtitle={a.patientName ?? a.patientInitials ?? undefined}
+          right={onMessage ? <HeaderAction testID="open-chat" icon="message" label={`Message ${a.patientName ?? 'patient'}`} onPress={onMessage} /> : undefined}
         />
       }
-      footer={
-        reviewed ? undefined : (
-          <View>
-            <Button
-              testID="save"
-              label="Save & mark as reviewed"
-              icon="check"
-              onPress={() => action && onReview(action, note.trim())}
-              disabled={!canSave}
-              variant={redFlag ? 'secondary' : 'primary'}
-            />
-            <Text style={s.footNote}>Reviewing records your action. It does not close the safety concern.</Text>
-          </View>
-        )
-      }
+      footer={footer}
     >
       {/* ------------------------------- 1. what -------------------------------- */}
       <View testID="alert-banner" style={[s.banner, { backgroundColor: bg, borderColor: fg }]}>
         <View style={s.bannerTop}>
           <View style={[s.severity, { backgroundColor: fg }]}>
             <Icon name={redFlag ? 'flag' : 'alertTriangle'} size={14} color={colors.white} />
-            <Text style={s.severityText}>{ALERT_CATEGORY[a.category].label.toUpperCase()}</Text>
+            <Text style={s.severityText}>{ALERT_TYPE_LABEL[a.alertType].toUpperCase()}</Text>
           </View>
-          <Text style={s.bannerTime}>{alertCheckInLabel(a)}</Text>
         </View>
-        <Text style={[s.trigger, { color: fg }]}>{a.trigger}</Text>
+        <Text style={[s.trigger, { color: fg }]}>{ALERT_TYPE_LABEL[a.alertType]}</Text>
         <Text style={s.patientLine}>
-          {patient?.name} · {patient?.gender}, {patient?.age} · {a.patientId}
+          {a.patientName ?? a.patientInitials} · {a.patientGender}, {a.patientAge ?? '—'} · {a.patientId}
         </Text>
-        {a.checkIn ? (
+        {a.reason ? (
           <View style={s.quote}>
             <Text style={s.quoteLabel}>In the patient&apos;s words</Text>
             <Text testID="alert-quote" style={s.quoteText}>
-              &ldquo;{a.checkIn}&rdquo;
+              &ldquo;{a.reason}&rdquo;
             </Text>
           </View>
         ) : (
@@ -132,45 +160,14 @@ export const PatientFollowUpDetailScreen = ({
         )}
       </View>
 
-      {/* -------------------------------- 2. why -------------------------------- */}
-      {a.responses.length > 0 && (
-        <View style={s.block}>
-          <Text style={s.blockTitle}>{redFlag ? 'Answers triggering the red flag' : 'Check-in answers'}</Text>
-          <Text style={s.blockSub}>
-            Today&apos;s check-in · {flagged.length} {flagged.length === 1 ? 'answer' : 'answers'} flagged
-          </Text>
-          <View style={s.answers}>
-            {a.responses.map((r, i) => (
-              <View
-                key={r.id}
-                testID={`response-${r.id}`}
-                style={[s.answerRow, i < a.responses.length - 1 && s.answerRule]}
-                accessible
-                accessibilityLabel={`${r.question} ${r.answer}${r.flagged ? ', flagged' : ''}`}
-              >
-                <View style={[s.answerIcon, r.flagged && { backgroundColor: bg }]}>
-                  <Icon name={r.icon} size={14} color={r.flagged ? fg : colors.surfie} />
-                </View>
-                <Text style={s.answerQ}>{r.question}</Text>
-                <Text style={[s.answerA, r.flagged && { color: fg }]}>{r.answer}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* ------------------------------ 3. what to do ---------------------------- */}
-      {reviewed ? (
+      {/* ------------------------------ what to do ---------------------------- */}
+      {a.state === 'closed' ? (
         <View testID="alert-reviewed" style={[s.block, s.reviewedBox]}>
           <View style={s.reviewedHead}>
             <Icon name="checkCircle" size={18} color={colors.surfie} filled />
-            <Text style={s.reviewedTitle}>
-              {ALERT_STATUS[a.live.status]} {a.live.reviewedAt ? `· ${a.live.reviewedAt}` : ''}
-            </Text>
+            <Text style={s.reviewedTitle}>Closed{a.closedAt ? ` · ${new Date(a.closedAt).toLocaleDateString()}` : ''}</Text>
           </View>
-          {!!a.live.action && <Text style={s.reviewedLine}>Action: {ALERT_ACTIONS[a.live.action].label}</Text>}
-          {!!a.live.note && <Text style={s.reviewedLine}>Note: {a.live.note}</Text>}
-          <Text style={s.reviewedLine}>Recorded by {doctor.name}</Text>
+          {!!a.closingNote && <Text style={s.reviewedLine}>Note: {a.closingNote}</Text>}
         </View>
       ) : (
         <View style={s.block}>
@@ -181,103 +178,83 @@ export const PatientFollowUpDetailScreen = ({
               Tele-MANAS helpline (14416).
             </Text>
           )}
-          <Button
-            testID="message-now"
-            label={`Message ${patient?.name.split(' ')[0] ?? 'patient'}`}
-            icon="message"
-            onPress={onMessage}
-            variant={redFlag ? 'primary' : 'secondary'}
-            style={s.messageBtn}
-          />
+          {onMessage && (
+            <Button
+              testID="message-now"
+              label={`Message ${(a.patientName ?? 'patient').split(' ')[0]}`}
+              icon="message"
+              onPress={onMessage}
+              variant={redFlag ? 'primary' : 'secondary'}
+              style={s.messageBtn}
+            />
+          )}
 
-          <Text style={s.fieldLabel}>What did you do?</Text>
-          <View style={s.actionList}>
-            {options.map((k) => {
-              const on = action === k;
-              return (
-                <Pressable
-                  key={k}
-                  testID={`action-${k}`}
-                  onPress={() => setAction(k)}
-                  style={[s.actionRow, on && s.actionRowOn]}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                >
-                  <Icon name={ALERT_ACTIONS[k].icon} size={17} color={on ? colors.surfie : colors.inkMuted} />
-                  <Text style={[s.actionText, on && s.actionTextOn]}>{ALERT_ACTIONS[k].label}</Text>
-                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={s.fieldLabel}>Doctor note{redFlag ? ' (required)' : ''}</Text>
-          <NoteInput
-            testID="note"
-            value={note}
-            onChangeText={setNote}
-            placeholder={redFlag ? 'What was discussed, safety plan, next contact…' : 'Your observations about this check-in'}
-            max={NOTE_LIMIT}
-            minHeight={72}
-            accessibilityLabel="Doctor note"
-          />
+          {a.state === 'open' ? (
+            <Text style={s.helper}>Acknowledge this alert once you have seen it, then record what you did to close it.</Text>
+          ) : (
+            <>
+              <Text style={s.fieldLabel}>What did you do?{redFlag ? ' (required)' : ''}</Text>
+              <NoteInput
+                testID="note"
+                value={note}
+                onChangeText={setNote}
+                placeholder="What was discussed, safety plan, next contact…"
+                max={NOTE_LIMIT}
+                minHeight={72}
+                accessibilityLabel="Closing note"
+              />
+            </>
+          )}
         </View>
       )}
 
       {/* -------------------------------- context -------------------------------- */}
       <View style={s.block}>
         <Text style={s.blockTitle}>Follow-up plan</Text>
-        <View style={s.factRow}>
-          <View style={s.fact}>
-            <Text style={s.factLabel}>Pathway</Text>
-            <Text style={s.factValue}>{pathway?.label}</Text>
+        {plan.data?.pathway ? (
+          <View style={s.factRow}>
+            <View style={s.fact}>
+              <Text style={s.factLabel}>Pathway</Text>
+              <Text style={s.factValue}>{plan.data.pathway.name}</Text>
+            </View>
+            <View style={s.fact}>
+              <Text style={s.factLabel}>Day</Text>
+              <Text style={s.factValue}>
+                {plan.data.todayIsDay ?? '—'} of {plan.data.durationDays}
+              </Text>
+            </View>
           </View>
-          <View style={s.fact}>
-            <Text style={s.factLabel}>Day</Text>
-            <Text style={s.factValue}>
-              {a.dayOf} of {a.dayTotal}
-            </Text>
-          </View>
-          <View style={s.fact}>
-            <Text style={s.factLabel}>Assigned to</Text>
-            <Text style={s.factValue} numberOfLines={1}>
-              You
-            </Text>
-          </View>
-        </View>
-        <Pressable
-          testID="open-consultation"
-          onPress={onOpenConsultation}
-          hitSlop={6}
-          style={s.linkRow}
-          accessibilityRole="button"
-        >
-          <Text style={s.linkText}>Open the consultation record</Text>
-          <Icon name="chevronRight" size={14} color={colors.surfie} />
-        </Pressable>
+        ) : (
+          <Text style={s.helper}>No follow-up plan is assigned to this consultation.</Text>
+        )}
+        {onOpenConsultation && (
+          <Pressable testID="open-consultation" onPress={onOpenConsultation} hitSlop={6} style={s.linkRow} accessibilityRole="button">
+            <Text style={s.linkText}>Open the consultation record</Text>
+            <Icon name="chevronRight" size={14} color={colors.surfie} />
+          </Pressable>
+        )}
 
-        <Text style={[s.fieldLabel, s.historyLabel]}>Last {a.history.length} check-ins</Text>
-        <View style={s.trend} accessible accessibilityLabel={`Check-in history: ${a.history.map((h) => `${h.label} ${DAY_STATE[h.state].label}`).join(', ')}`}>
-          {a.history.map((h) => (
-            <View key={h.day} style={s.trendDay}>
-              <View style={[s.trendBar, { backgroundColor: STATE_COLOR[h.state] }]} />
-              <Text style={s.trendLabel}>{h.label}</Text>
-              <Text style={s.trendDate}>{h.date}</Text>
+        {planDays.length > 0 && (
+          <>
+            <Text style={[s.fieldLabel, s.historyLabel]}>Check-ins</Text>
+            <View
+              style={s.trend}
+              accessible
+              accessibilityLabel={`Check-in history: ${planDays.map((d) => `day ${d.day} ${d.status ?? 'no entry'}`).join(', ')}`}
+            >
+              {planDays.map((d) => (
+                <View key={d.day} style={s.trendDay}>
+                  <View style={[s.trendBar, { backgroundColor: d.status ? STATUS_COLOR[d.status] : '#E3E9E7' }]} />
+                  <Text style={s.trendLabel}>D{d.day}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-        <View style={s.legend}>
-          {(['stable', 'attention', 'redFlag', 'pending'] as DayState[]).map((k) => (
-            <View key={k} style={s.legendItem}>
-              <View style={[s.legendDot, { backgroundColor: STATE_COLOR[k] }]} />
-              <Text style={s.legendText}>{DAY_STATE[k].label}</Text>
-            </View>
-          ))}
-        </View>
+          </>
+        )}
       </View>
 
       <View style={s.statusFoot}>
-        <StatusPill label={`Status: ${ALERT_STATUS[a.live.status]}`} tone={reviewed ? 'success' : 'warn'} dot={false} />
+        <StatusPill label={`Status: ${ALERT_STATE_LABEL[a.state]}`} tone={a.state === 'closed' ? 'success' : 'warn'} dot={false} />
       </View>
     </Screen>
   );
@@ -285,6 +262,8 @@ export const PatientFollowUpDetailScreen = ({
 
 const s = StyleSheet.create({
   footNote: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'center', marginTop: 6 },
+  errorText: { ...typeStyles.caption, color: colors.danger, textAlign: 'center', marginTop: 6 },
+  helper: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: spacing.sm },
 
   banner: {
     marginHorizontal: spacing.lg,
@@ -296,7 +275,6 @@ const s = StyleSheet.create({
   bannerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   severity: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4 },
   severityText: { ...typeStyles.caption, fontWeight: fontWeight.bold, color: colors.white, letterSpacing: 0.4 },
-  bannerTime: { ...typeStyles.caption, color: colors.inkMuted },
   trigger: { ...typeStyles.sectionTitle, fontSize: 19, lineHeight: 25 },
   patientLine: { ...typeStyles.caption, color: colors.inkMuted },
   quote: { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, marginTop: 4 },
@@ -305,34 +283,10 @@ const s = StyleSheet.create({
 
   block: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
   blockTitle: { ...typeStyles.sectionTitle, fontSize: 16, lineHeight: 22, color: colors.ink },
-  blockSub: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 1 },
-  answers: { marginTop: spacing.sm, borderWidth: 1, borderColor: colors.surface.line, borderRadius: radius.md },
-  answerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 52, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  answerRule: { borderBottomWidth: 1, borderBottomColor: colors.surface.line },
-  answerIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
-  answerQ: { ...typeStyles.bodySmall, flex: 1, color: colors.ink },
-  answerA: { ...typeStyles.bodySmall, fontWeight: fontWeight.bold, color: colors.ink },
 
   urgent: { ...typeStyles.bodySmall, color: colors.danger, marginTop: 4 },
   messageBtn: { marginTop: spacing.md },
   fieldLabel: { ...typeStyles.label, color: colors.ink, marginTop: spacing.lg, marginBottom: spacing.sm },
-  actionList: { gap: spacing.sm },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    minHeight: 50,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-  },
-  actionRowOn: { borderColor: colors.surfie, backgroundColor: colors.surface.mintSoft },
-  actionText: { ...typeStyles.body, flex: 1, color: colors.ink },
-  actionTextOn: { fontWeight: fontWeight.semibold, color: colors.surfie },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.surface.inputBorder, alignItems: 'center', justifyContent: 'center' },
-  radioOn: { borderColor: colors.surfie },
-  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surfie },
 
   reviewedBox: { backgroundColor: colors.surface.mintSoft, borderRadius: radius.md, padding: spacing.md, gap: 4 },
   reviewedHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -346,15 +300,10 @@ const s = StyleSheet.create({
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 40, marginTop: 4 },
   linkText: { ...typeStyles.buttonSmall, color: colors.surfie },
   historyLabel: { marginTop: spacing.sm },
-  trend: { flexDirection: 'row', gap: 4 },
-  trendDay: { flex: 1, alignItems: 'center', gap: 3 },
+  trend: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
+  trendDay: { width: 28, alignItems: 'center', gap: 3 },
   trendBar: { width: '100%', height: 8, borderRadius: 4 },
   trendLabel: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.ink },
-  trendDate: { ...typeStyles.caption, fontSize: 11, lineHeight: 14, color: colors.inkFaint },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { ...typeStyles.caption, fontSize: 11, color: colors.inkMuted },
 
   statusFoot: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
 });

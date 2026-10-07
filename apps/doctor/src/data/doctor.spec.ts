@@ -2,6 +2,9 @@ import {
   isAutoStatus,
   acceptsInstantRequests,
   isClinicallyComplete,
+  minutesUntil,
+  nextAppointmentFor,
+  appointmentById,
   type LiveStatus,
   type PatientCase,
 } from './doctor';
@@ -54,4 +57,19 @@ test('a case is clinically complete only with both advice and summary', () => {
   expect(
     isClinicallyComplete({ ...baseCase, prescriptionFinalised: true, summarySubmitted: true })
   ).toBe(true);
+});
+
+test('"now" is read on every call, not fixed when the app loads', () => {
+  const g = globalThis as { __CORACURE_NOW_MINUTES__?: number };
+  const pinned = g.__CORACURE_NOW_MINUTES__;
+  const a1 = appointmentById('a1')!; // today, 12:00 PM
+  try {
+    expect(minutesUntil(a1)).toBe(15); // pinned 11:45
+    g.__CORACURE_NOW_MINUTES__ = 12 * 60 + 5;
+    expect(minutesUntil(a1)).toBe(-5);
+    // past noon a1 has started, so it is no longer "next"
+    expect(nextAppointmentFor()?.id).not.toBe('a1');
+  } finally {
+    g.__CORACURE_NOW_MINUTES__ = pinned;
+  }
 });

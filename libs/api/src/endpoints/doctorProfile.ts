@@ -1,5 +1,6 @@
 import { api } from '../http';
 import { ClientCode, clientError } from '../errors';
+import { putToSignedUrl, type LocalFile } from '../upload';
 import type { DoctorVerificationStatus } from './doctorAuth';
 
 /**
@@ -19,9 +20,26 @@ import type { DoctorVerificationStatus } from './doctorAuth';
  * year, position or dates written on the certificate.
  */
 
-/** `doctors.languages`. The column is free-form JSON; the DTO is not. */
-export const API_LANGUAGES = ['en', 'hi'] as const;
-export type ApiLanguage = (typeof API_LANGUAGES)[number];
+/**
+ * The consultation languages, by wire code — this app's copy of the backend's
+ * `common/languages.ts`, which patients and providers are matched on. The DTO
+ * refuses any other code; adding a language is adding it there and here.
+ */
+export const LANGUAGE_NAMES = {
+  en: 'English',
+  hi: 'Hindi',
+  hinglish: 'Hinglish',
+  mr: 'Marathi',
+  kn: 'Kannada',
+  pa: 'Punjabi',
+  ta: 'Tamil',
+  te: 'Telugu',
+  bn: 'Bengali',
+  gu: 'Gujarati',
+  ml: 'Malayalam',
+  ur: 'Urdu',
+} as const;
+export type ApiLanguage = keyof typeof LANGUAGE_NAMES;
 
 export type DoctorDocumentType =
   | 'degree_certificate'
@@ -81,6 +99,8 @@ export type CredentialSummary = {
 export type VerificationProgress = {
   doctorId: string;
   status: DoctorVerificationStatus;
+  /** The admin's own words when the whole application was turned down. Null otherwise. */
+  rejectionReason: string | null;
   /** Driven by the SPECIALTY, so it changes if an admin moves the doctor. */
   required: DoctorDocumentType[];
   approved: DoctorDocumentType[];
@@ -154,72 +174,7 @@ export const confirmCredentialUpload = (input: {
     storageKey: input.storageKey,
   });
 
-/** A file still on the device, identified by the URI a picker returned. */
-export type LocalFile = { uri: string };
-
-const isLocalFile = (body: unknown): body is LocalFile =>
-  typeof (body as LocalFile | null)?.uri === 'string';
-
-const putBytes = async (
-  url: string,
-  contentType: string,
-  body: Blob | ArrayBuffer | Uint8Array,
-): Promise<number> => {
-  const response = await fetch(url, {
-    method: 'PUT',
-    // The store signed the URL for this exact type; sending another is a 403
-    // from the store, long after the app thought it had picked a valid file.
-    headers: { 'Content-Type': contentType },
-    body: body as BodyInit,
-  });
-  return response.status;
-};
-
-/**
- * Streams a file straight off the device into the signed URL.
- *
- * *** NEITHER `fetch` NOR `XMLHttpRequest` CAN READ A `file://` URI HERE. ***
- * Both hand the URL to OkHttp, which parses http and https and refuses
- * anything else outright:
- *
- *     IllegalArgumentException: Expected URL scheme 'http' or 'https' but was 'file'
- *         at NetworkingModule.sendRequestInternalReal(NetworkingModule.kt:318)
- *
- * React Native reports that as "Network request failed", which sends everyone
- * looking at the network while the server is up and the real fault is a local
- * read. Setting `responseType = 'blob'` is supposed to hand the request to
- * `BlobModule`'s URI handler instead — it does not under the New Architecture
- * (`newArchEnabled=true`), where the handler never claims the request and it
- * falls through to OkHttp anyway.
- *
- * `react-native-blob-util` reads the path natively and streams it, so no URL
- * parser ever sees `file://`. The same call uploads to real S3 unchanged.
- *
- * `wrap()` wants a plain path, not a URI, so the scheme is stripped.
- */
-const putLocalFile = async (
-  url: string,
-  contentType: string,
-  uri: string,
-): Promise<number> => {
-   
-  const blobUtil = require('react-native-blob-util').default as {
-    fetch: (
-      method: string,
-      url: string,
-      headers: Record<string, string>,
-      body: unknown,
-    ) => Promise<{ info: () => { status: number } }>;
-    wrap: (path: string) => unknown;
-  };
-  const response = await blobUtil.fetch(
-    'PUT',
-    url,
-    { 'Content-Type': contentType },
-    blobUtil.wrap(decodeURI(uri.replace(/^file:\/\//, ''))),
-  );
-  return response.info().status;
-};
+export type { LocalFile };
 
 /**
  * All three steps, because two of them alone are a bug.
@@ -229,10 +184,6 @@ const putLocalFile = async (
  * while a row with no object is a credential an admin opens to find nothing —
  * and approves or rejects a doctor on the strength of it. So a failed upload
  * throws here and never reaches step 3.
- *
- * The PUT goes out with NO Authorization header: it is addressed to the object
- * store, not to Coracure, and the permission is already signed into the URL.
- * Sending a bearer to a third-party host leaks it.
  */
 export const uploadCredential = async (
   input: {
@@ -243,18 +194,7 @@ export const uploadCredential = async (
   body: Blob | ArrayBuffer | Uint8Array | LocalFile,
 ): Promise<CredentialSummary> => {
   const ticket = await requestCredentialUpload(input);
-
-  let status: number;
-  try {
-    status = isLocalFile(body)
-      ? await putLocalFile(ticket.upload.url, input.contentType, body.uri)
-      : await putBytes(ticket.upload.url, input.contentType, body);
-  } catch {
-    throw clientError(
-      ClientCode.NETWORK_UNAVAILABLE,
-      'We could not upload that file. Check your connection and try again.',
-    );
-  }
+  const status = await putToSignedUrl(ticket.upload.url, input.contentType, body);
 
   if (status < 200 || status >= 300) {
     throw clientError(
@@ -290,27 +230,30 @@ export type RegistrationView = {
   dateOfBirth: string | null;
   gender: 'male' | 'female' | 'other' | 'undisclosed' | null;
   email: string | null;
+  /** Medical council / professional registration number, as the doctor stated it. */
+  registrationNumber: string | null;
   /** The number itself is never returned — only enough to recognise it. */
-  identity: { idType: string; idTypeName: string | null; numberLast4: string } | null;
+  identity: { idType: string; idTypeName: string | null; numberLast4: string; abhaId: string | null } | null;
+  /** One flat qualifications record for the doctor, not a per-degree list. */
   qualifications: {
-    id: string;
-    degree: string;
-    specialty: string | null;
-    institution: string;
-    university: string;
-    year: number;
-    documentId: string | null;
-  }[];
+    basicQualification: string;
+    pgSpecialisation: string | null;
+    superSpecialisation: string | null;
+    fellowship: string | null;
+    degreeCertificateId: string | null;
+    registrationCertificateId: string | null;
+  } | null;
   experience: {
     id: string;
-    position: string;
+    designation: string;
     institution: string;
-    startMonth: string;
-    endMonth: string | null;
-    isCurrent: boolean;
+    years: number;
     documentId: string | null;
   }[];
-  /** Derived server-side from the dated rows, overlaps merged. */
+  signatureDocumentId: string | null;
+  /** The specialty chosen from the catalogue (or set by an admin). Null until one is. */
+  specialtyId: string | null;
+  /** Derived server-side from the years stated on each role, summed. */
   totalExperienceYears: number;
   /** False once an admin has verified the account. */
   editable: boolean;
@@ -321,27 +264,43 @@ export type SaveRegistration = {
   dateOfBirth?: string;
   gender?: 'male' | 'female' | 'other' | 'undisclosed';
   email?: string;
-  identity?: { idType: RegistrationIdType; idTypeName?: string; idNumber: string };
+  registrationNumber?: string;
+  identity?: { idType: RegistrationIdType; idTypeName?: string; idNumber: string; abhaId?: string };
   qualifications?: {
-    degree: string;
-    specialty?: string;
-    institution: string;
-    university: string;
-    year: number;
-    documentId?: string;
-  }[];
+    basicQualification: string;
+    pgSpecialisation?: string;
+    superSpecialisation?: string;
+    fellowship?: string;
+    degreeCertificateId?: string;
+    registrationCertificateId?: string;
+  };
   experience?: {
-    position: string;
+    designation: string;
     institution: string;
-    startMonth: string;
-    endMonth?: string;
-    isCurrent?: boolean;
+    years: number;
     documentId?: string;
   }[];
+  signatureDocumentId?: string;
+  /** From `listServices()` — the active catalogue. The server refuses any other id. */
+  specialtyId?: string;
 };
 
 export const getRegistration = (): Promise<RegistrationView> =>
   api.get<RegistrationView>('/me/doctor/registration');
+
+/** One active service in the catalogue (`GET /services`) — a specialty, as patients see it. */
+export type ServiceListing = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  consultationFeeInr: number;
+  providerType: string;
+  canPrescribe: boolean;
+};
+
+/** What names the profile's `specialtyId`. Active services only. */
+export const listServices = (): Promise<ServiceListing[]> => api.get<ServiceListing[]>('/services');
 
 /**
  * *** A REPLACE, NOT A PATCH. *** The lists sent here become the whole of

@@ -550,12 +550,6 @@ export const dateMask = (v: string) => {
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Digits only, regrouped as YYYY / MM — for a month a doctor started work. */
-export const monthMask = (v: string) => {
-  const d = v.replace(/\D/g, '').slice(0, 6);
-  return [d.slice(0, 4), d.slice(4, 6)].filter(Boolean).join(' / ');
-};
-
 /**
  * A calendar sheet behind a date. Built in-app rather than pulled from a
  * picker library: the platforms disagree on what a native date picker looks

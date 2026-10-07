@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
@@ -9,25 +11,28 @@ import { ScreenHeader, HeaderTextAction } from '../../components/ScreenHeader';
 import { PatientStrip, Section, NoteInput, Notice } from '../../components/clinical';
 import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
-import { selectRecord } from '../../state/selectors';
+import { selectDoctor, selectRecord } from '../../state/selectors';
 import { saveNotes, setRisk, updateNote } from '../../state/actions';
 import { detailFor, type Appointment } from '../../data/doctor';
+import { saveWriteUp, useClinicalRecordSync } from '../../data/clinicalRecord';
 import {
-  NOTE_FIELDS,
+  canPrescribe,
+  noteFieldsFor,
+  notesLabel,
   RISK_CATEGORIES,
   RISK_LABEL,
   missingNoteFields,
   type NoteKey,
+  type ProfessionalType,
 } from '../../data/clinical';
 
 /**
  * Clinical Notes & Diagnosis — DOC-CLN-01.
  *
  * Every field is a real input bound to this consultation's record. Each edit
- * is written to the record as it happens, and the header says when that last
- * happened — "Draft saved" is a statement about a save that took place, never
- * a label printed on arrival. Saving checks that every required field is
- * filled and names the ones that are not.
+ * is kept on this device as it happens, and the header says "Unsaved changes"
+ * until Save reaches the server — only then does it say "Saved HH:MM". Saving
+ * checks that every required field is filled and names the ones that are not.
  *
  * Once the case summary is submitted the consultation is closed and the notes
  * are read-only (DR-11-01).
@@ -38,13 +43,12 @@ const ICONS: Record<NoteKey, IconName> = {
   history: 'folder',
   observations: 'stethoscope',
   diagnosis: 'document',
-  advice: 'heart',
-  followUp: 'calendar',
 };
 
 export const ClinicalNotesScreen = ({
   appointment,
   onBack,
+  professionalType: typeProp,
   onSaved,
   onViewProfile,
   onReferForClarification,
@@ -52,6 +56,7 @@ export const ClinicalNotesScreen = ({
 }: {
   appointment: Appointment;
   onBack: () => void;
+  professionalType?: ProfessionalType;
   /** After a successful save: the next step of the write-up. */
   onSaved: () => void;
   onViewProfile: () => void;
@@ -60,12 +65,19 @@ export const ClinicalNotesScreen = ({
 }) => {
   const a = appointment;
   const d = detailFor(a);
+  const doctor = useStore(selectDoctor);
+  const professionalType = typeProp ?? doctor.professionalType;
+  // `a.id` is the real consultation id — the write-up's own record, laid over
+  // the local one the first time it is opened.
+  useClinicalRecordSync(a.id);
   const record = useStore((st) => selectRecord(st, a.id));
   const readOnly = record.summaryStatus === 'submitted';
   const [closed, setClosed] = useState<string[]>([]);
   const [attempted, setAttempted] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const missing = missingNoteFields(record.notes, record.risk);
+  const fields = noteFieldsFor(professionalType);
+  const missing = missingNoteFields(record.notes, record.risk, professionalType);
   const toggle = (k: string) => setClosed((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...c, k]));
   const isOpen = (k: string) => !closed.includes(k);
 
@@ -74,10 +86,10 @@ export const ClinicalNotesScreen = ({
     : record.notesStatus === 'saved'
       ? `Saved ${record.notesSavedAt ?? ''}`.trim()
       : record.notesStatus === 'draft'
-        ? `Draft saved ${record.notesSavedAt ?? ''}`.trim()
+        ? 'Unsaved changes'
         : 'Not started';
 
-  const save = () => {
+  const save = async () => {
     setAttempted(true);
     if (missing.length > 0) {
       // reopen everything so the outlined fields are visible
@@ -85,13 +97,22 @@ export const ClinicalNotesScreen = ({
       toast.show(`Complete ${missing.length === 1 ? missing[0] : `${missing.length} required fields`} to save`, 'error');
       return;
     }
-    saveNotes(a.id);
-    toast.show('Clinical notes saved');
-    onSaved();
+    setSaving(true);
+    try {
+      await saveWriteUp(a.id, canPrescribe(professionalType));
+      saveNotes(a.id);
+      toast.show('Clinical notes saved');
+      onSaved();
+    } catch (e) {
+      // the notes stay exactly as typed — nothing is lost, just not yet on the server
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const field = (key: NoteKey) => {
-    const f = NOTE_FIELDS.find((x) => x.key === key)!;
+    const f = fields.find((x) => x.key === key)!;
     const value = record.notes[key];
     const invalid = attempted && f.required && !value.trim();
     return (
@@ -138,13 +159,13 @@ export const ClinicalNotesScreen = ({
         readOnly ? (
           <Button testID="open-summary-footer" label="View case summary" variant="secondary" onPress={onOpenCaseSummary} />
         ) : (
-          <Button testID="save-notes" label="Save notes & continue" icon="arrowRight" iconRight onPress={save} />
+          <Button testID="save-notes" label={saving ? 'Saving…' : 'Save notes & continue'} icon="arrowRight" iconRight onPress={save} disabled={saving} />
         )
       }
     >
       <View style={s.titleRow}>
         <Text style={s.title} accessibilityRole="header">
-          Clinical Notes &amp; Diagnosis
+          {notesLabel(professionalType)}
         </Text>
         <View style={s.statusRow}>
           <Icon
@@ -177,7 +198,7 @@ export const ClinicalNotesScreen = ({
         </Notice>
       )}
 
-      {(['complaint', 'history', 'observations', 'diagnosis'] as NoteKey[]).map(field)}
+      {fields.map((f) => field(f.key))}
 
       {/* --------------------------- risk assessment ----------------------------- */}
       <Section
@@ -211,8 +232,6 @@ export const ClinicalNotesScreen = ({
         </View>
         {attempted && !record.risk.category && <Text style={s.fieldError}>Choose a risk category.</Text>}
       </Section>
-
-      {(['advice', 'followUp'] as NoteKey[]).map(field)}
 
       <Pressable
         testID="open-case-summary"

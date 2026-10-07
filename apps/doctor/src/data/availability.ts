@@ -1,6 +1,10 @@
 import { doctorAvailabilityApi } from '@coracure/api';
 import type { AvailabilityRule, Diary, WeeklyWindow } from '@coracure/api';
 
+import { useEffect } from 'react';
+
+import { loadAvailability } from '../state/actions';
+import { useResource } from './useResource';
 import { clockToMinutes, minutesToClock } from './calendar';
 import type { ConsultMode, DaySchedule, Leave, ScheduleOverride } from './doctor';
 import type { AvailabilityState } from '../state/store';
@@ -127,3 +131,33 @@ export const fetchDiary = (): Promise<Diary> => doctorAvailabilityApi.getDiary()
  */
 export const saveWeekly = (schedule: DaySchedule[]): Promise<Diary> =>
   doctorAvailabilityApi.replaceWeekly(toWeeklyWindows(schedule));
+
+/** Loads the diary once, into the store every screen reading availability shares. */
+export const useAvailability = () => {
+  const resource = useResource(KEYS.diary, fetchDiary);
+
+  useEffect(() => {
+    if (resource.data) loadAvailability(toAvailabilityState(resource.data));
+  }, [resource.data]);
+
+  return resource;
+};
+
+/**
+ * A whole day taken out of the pool.
+ *
+ * The doctor's typed reason has nowhere to live server-side — the API carries
+ * no such field — so it stays local to this session; a fresh load reads the
+ * day back as "Full day" (`toLeave`), not the words the doctor typed.
+ */
+export const blockWholeDay = (date: string): Promise<AvailabilityRule> =>
+  doctorAvailabilityApi.blockDate({ date });
+
+/** Different hours for one date. Full fidelity: the times round-trip exactly. */
+export const setCustomHoursFor = (date: string, from: string, to: string): Promise<ScheduleOverride> =>
+  doctorAvailabilityApi
+    .setCustomHours({ date, startTime: toApiTime(from), endTime: toApiTime(to) })
+    .then((rule) => toOverrides([rule])[0]!);
+
+/** A blocked day or date exception, created one at a time — there is no PATCH, so an edit is remove then recreate. */
+export const removeAvailabilityRule = (ruleId: string): Promise<void> => doctorAvailabilityApi.removeRule(ruleId);

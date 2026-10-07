@@ -1,8 +1,8 @@
 import React from 'react';
 import { Text } from 'react-native';
-import { render, act, fireEvent } from '@testing-library/react-native';
+import { render, act, fireEvent, screen } from '@testing-library/react-native';
 
-import { useResource, __resetResourceCache, seedResource } from './useResource';
+import { useResource, __resetResourceCache, clearResourceCache, seedResource } from './useResource';
 import { SKELETON_DELAY_MS, SKELETON_MIN_MS } from '../theme/skeleton';
 
 /**
@@ -186,4 +186,19 @@ test('refreshing keeps the current data on screen and raises a flag', async () =
 
   expect(getByTestId('state').props.children).toBe('data:new');
   expect(getByTestId('refreshing').props.children).toBe('no');
+});
+
+test('a response for the signed-out doctor never lands in the next doctor’s cache', async () => {
+  const first = deferred<string>();
+  const { unmount } = render(<Probe cacheKey="patients" fetcher={() => first.promise} />);
+
+  // Sign-out while the read is still in flight.
+  clearResourceCache();
+  unmount();
+  await act(async () => first.resolve('previous doctor'));
+
+  const second = deferred<string>();
+  render(<Probe cacheKey="patients" fetcher={() => second.promise} />);
+  await act(async () => second.resolve('next doctor'));
+  expect(screen.getByTestId('state')).toHaveTextContent('data:next doctor');
 });

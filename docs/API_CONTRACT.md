@@ -665,7 +665,7 @@ Refresh and sign-out are the shared calls in 6.2.
 // request — a doctor may edit only these four. Name, qualification,
 // registration number and fee are the admin's (8.3).
 { bio?: string;                          // max 4000
-  languages?: ('en' | 'hi')[];           // max 10
+  languages?: Language[];                // the codes in §11, nothing else
   consultationDurationMinutes?: number;  // 5–180
   bufferMinutes?: number }               // 0–120
 ```
@@ -673,6 +673,7 @@ Refresh and sign-out are the shared calls in 6.2.
 **`GET /v1/me/doctor/registration`** · doctor · 200 → `RegistrationView`
 ```ts
 { fullName: string; dateOfBirth: string | null;      // "YYYY-MM-DD"
+  specialtyId: uuid | null;                          // chosen by the doctor, or set by an admin
   gender: Gender | null; email: string | null;
   identity: { idType: string; idTypeName: string | null; numberLast4: string } | null;
   qualifications: { id: uuid; degree: string; specialty: string | null;
@@ -689,7 +690,11 @@ Refresh and sign-out are the shared calls in 6.2.
 **`PUT /v1/me/doctor/registration`** · doctor · 200 → `RegistrationView`
 ```ts
 // request — every field optional, but each LIST is a REPLACE
-{ fullName?: string;                        // max 160
+// (the qualifications shape below predates the flat one in libs/api's `SaveRegistration`)
+{ specialtyId?: uuid;                       // from GET /services (active only); else 400 VALIDATION_FAILED
+                                            // { details: { field: 'specialtyId' } }. Added 5 Oct 2026 —
+                                            // the doctor chooses it; an admin may still change it.
+  fullName?: string;                        // max 160
   dateOfBirth?: string;                     // "YYYY-MM-DD"
   gender?: 'male' | 'female' | 'other' | 'undisclosed';
   email?: string;                           // unique across doctors
@@ -829,8 +834,10 @@ doctor, and whether a current teleconsultation consent is on file.
 
 **`GET /v1/patients/:patientId/card`** · doctor · 200 → `PatientCard`
 ```ts
-{ id: uuid; fullName: string | null; initials: string | null;
-  age: number | null; gender: Gender; preferredLanguage: string }
+// Initials, not a name: `fullName` is NOT on the card as of the 5 Oct 2026
+// backend, though `libs/api`'s `PatientCard` still declares it (contract check fails).
+{ id: uuid; initials: string | null; age: number | null; gender: Gender;
+  preferredLanguage: string; languages: Language[] }
 ```
 Refused unless a consultation ties this doctor to this patient — that gate is
 what makes naming them safe. The mobile number, date of birth and region stay
@@ -851,6 +858,35 @@ still lead with initials.
 ```ts
 { url: string; expiresInSeconds: number; sizeBytes: number | null }
 ```
+
+**Added 1 Oct 2026.** A doctor uploading a document on a patient's behalf —
+e.g. a paper report handed over at a visit. Same signed-URL handshake as the
+patient's own upload (6.1): ask for a URL, PUT the bytes straight to the
+object store, confirm. Unlike the patient's own upload, the confirm step is
+always anchored to a consultation the doctor is treating — never held against
+the patient's general record, which stays theirs to add to.
+
+**`POST /v1/doctor/patients/:patientId/files/upload-url`** · doctor† · 201
+```ts
+{ category: 'medical_history' | 'report' | 'photo';
+  fileName: string;                                   // max 255
+  contentType: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/heic' | 'image/webp' }
+// → { storageKey: string; upload: { url: string; expiresInSeconds: number } }
+```
+Refused with `FILE_NOT_FOUND` (404) for a patient this doctor has never
+consulted — the same "not found rather than not yours" answer 6.1's own gate
+gives, so a stray id does not confirm a patient exists.
+
+**`POST /v1/doctor/patients/:patientId/files`** · doctor† · 201 → `PatientFileRecord`
+```ts
+{ category: 'medical_history' | 'report' | 'photo';
+  fileName: string;
+  storageKey: string;          // from the upload-url call above
+  consultationId: uuid }       // required — see above
+```
+`CONSULTATION_NOT_FOUND` (404) if that consultation is not one this doctor
+treats (even if it is this patient's, with another doctor). `UPLOAD_NOT_RECOGNISED`
+(400) for a `storageKey` minted for a different patient.
 
 **`POST /v1/doctor/report-requests`** · doctor† · 201 → `ReportRequestRecord`
 ```ts
@@ -1022,6 +1058,67 @@ The doctor app also uses, unchanged: `GET /v1/services`, `GET /v1/concerns`,
 `GET /v1/regions` (6.4–6.5), the Care Hub (6.6), the video calls (6.12), the
 notification inbox (6.15), and `GET|POST /v1/legal/consents*` (6.3) for the
 doctor agreement.
+
+### 7.11 Patient chat
+
+Added 5 Oct 2026. One conversation per doctor–patient pair, addressed by the
+**patient's id** — there is no thread id in any path. Only a patient this
+doctor has a non-cancelled consultation with; anyone else is
+`THREAD_NOT_FOUND` (404), the same answer as a patient who does not exist.
+The patient's side is the mirror of this under `/v1/me/chat-threads/:doctorId`.
+
+**`GET /v1/doctor/chat-threads`** · doctor† · 200 → `ThreadSummary[]`, most recent activity first
+```ts
+{ threadId: uuid;
+  // initials, age and gender — never a name
+  counterpart: { type: 'patient'; id: uuid; initials: string | null;
+                 age: number | null; gender: Gender };
+  lastMessage: ChatMessage | null;
+  unreadCount: number }
+
+// ChatMessage
+{ id: uuid; sender: 'patient' | 'doctor'; body: string | null;
+  attachmentFileName: string | null; createdAt: Date }
+```
+
+**`GET /v1/doctor/chat-threads/:patientId/messages`** · doctor† · 200 → `ChatMessage[]`
+```ts
+// query — NEWEST first
+{ limit?: number;    // 1–100, default 50
+  before?: ISO }     // the createdAt of the oldest message already held
+```
+A pair allowed to chat with no thread yet reads as `[]`, not a 404.
+
+**`POST /v1/doctor/chat-threads/:patientId/messages`** · doctor† · 201 → `ChatMessage`
+```ts
+{ body?: string;                  // max 4000
+  attachmentStorageKey?: string;  // exactly as issued by attachment-url
+  attachmentFileName?: string }   // sent with the key, or not at all
+```
+Text, an attachment, or both — neither is `MESSAGE_EMPTY`. A key this service
+did not issue for this thread is `UPLOAD_NOT_RECOGNISED`. The first message
+creates the thread. The other party gets a `chat_message` notification whose
+copy names nobody and quotes nothing; its `deepLinkData` is
+`{ screen: 'chat', patientId, doctorId }`.
+
+**`POST /v1/doctor/chat-threads/:patientId/attachment-url`** · doctor† · 201
+```ts
+// request
+{ fileName: string; contentType: UploadContentType }
+// response — PUT the bytes to upload.url with the same content type
+{ storageKey: string; upload: { url: string; expiresInSeconds: number } }
+```
+
+**`GET /v1/doctor/chat-threads/:patientId/messages/:messageId/attachment-url`** · doctor† · 200
+```ts
+{ url: string; expiresInSeconds: number }
+```
+Fetch it on the tap. `ATTACHMENT_NOT_FOUND` if the message carries none.
+
+**`POST /v1/doctor/chat-threads/:patientId/read`** · doctor† · 204
+Moves the doctor's read marker to now. Sending a message moves it too.
+
+There is no socket and no typing or delivery state: the app polls.
 ---
 
 ## 8. Admin panel — every endpoint, in flow order
@@ -1613,7 +1710,7 @@ interface OwnProfile {
 }
 
 interface PatientCard { id: uuid; initials: string | null; age: number | null;
-                        gender: Gender; preferredLanguage: string }
+                        gender: Gender; preferredLanguage: string; languages: Language[] }
 ```
 
 ### Catalogue
@@ -1674,6 +1771,7 @@ interface ConsultationRecord {
   holdExpiresAt: Date | null;     // set on pending_payment — THE hold, show the countdown
   consultationFeeInr: number | null;
   cancelledAt: Date | null;
+  cancelledByParty: 'patient' | 'doctor' | 'admin' | 'system' | null;
   cancellationReason: string | null;
   createdAt: Date;
   intakeAnswers: Record<string, unknown> | null;
@@ -1690,6 +1788,14 @@ interface ConsultationRecord {
     riskCategory: 'low' | 'moderate' | 'high' | null;
     totalPastConsultationsWithDoctor: number;
     hasCurrentTeleconsultationConsent: boolean;
+    patientHealth?: {             // the ASSIGNED doctor only; what the patient
+      bloodGroup: BloodGroup | null;   // entered on their own profile
+      heightCm: number | null;
+      weightKg: number | null;
+      allergies: string | null;
+      medicalConditions: string | null;
+      currentMedications: string | null;
+    };
   };
 }
 ```
@@ -1955,6 +2061,7 @@ interface OfferRecord {
   id: uuid; consultationId: uuid; patientId: uuid;
   patientInitials: string | null; patientAge: number | null; patientGender: Gender;
   specialtyName: string; concernName: string | null; preferredLanguage: string;
+  languages: Language[];          // every language the patient consults in; never empty
   paymentStatus: 'unpaid' | 'paid' | 'not_applicable';
   doctorId: uuid; attemptNumber: number;
   outcome: 'pending' | 'accepted' | 'declined' | 'timed_out' | 'superseded';
@@ -2103,7 +2210,7 @@ Frozen contract. Branch on these; do not parse display text.
 | `AvailabilityRuleType` | `weekly`, `blocked`, `custom_hours` |
 | `ProviderType` | `doctor`, `non_doctor` |
 | `TieBreak` | `fewest_upcoming`, `least_recently_assigned`, `longest_free` |
-| Languages | `en`, `hi` |
+| `Language` | `en`, `hi`, `hinglish`, `mr`, `kn`, `pa`, `ta`, `te`, `bn`, `gu`, `ml`, `ur` — one catalogue for patients and providers (`common/languages.ts`); assignment needs the two to overlap. The app's copy is `LANGUAGE_NAMES` in `libs/api` |
 | Upload content types | `application/pdf`, `image/jpeg`, `image/png`, `image/heic`, `image/webp` |
 ---
 

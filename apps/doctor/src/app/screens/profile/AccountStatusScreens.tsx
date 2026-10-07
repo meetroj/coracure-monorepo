@@ -16,7 +16,6 @@ import {
   type RegistrationDraft,
   type StepKey,
 } from '../../../data/registration';
-import { TODAY } from '../../../data/calendar';
 import type { VerificationState } from '../../../state/store';
 
 /**
@@ -40,10 +39,8 @@ type Status = Exclude<VerificationState, 'notSubmitted'>;
 export const verificationItems = (status: Status, draft: RegistrationDraft): VerificationItem[] => {
   const idp = draft.identity;
   const idName = idp.idType === OTHER_ID ? idp.idTypeName || 'Government ID' : idp.idType || 'Government ID';
-  const years = totalExperienceYears(
-    draft.experience,
-    `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`
-  );
+  const years = totalExperienceYears(draft.experience);
+  const q = draft.qualifications;
   const base: (VerificationItem & { step: StepKey })[] = [
     {
       key: 'basic',
@@ -66,7 +63,7 @@ export const verificationItems = (status: Status, draft: RegistrationDraft): Ver
       step: 'qualifications',
       icon: 'document',
       title: 'Qualifications',
-      body: draft.qualifications.map((q) => q.degree).join(', ') || 'None submitted',
+      body: [q.basicQualification, q.pgSpecialisation, q.superSpecialisation, q.fellowship].filter((d) => d.trim()).join(' · ') || 'None submitted',
       state: 'underReview',
     },
     {
@@ -82,7 +79,7 @@ export const verificationItems = (status: Status, draft: RegistrationDraft): Ver
   if (status === 'pending') return base;
   const issues: Partial<Record<StepKey, { issueLabel: string; body: string }>> = {
     identity: { issueLabel: 'Name mismatch', body: 'The name on your ID must match the name on your registration.' },
-    qualifications: { issueLabel: 'Document unclear', body: 'Upload a clear, complete copy of each degree certificate.' },
+    qualifications: { issueLabel: 'Document unclear', body: 'Upload a clear, complete copy of your degree and registration certificates.' },
   };
   return base.map((i) => {
     const issue = issues[i.step];
@@ -180,6 +177,7 @@ export const AccountStatusScreen = ({
   status,
   acknowledged,
   submittedAt,
+  rejectionReason,
   items,
   onBack,
   onAcknowledge,
@@ -190,6 +188,8 @@ export const AccountStatusScreen = ({
   status: Status;
   acknowledged: boolean;
   submittedAt?: string;
+  /** The admin's own words, shown only while the application is rejected. */
+  rejectionReason?: string | null;
   items: VerificationItem[];
   /** Present when opened from Profile; absent on the Profile tab itself. */
   onBack?: () => void;
@@ -218,8 +218,10 @@ export const AccountStatusScreen = ({
    * The three-step sequence below is the real state, because each step is
    * something that actually happened.
    */
-  const STAGES = ['Submitted', 'Under review', 'Approved'] as const;
-  const reached = status === 'approved' ? 3 : status === 'rejected' ? 1 : 2;
+  // A successful submit uploads credentials, which moves the server from
+  // `pending` to `under_review` at once — so "Submitted" is always passed here.
+  const STAGES = ['Profile incomplete', 'Submitted', 'Under review', status === 'rejected' ? 'Changes required' : 'Approved'];
+  const reached = status === 'pending' ? 3 : 4;
   const issues = items.filter((i) => i.state === 'issue').length;
 
   const footer =
@@ -250,6 +252,12 @@ export const AccountStatusScreen = ({
           <StatusPill label={c.pill} tone={c.tone} />
           <Text style={s.bannerTitle}>{c.title}</Text>
           <Text style={s.heroBody}>{c.body}</Text>
+          {status === 'rejected' && !!rejectionReason && (
+            <View testID="rejection-reason" style={s.reasonBox}>
+              <Text style={s.reasonLabel}>Reason from the verification team</Text>
+              <Text style={s.reasonText}>{rejectionReason}</Text>
+            </View>
+          )}
         </Banner>
         <View style={s.progressCard}>
           <View style={s.progressHead}>
@@ -262,10 +270,10 @@ export const AccountStatusScreen = ({
                   style={[
                     s.stageDot,
                     i < reached && s.stageDotDone,
-                    i === reached - 1 && status !== 'approved' && s.stageDotCurrent,
+                    i === reached - 1 && status !== 'approved' && (status === 'rejected' ? s.stageDotIssue : s.stageDotCurrent),
                   ]}
                 />
-                <Text style={[s.stageLabel, i < reached && s.stageLabelDone]} numberOfLines={1}>
+                <Text style={[s.stageLabel, i < reached && s.stageLabelDone]}>
                   {label}
                 </Text>
               </View>
@@ -335,12 +343,16 @@ const s = StyleSheet.create({
   bannerTitle: { ...typeStyles.cardTitle, color: colors.ink },
   heroCard: { padding: spacing.md },
   heroBody: { ...typeStyles.caption, color: colors.inkMuted },
+  reasonBox: { marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.dangerSoft },
+  reasonLabel: { ...typeStyles.caption, color: colors.danger, fontWeight: fontWeight.semibold },
+  reasonText: { ...typeStyles.bodySmall, color: colors.ink, marginTop: 2 },
   progressCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
   stages: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   stage: { flex: 1, alignItems: 'flex-start', gap: 6 },
   stageDot: { height: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colors.surface.line },
   stageDotDone: { backgroundColor: colors.surfie },
   stageDotCurrent: { backgroundColor: colors.paris },
+  stageDotIssue: { backgroundColor: colors.danger },
   stageLabel: { ...typeStyles.caption, color: colors.inkMuted },
   stageLabelDone: { color: colors.ink, fontWeight: fontWeight.medium },
   progressHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },

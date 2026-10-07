@@ -1,5 +1,7 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
+import type { InstantRequest } from '../../data/doctor';
+
 /**
  * Every destination and the ids it needs.
  *
@@ -42,7 +44,7 @@ export type RootParams = {
   AlertDetail: { alertId: string };
   RequestReport: { appointmentId: string };
   PatientDocuments: { patientId: string; appointmentId?: string };
-  DocumentViewer: { docId: string };
+  DocumentViewer: { docId: string; patientId?: string };
 
   /* messaging */
   Notifications: undefined;
@@ -53,11 +55,15 @@ export type RootParams = {
   CreateClarification: { appointmentId?: string; clarificationId?: string } | undefined;
   Clarification: { clarificationId: string };
   ExpertResponse: { clarificationId: string };
+  /* the same cases from the other side: an expert answering ones assigned to them */
+  ExpertInbox: undefined;
+  ExpertReview: { caseId: string };
 
   /* instant consultation */
   InstantRequest: undefined;
-  InstantAccepted: undefined;
-  InstantDeclined: { expired?: boolean } | undefined;
+  /** The accepted consultation's real id, and what the offer said about it. */
+  InstantAccepted: { consultationId: string; request: InstantRequest } | undefined;
+  InstantDeclined: { expired?: boolean; rerouted?: boolean } | undefined;
 
   /* profile */
   AccountStatus: undefined;

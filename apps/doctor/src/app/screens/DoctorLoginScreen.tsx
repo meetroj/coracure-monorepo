@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { authApi, doctorAuthApi, type DoctorVerificationStatus } from '@coracure/api';
+import { authApi, doctorAuthApi, doctorLegalApi, type DoctorVerificationStatus } from '@coracure/api';
 import { messageFor } from '@coracure/api/errors';
 
 import { BrandLockup } from '../../components/BrandLockup';
@@ -26,6 +26,7 @@ import { BottomSheet } from '../../components/BottomSheet';
 import { useKeyboardHeight } from '../../components/useKeyboard';
 import { doneBar } from '../../components/KeyboardDoneBar';
 import { supportContact } from '../../data/support';
+import { useResource } from '../../data/useResource';
 import { openContact } from './HelpSupportScreen';
 
 const PHONE_LENGTH = 10;
@@ -120,16 +121,17 @@ const ContactOptions = () => (
  * here is therefore replaced on every send, and cleared when the number
  * changes.
  *
- * A doctor account is created by an administrator (there is no sign-up), so an
- * unknown number is refused rather than texted a code. The backend answers that
- * with the same `INVALID_CREDENTIALS` it uses for a wrong code, on purpose:
- * this screen shows the sentence it is given and does not try to work out which
- * of the two happened.
+ * Sign-in and sign-up are one flow: a number nobody has used gets a code like
+ * any other, and verifying it creates the account, which then goes through
+ * onboarding and admin verification. This screen therefore never needs to know
+ * whether the number is new; it shows whatever sentence the backend gives for a
+ * failure (a wrong code, too many attempts, a suspended account).
  */
 export const DoctorLoginScreen = ({
   onAuthenticated,
 }: {
-  onAuthenticated: (mobile: string, verificationStatus: DoctorVerificationStatus) => void;
+  /** May read the account before landing; the Verify button stays busy until it does. */
+  onAuthenticated: (mobile: string, verificationStatus: DoctorVerificationStatus) => void | Promise<void>;
 }) => {
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
@@ -137,6 +139,10 @@ export const DoctorLoginScreen = ({
   const [focusedBox, setFocusedBox] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
   const [sheet, setSheet] = useState<'contact' | 'privacy' | null>(null);
+  // The published policy (public — there is no session yet), read only once the sheet opens.
+  const privacy = useResource('legal:privacy_policy', () => doctorLegalApi.getDocument('privacy_policy'), {
+    enabled: sheet === 'privacy',
+  });
   const [viewport, setViewport] = useState(0);
   const [ctaBottom, setCtaBottom] = useState(0);
   const [topRowBottom, setTopRowBottom] = useState(0);
@@ -292,7 +298,7 @@ export const DoctorLoginScreen = ({
       if (!alive.current) return;
       // The session is already in secure storage by the time this resolves, so
       // the next screen can call the API immediately.
-      onAuthenticated(phone, verificationStatus);
+      await onAuthenticated(phone, verificationStatus);
     } catch (e) {
       if (!alive.current) return;
       setError(messageFor(e));
@@ -385,9 +391,9 @@ export const DoctorLoginScreen = ({
                   <Text testID="heading" style={styles.heading} accessibilityRole="header">
                     Doctor login
                   </Text>
-                  <Text style={styles.subheading}>Sign in to your CoraCure account to continue caring for your patients.</Text>
+                  <Text style={styles.subheading}>Sign in, or create your CoraCure account, with your mobile number.</Text>
                   <View style={styles.bannerDivider} />
-                  <Text style={styles.bannerNote}>Only verified CoraCure doctors can sign in.</Text>
+                  <Text style={styles.bannerNote}>New here? Enter your number. Our team verifies you after sign-up.</Text>
                 </>
               )}
             </View>
@@ -477,14 +483,14 @@ export const DoctorLoginScreen = ({
                 <View style={styles.needAccessRow}>
                   <Text style={styles.needAccessText}>Need help? </Text>
                   <Pressable testID="contact-admin" hitSlop={8} onPress={() => setSheet('contact')} accessibilityRole="button">
-                    <Text style={styles.needAccessLink}>Contact administrator</Text>
+                    <Text style={styles.needAccessLink}>Contact us</Text>
                   </Pressable>
                 </View>
               </>
             ) : (
               <>
                 <Text style={styles.fieldLabel}>Mobile Number</Text>
-                <Text style={styles.fieldHelp}>Enter your registered mobile number</Text>
+                <Text style={styles.fieldHelp}>Enter your mobile number to sign in or create an account</Text>
 
                 <View style={styles.inputRow}>
                   {/* India only for now — a label, not a picker */}
@@ -546,15 +552,15 @@ export const DoctorLoginScreen = ({
                   <ShieldCheckIcon />
                   <View style={styles.secureCopy}>
                     <Text style={styles.secureTitle}>Secure login</Text>
-                    <Text style={styles.secureBody}>We send a one-time code to your registered number. There is no password to remember.</Text>
+                    <Text style={styles.secureBody}>We send a one-time code to this number. There is no password to remember.</Text>
                   </View>
                 </View>
 
                 <View style={styles.spacer} />
                 <View style={styles.needAccessRow}>
-                  <Text style={styles.needAccessText}>Need access? </Text>
+                  <Text style={styles.needAccessText}>Need help? </Text>
                   <Pressable testID="contact-admin" hitSlop={8} onPress={() => setSheet('contact')} accessibilityRole="button">
-                    <Text style={styles.needAccessLink}>Contact administrator</Text>
+                    <Text style={styles.needAccessLink}>Contact us</Text>
                   </Pressable>
                 </View>
               </>
@@ -577,7 +583,7 @@ export const DoctorLoginScreen = ({
       <BottomSheet
         visible={sheet === 'contact'}
         title="Contact CoraCure"
-        subtitle="Doctor accounts are created by a CoraCure administrator. Reach us if you cannot sign in or need access."
+        subtitle="Reach us if you cannot sign in, or have a question about your registration."
         onClose={() => setSheet(null)}
         testID="contact-sheet"
       >
@@ -585,9 +591,17 @@ export const DoctorLoginScreen = ({
       </BottomSheet>
 
       <BottomSheet visible={sheet === 'privacy'} title="Privacy Policy" onClose={() => setSheet(null)} testID="privacy-sheet">
-        <Text style={styles.sheetBody}>
-          For a copy of the CoraCure privacy policy, or a question about how your information is handled, contact CoraCure support.
-        </Text>
+        {privacy.data ? (
+          <Text testID="privacy-body" style={styles.sheetBody}>
+            {privacy.data.body}
+          </Text>
+        ) : (
+          // Before the policy loads, or when it cannot (offline, not yet
+          // published), the way to get it is still shown.
+          <Text style={styles.sheetBody}>
+            For a copy of the CoraCure privacy policy, or a question about how your information is handled, contact CoraCure support.
+          </Text>
+        )}
         <ContactOptions />
       </BottomSheet>
     </View>
@@ -650,12 +664,13 @@ const styles = StyleSheet.create({
   // column has to stay under that or the two collide.
   bannerCopy: { flex: 1, justifyContent: 'flex-start', maxWidth: 172 },
   bannerLead: { height: 74, flexShrink: 1 },
+  bannerDivider: { width: 34, height: 2, borderRadius: 1, backgroundColor: colors.paris, marginTop: spacing.md },
+  // Narrower than the banner copy so it stops short of the artwork instead of running over it.
+  bannerNote: { ...typeStyles.caption, color: colors.inkMuted, marginTop: spacing.sm, maxWidth: 140 },
   heading: { ...typeStyles.pageTitle, color: colors.ink },
   headingAccent: { color: colors.surfie },
   subheading: { ...typeStyles.bodySmall, color: colors.inkMuted, marginTop: spacing.sm },
   phoneEcho: { ...typeStyles.body, fontWeight: fontWeight.medium, color: colors.ink, marginTop: 2 },
-  bannerDivider: { width: 34, height: 2, borderRadius: 1, backgroundColor: colors.paris, marginTop: spacing.md },
-  bannerNote: { ...typeStyles.caption, color: colors.inkMuted, marginTop: spacing.sm },
 
   card: {
     flexGrow: 1,

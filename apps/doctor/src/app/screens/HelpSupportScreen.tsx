@@ -108,11 +108,12 @@ const RaiseIssueSheet = ({
     onRaised(id);
   };
 
+  // There is no support backend for doctors yet: an issue is kept on the device, and email reaches the team.
   return (
     <BottomSheet
       visible={visible}
       title="Raise an issue"
-      subtitle="Our support team replies within 24 hours."
+      subtitle="Saved on this device. To reach the support team, email them as well."
       onClose={close}
       testID="raise-sheet"
       footer={<SheetActions testID="raise" onCancel={close} confirmLabel="Submit" onConfirm={submit} />}
@@ -322,7 +323,7 @@ export const HelpSupportScreen = ({
         onClose={() => setRaising(false)}
         onRaised={() => {
           setRaising(false);
-          toast.show('Issue raised — we’ll reply within 24 hours');
+          toast.show('Saved on this device — email support to reach the team', 'info');
         }}
       />
     </Screen>

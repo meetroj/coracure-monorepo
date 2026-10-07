@@ -7,7 +7,8 @@ import { typeStyles } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, Button, Avatar } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
-import { instantRequest, modeLabel } from '../../data/doctor';
+import type { DoctorConsultation } from '@coracure/api';
+import { modeLabel, type InstantRequest } from '../../data/doctor';
 
 /**
  * Static stand-in for a spinner: a ring of dots with graded opacity reads as
@@ -30,12 +31,35 @@ const PendingDots = ({ size = 22, color = colors.paris }: { size?: number; color
 /**
  * Shown immediately after the doctor accepts an instant request.
  *
- * The slot is reserved but the consultation is NOT open: payment and consent
- * are still outstanding, so "Join consultation" stays disabled and says why.
- * Nothing here implies the doctor may start early.
+ * The slot is reserved but the consultation is NOT open yet: "Join
+ * consultation" stays disabled and says why until payment and consent have
+ * both cleared. Payment and consent are read from the accepted consultation
+ * itself, not assumed.
  */
-export const InstantAcceptedScreen = ({ onReturn, onBack }: { onReturn: () => void; onBack: () => void }) => {
-  const req = instantRequest;
+export const InstantAcceptedScreen = ({
+  request: req,
+  consultation,
+  loadError,
+  onRetry,
+  onJoin,
+  onReturn,
+  onBack,
+}: {
+  /** What the offer said: concern, specialty, language. */
+  request: InstantRequest;
+  /** `GET /doctor/consultations/:id` for the accepted request; undefined while it loads. */
+  consultation?: DoctorConsultation;
+  loadError?: string;
+  onRetry?: () => void;
+  /** Opens the consultation room. Passed only once payment and consent have cleared. */
+  onJoin?: () => void;
+  onReturn: () => void;
+  onBack: () => void;
+}) => {
+  // accepted now, so the treating side's read carries the name the offer withheld
+  const patient = consultation?.patient;
+  const paid = consultation?.paymentStatus === 'paid';
+  const consent = consultation?.doctorContext?.hasCurrentTeleconsultationConsent;
   const meta = [
     { key: 'mode', icon: 'video' as const, label: modeLabel[req.mode] },
     { key: 'lang', icon: 'language' as const, label: req.languages },
@@ -63,8 +87,9 @@ export const InstantAcceptedScreen = ({ onReturn, onBack }: { onReturn: () => vo
           <Button
             testID="join"
             label="Join consultation"
-            disabled
-            accessibilityHint="Opens once the patient completes payment and consent"
+            onPress={onJoin}
+            disabled={!onJoin}
+            accessibilityHint={onJoin ? undefined : 'Opens once payment and consent are complete'}
           />
           <Pressable testID="return" onPress={onReturn} hitSlop={8} style={s.returnBtn} accessibilityRole="button">
             <Text style={s.returnText}>Return to dashboard</Text>
@@ -88,11 +113,11 @@ export const InstantAcceptedScreen = ({ onReturn, onBack }: { onReturn: () => vo
 
         <View style={s.summaryCard}>
           <View style={s.patientRow}>
-            <Avatar initials={req.initials} size={54} />
+            <Avatar initials={patient?.initials ?? req.initials} size={54} />
             <View style={s.flex}>
-              <Text style={s.name}>{req.name}</Text>
+              <Text style={s.name}>{patient?.fullName ?? patient?.initials ?? req.name}</Text>
               <Text style={s.sub}>
-                {req.gender} • {req.age} years
+                {req.gender} • {patient?.age ?? req.age} years
               </Text>
               <View style={s.specRow}>
                 <Icon name="stethoscope" size={15} color={colors.surfie} />
@@ -127,26 +152,40 @@ export const InstantAcceptedScreen = ({ onReturn, onBack }: { onReturn: () => vo
           <Text style={s.waitTitle}>Waiting for patient</Text>
           <Text style={s.waitSub}>The patient is completing the required steps to join.</Text>
           <View style={s.waitDivider} />
-          <View style={s.waitRow}>
-            <PendingDots />
-            <Text style={s.waitLabel}>Payment</Text>
-            <View style={[s.waitPill, { backgroundColor: colors.warnSoft }]}>
-              <Text style={[s.waitPillText, { color: colors.warn }]}>In progress</Text>
-            </View>
-          </View>
-          <View style={s.waitDivider} />
-          <View style={s.waitRow}>
-            <View style={s.emptyRing} />
-            <Text style={s.waitLabel}>Teleconsultation consent</Text>
-            <View style={[s.waitPill, { backgroundColor: '#EFF3F1' }]}>
-              <Text style={[s.waitPillText, { color: colors.inkMuted }]}>Awaiting confirmation</Text>
-            </View>
-          </View>
+          {loadError ? (
+            <Pressable testID="accepted-retry" onPress={onRetry} accessibilityRole="button">
+              <Text style={[s.waitSub, { color: colors.danger }]}>{loadError} Tap to try again.</Text>
+            </Pressable>
+          ) : (
+            <>
+              <View style={s.waitRow}>
+                {paid ? <Icon name="checkCircle" size={22} color={colors.surfie} /> : <PendingDots />}
+                <Text style={s.waitLabel}>Payment</Text>
+                <View style={[s.waitPill, { backgroundColor: paid ? colors.successSoft : colors.warnSoft }]}>
+                  <Text style={[s.waitPillText, { color: paid ? colors.surfie : colors.warn }]}>
+                    {!consultation ? 'Checking…' : paid ? 'Paid' : 'In progress'}
+                  </Text>
+                </View>
+              </View>
+              <View style={s.waitDivider} />
+              <View style={s.waitRow}>
+                {consent ? <Icon name="checkCircle" size={22} color={colors.surfie} /> : <View style={s.emptyRing} />}
+                <Text style={s.waitLabel}>Teleconsultation consent</Text>
+                <View style={[s.waitPill, { backgroundColor: consent ? colors.successSoft : '#EFF3F1' }]}>
+                  <Text style={[s.waitPillText, { color: consent ? colors.surfie : colors.inkMuted }]}>
+                    {!consultation ? 'Checking…' : consent ? 'Accepted' : 'Awaiting confirmation'}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={s.note}>
           <Icon name="info" size={18} color={colors.surfie} />
-          <Text style={s.noteText}>The consultation will open once payment and consent are verified.</Text>
+          <Text style={s.noteText}>
+            You can join the consultation from here once payment and consent are complete.
+          </Text>
         </View>
       </View>
     </Screen>

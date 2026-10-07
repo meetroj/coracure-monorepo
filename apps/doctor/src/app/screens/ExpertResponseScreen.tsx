@@ -36,6 +36,7 @@ export const ExpertResponseScreen = ({
   onBack,
   onDecide,
   onDirtyChange,
+  busy = false,
 }: {
   clarification: Clarification;
   onBack: () => void;
@@ -43,6 +44,8 @@ export const ExpertResponseScreen = ({
   onDecide: (outcome: string, note: string, close: boolean) => void;
   /** Reports an unsaved decision so the route can ask before it is dropped. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** The decision is being saved — both buttons wait for it. */
+  busy?: boolean;
 }) => {
   const c = useStore((st) => st.clarifications.find((x) => x.id === clarification.id)) ?? clarification;
   const doctor = useStore(selectDoctor);
@@ -53,7 +56,7 @@ export const ExpertResponseScreen = ({
   const [note, setNote] = useState(start.note);
   const [confirmed, setConfirmed] = useState(false);
   const [sheet, setSheet] = useState<'case' | 'files' | null>(null);
-  const ready = confirmed && !!outcome;
+  const ready = confirmed && !!outcome && !busy;
   const dirty = outcome !== start.outcome || note !== start.note;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
@@ -148,6 +151,10 @@ export const ExpertResponseScreen = ({
           max={DECISION_MAX}
           accessibilityLabel="Decision note"
         />
+        <Text testID="decision-visibility" style={s.audit}>
+          Your decision is added to the thread, so the reviewer sees what you did with their guidance. Leave out anything that
+          identifies the patient.
+        </Text>
 
         <View style={s.divider} />
 

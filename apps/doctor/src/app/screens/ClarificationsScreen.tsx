@@ -5,6 +5,7 @@ import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, PageTitle, EmptyState } from '../../components/ui';
+import { SectionError, SkeletonRowList } from '../../components/skeletons';
 import { TabHeader } from '../navigation/TabHeader';
 import { useStore } from '../../state/store';
 import {
@@ -103,9 +104,20 @@ const CaseRow = ({ item, onPress }: { item: Clarification; onPress: () => void }
 export const ClarificationsScreen = ({
   onOpen,
   onNewQuery,
+  onOpenExpertInbox,
+  error,
+  loading,
+  onRetry,
 }: {
   onOpen: (c: Clarification) => void;
+  /** The list could not be read — said, with a retry, rather than showing what may be out of date as current. */
+  error?: Error;
+  /** First load with nothing to show yet. */
+  loading?: boolean;
+  onRetry?: () => void;
   onNewQuery: () => void;
+  /** Present only for a doctor the backend counts as an expert. */
+  onOpenExpertInbox?: () => void;
 }) => {
   const all = useStore((st) => st.clarifications);
   const [filter, setFilter] = useState<ListStatus | 'all'>('all');
@@ -118,6 +130,25 @@ export const ClarificationsScreen = ({
       <Screen testID="clarifications" contentStyle={s.content}>
         <TabHeader />
         <PageTitle title="Case Clarifications" subtitle="Track and manage clarification queries" />
+
+        {onOpenExpertInbox && (
+          <Pressable
+            testID="open-expert-inbox"
+            onPress={onOpenExpertInbox}
+            style={({ pressed }) => [s.inboxRow, pressed && s.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Expert inbox — cases assigned to you"
+          >
+            <View style={s.inboxIcon}>
+              <Icon name="shield" size={16} color={colors.surfie} />
+            </View>
+            <View style={s.flex}>
+              <Text style={s.inboxTitle}>Expert inbox</Text>
+              <Text style={s.inboxSub}>Cases other doctors have asked you to review</Text>
+            </View>
+            <Icon name="chevronRight" size={17} color={colors.inkFaint} />
+          </Pressable>
+        )}
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
           {CLARIFICATION_FILTERS.map((f) => {
@@ -140,7 +171,12 @@ export const ClarificationsScreen = ({
           })}
         </ScrollView>
 
-        {list.length === 0 ? (
+        {!!error && onRetry && <SectionError testID="clarifications-error" message="Could not load your clarifications." onRetry={onRetry} />}
+        {loading && all.length === 0 ? (
+          <SkeletonRowList rows={3} />
+        ) : error && all.length === 0 ? null : all.length === 0 ? (
+          <EmptyState icon="message" title="No clarifications yet" body="Cases you raise for an expert opinion appear here." />
+        ) : list.length === 0 ? (
           <EmptyState icon="message" title="Nothing here" body="No clarifications match this filter." actionLabel="Show all" onAction={() => setFilter('all')} />
         ) : (
           <View style={s.list}>
@@ -171,6 +207,22 @@ const s = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   content: { paddingBottom: 104 },
   pressed: { opacity: 0.8 },
+  inboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    minHeight: 60,
+    backgroundColor: colors.surface.mintSoft,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.surface.selected,
+  },
+  inboxIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  inboxTitle: { ...typeStyles.cardTitle, color: colors.ink },
+  inboxSub: { ...typeStyles.caption, color: colors.inkMuted },
 
   filterRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 2 },
   chip: {

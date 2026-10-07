@@ -1,20 +1,25 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Linking } from 'react-native';
+
+import { messageFor } from '@coracure/api/errors';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, Button } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
-import { patientById } from '../../data/patients';
+import { toast } from '../../components/Toast';
+import { fetchFileDownloadUrl, usePatientIdentity } from '../../data/patientFiles';
 import { SOURCE_LABEL, type PatientDoc } from '../../data/documents';
 
 /**
  * One document: what it is, who shared it, when, and for which consultation.
  *
- * The file itself is served by the backend, which this build does not have, so
- * the preview area says so plainly instead of drawing a fake page. Nothing
- * here downloads or exports the file.
+ * There is still no in-app preview — this build draws no fake page for one —
+ * but "Open file" is real: it mints a signed URL per tap (never at list time,
+ * or it would start expiring while a doctor scrolls) and hands it to the OS.
+ * A local-only document (added during a consultation this session, not yet a
+ * real backend file) has no such URL; the fetch fails and says so.
  */
 export const DocumentViewerScreen = ({
   doc,
@@ -28,7 +33,20 @@ export const DocumentViewerScreen = ({
   onBack: () => void;
   onOpenAllDocuments: () => void;
 }) => {
-  const patient = patientById(doc.patientId);
+  const { patient } = usePatientIdentity(doc.patientId);
+  const [opening, setOpening] = useState(false);
+
+  const openFile = async () => {
+    setOpening(true);
+    try {
+      const { url } = await fetchFileDownloadUrl(doc.id);
+      await Linking.openURL(url);
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setOpening(false);
+    }
+  };
   const rows: [string, string][] = [
     ['Patient', `${patient?.name ?? '—'} · ${doc.patientId}`],
     ['File', `${doc.fileType} · ${doc.size} · ${doc.pages} page${doc.pages === 1 ? '' : 's'}`],
@@ -41,7 +59,17 @@ export const DocumentViewerScreen = ({
     <Screen
       testID="document-viewer"
       header={<ScreenHeader onBack={onBack} inline title={doc.title} subtitle={patient?.name} />}
-      footer={<Button testID="all-documents" label={`All of ${patient?.name.split(' ')[0] ?? 'the patient'}'s documents`} variant="secondary" onPress={onOpenAllDocuments} />}
+      footer={
+        <View style={s.footer}>
+          <Button testID="open-file" label="Open file" icon="eye" onPress={openFile} loading={opening} disabled={opening} />
+          <Button
+            testID="all-documents"
+            label={`All of ${patient?.name.split(' ')[0] ?? 'the patient'}'s documents`}
+            variant="secondary"
+            onPress={onOpenAllDocuments}
+          />
+        </View>
+      }
     >
       <View style={s.page} accessible accessibilityLabel={`Preview of ${doc.title} is not available in this build`}>
         <View style={s.pageHead}>
@@ -84,6 +112,7 @@ export const DocumentViewerScreen = ({
 };
 
 const s = StyleSheet.create({
+  footer: { gap: spacing.sm },
   page: {
     marginHorizontal: spacing.lg,
     padding: spacing.lg,

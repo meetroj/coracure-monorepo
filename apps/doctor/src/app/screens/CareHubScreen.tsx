@@ -7,47 +7,49 @@ import { Icon, type IconName } from '../../components/Icon';
 import { Screen, Button } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { confirmDiscard } from '../../components/confirm';
-import { careResources, CARE_CONDITIONS, NOTE_MAX, type CareResource } from '../../data/followup';
+import { SkeletonRowList, SectionError } from '../../components/skeletons';
+import { NOTE_MAX } from '../../data/followup';
+import type { Resource } from '../../data/useResource';
+import type { CareHubItem, ContentItemType } from '@coracure/api';
 
 /**
  * Care Hub Recommendations — DOC-FUP-04 / DR-15-06.
  *
  * Opened from the advice step of the write-up, so the picks belong to one
- * consultation. Only published, clinically reviewed content can be selected;
- * anything awaiting review renders locked, so the doctor can see it exists and
- * why it cannot be sent. Saving with nothing selected clears the
- * recommendations — it never deletes a resource.
+ * consultation. The library is the server's published shelf, so every card
+ * is selectable; drafts never reach the app. Saving with nothing selected
+ * clears the recommendations — it never deletes a resource. A pick that has
+ * left the shelf since it was made is dropped on save rather than sent, so
+ * the write-up does not trip `CONTENT_NOT_RECOMMENDABLE`.
  */
 
-type Tab = 'tool' | 'education';
+type Tab = Extract<ContentItemType, 'self_help_tool' | 'education_module'>;
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
-  { key: 'tool', label: 'Tools', icon: 'tools' },
-  { key: 'education', label: 'Modules', icon: 'notes' },
+  { key: 'self_help_tool', label: 'Tools', icon: 'tools' },
+  { key: 'education_module', label: 'Modules', icon: 'notes' },
 ];
+
+const iconFor = (t: ContentItemType): IconName => (t === 'self_help_tool' ? 'tools' : 'notes');
 
 /** How many cards show before "View more". */
 const PAGE = 6;
 
-const ResourceCard = ({ resource, selected, onToggle }: { resource: CareResource; selected: boolean; onToggle: () => void }) => {
-  const locked = !resource.reviewed;
+const ResourceCard = ({ resource, selected, onToggle }: { resource: CareHubItem; selected: boolean; onToggle: () => void }) => {
   return (
     <Pressable
       testID={`care-${resource.id}`}
-      onPress={locked ? undefined : onToggle}
-      disabled={locked}
+      onPress={onToggle}
       accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected, disabled: locked }}
+      accessibilityState={{ checked: selected }}
       accessibilityLabel={resource.title}
-      style={({ pressed }) => [s.card, selected && s.cardOn, locked && s.cardLocked, pressed && !locked && s.pressed]}
+      style={({ pressed }) => [s.card, selected && s.cardOn, pressed && s.pressed]}
     >
       <View style={s.cardTop}>
         <View style={s.cardIcon}>
-          <Icon name={resource.icon} size={17} color={locked ? colors.inkFaint : colors.surfie} />
+          <Icon name={iconFor(resource.itemType)} size={17} color={colors.surfie} />
         </View>
-        {locked ? (
-          <Icon name="lock" size={14} color={colors.inkFaint} />
-        ) : selected ? (
+        {selected ? (
           <View style={s.tick}>
             <Icon name="check" size={12} weight={3} color={colors.white} />
           </View>
@@ -58,23 +60,27 @@ const ResourceCard = ({ resource, selected, onToggle }: { resource: CareResource
       <Text style={s.cardTitle} numberOfLines={2}>
         {resource.title}
       </Text>
-      <Text style={s.cardBlurb} numberOfLines={3}>
-        {resource.blurb}
-      </Text>
-      {locked && <Text style={s.lockedNote}>Awaiting review</Text>}
-      {resource.requiresConsent && <Text style={s.consentNote}>Requires patient consent before sharing</Text>}
+      {!!resource.summary && (
+        <Text style={s.cardBlurb} numberOfLines={3}>
+          {resource.summary}
+        </Text>
+      )}
     </Pressable>
   );
 };
 
 export const CareHubScreen = ({
+  library,
   onBack,
   onSave,
   initialSelected = [],
   initialNote = '',
   patientName,
   onDirtyChange,
+  readOnly = false,
 }: {
+  /** The published shelf — `useCareHubItems()`. */
+  library: Resource<CareHubItem[]>;
   onBack: () => void;
   onSave: (ids: string[], note: string) => void;
   /** Reports unsaved picks so the route can ask before they are dropped — on Back, swipe or Android back. */
@@ -83,28 +89,29 @@ export const CareHubScreen = ({
   initialSelected?: string[];
   initialNote?: string;
   patientName?: string;
+  /**
+   * The record is finalised. Picks only reach the server inside the write-up
+   * PUT, which a finalised record refuses — so they cannot change any more.
+   */
+  readOnly?: boolean;
 }) => {
-  const [tab, setTab] = useState<Tab>('tool');
-  const [condition, setCondition] = useState<string>(CARE_CONDITIONS[0]);
+  const [tab, setTab] = useState<Tab>('self_help_tool');
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<string[]>(initialSelected);
   const [note, setNote] = useState(initialNote);
 
-  const list = useMemo(() => {
-    const all = careResources.filter((r) => r.published && r.kind === tab);
-    if (condition === CARE_CONDITIONS[0]) return all;
-    return all.filter((r) => r.conditions.includes(condition));
-  }, [tab, condition]);
+  const items = library.data;
+  const list = useMemo(() => (items ?? []).filter((r) => r.itemType === tab), [items, tab]);
 
   const visible = expanded ? list : list.slice(0, PAGE);
-  const chosen = careResources.filter((r) => selected.includes(r.id));
+  const chosen = (items ?? []).filter((r) => selected.includes(r.id));
   const dirty =
     note.trim() !== initialNote.trim() ||
     selected.length !== initialSelected.length ||
     selected.some((x) => !initialSelected.includes(x));
 
-  const toggle = (r: CareResource) => {
-    if (!r.reviewed) return;
+  const toggle = (r: CareHubItem) => {
+    if (readOnly) return;
     setSelected((v) => (v.includes(r.id) ? v.filter((x) => x !== r.id) : [...v, r.id]));
   };
 
@@ -125,38 +132,20 @@ export const CareHubScreen = ({
         />
       }
       footer={
-        <Button
-          testID="save-recommendations"
-          label={chosen.length === 0 && initialSelected.length > 0 ? 'Clear recommendations' : `Save Recommendations${chosen.length ? ` (${chosen.length})` : ''}`}
-          onPress={() => onSave(selected, note.trim())}
-          disabled={!dirty && chosen.length === 0}
-        />
+        readOnly ? (
+          <Text testID="care-locked" style={s.lockedText}>
+            This consultation is complete, so its recommendations can no longer be changed.
+          </Text>
+        ) : (
+          <Button
+            testID="save-recommendations"
+            label={chosen.length === 0 && initialSelected.length > 0 ? 'Clear recommendations' : `Save Recommendations${chosen.length ? ` (${chosen.length})` : ''}`}
+            onPress={() => onSave(chosen.map((r) => r.id), note.trim())}
+            disabled={!items || (!dirty && chosen.length === 0)}
+          />
+        )
       }
     >
-      <Text style={s.fieldLabel}>Filter by condition</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.condRow}>
-        {CARE_CONDITIONS.map((cnd) => {
-          const on = condition === cnd;
-          return (
-            <Pressable
-              key={cnd}
-              testID={`cond-${cnd}`}
-              onPress={() => {
-                setCondition(cnd);
-                setExpanded(false);
-              }}
-              hitSlop={{ top: 4, bottom: 4 }}
-              style={[s.cond, on && s.condOn]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-            >
-              {cnd !== CARE_CONDITIONS[0] && <Icon name="tag" size={12} color={on ? colors.white : colors.inkMuted} />}
-              <Text style={[s.condText, on && s.condTextOn]}>{cnd}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
       <View style={s.tabs}>
         {TABS.map((t) => {
           const on = tab === t.key;
@@ -179,9 +168,13 @@ export const CareHubScreen = ({
         })}
       </View>
 
-      {visible.length === 0 ? (
+      {library.showSkeleton ? (
+        <SkeletonRowList rows={3} avatar="none" />
+      ) : library.error && !items ? (
+        <SectionError testID="care-error" message="Could not load the Care Hub library." onRetry={library.retry} />
+      ) : visible.length === 0 ? (
         <View style={s.empty}>
-          <Text style={s.emptyText}>No published resources for this condition yet.</Text>
+          <Text style={s.emptyText}>Nothing published on this shelf yet.</Text>
         </View>
       ) : (
         <View style={s.grid}>
@@ -193,7 +186,7 @@ export const CareHubScreen = ({
 
       {list.length > PAGE && (
         <Pressable testID="care-more" onPress={() => setExpanded((v) => !v)} hitSlop={8} style={s.more} accessibilityRole="button">
-          <Text style={s.moreText}>{expanded ? 'Show fewer' : `View more ${tab === 'tool' ? 'tools' : 'modules'}`}</Text>
+          <Text style={s.moreText}>{expanded ? 'Show fewer' : `View more ${tab === 'self_help_tool' ? 'tools' : 'modules'}`}</Text>
           <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={14} color={colors.surfie} />
         </Pressable>
       )}
@@ -208,19 +201,21 @@ export const CareHubScreen = ({
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chosenRow}>
             {chosen.map((r) => (
               <View key={r.id} style={s.chosen}>
-                <Icon name={r.icon} size={13} color={colors.surfie} />
+                <Icon name={iconFor(r.itemType)} size={13} color={colors.surfie} />
                 <Text style={s.chosenText} numberOfLines={1}>
                   {r.title}
                 </Text>
-                <Pressable
-                  testID={`remove-${r.id}`}
-                  onPress={() => setSelected((v) => v.filter((x) => x !== r.id))}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${r.title}`}
-                >
-                  <Icon name="close" size={14} color={colors.inkMuted} />
-                </Pressable>
+                {!readOnly && (
+                  <Pressable
+                    testID={`remove-${r.id}`}
+                    onPress={() => setSelected((v) => v.filter((x) => x !== r.id))}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${r.title}`}
+                  >
+                    <Icon name="close" size={14} color={colors.inkMuted} />
+                  </Pressable>
+                )}
               </View>
             ))}
           </ScrollView>
@@ -237,6 +232,7 @@ export const CareHubScreen = ({
             testID="care-note"
             value={note}
             onChangeText={(t) => setNote(t.slice(0, NOTE_MAX))}
+            editable={!readOnly}
             multiline
             placeholder="e.g. Start with the breathing exercise each evening."
             placeholderTextColor={colors.inkFaint}
@@ -255,23 +251,9 @@ export const CareHubScreen = ({
 
 const s = StyleSheet.create({
   pressed: { opacity: 0.75 },
+  lockedText: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'center' },
   fieldLabel: { ...typeStyles.label, color: colors.ink, paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.sm },
 
-  condRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 2 },
-  cond: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.surface.line,
-    backgroundColor: colors.white,
-  },
-  condOn: { backgroundColor: colors.surfie, borderColor: colors.surfie },
-  condText: { ...typeStyles.caption, color: colors.inkMuted },
-  condTextOn: { color: colors.white, fontWeight: fontWeight.semibold },
 
   tabs: { flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.surface.line },
   tab: {
@@ -298,7 +280,6 @@ const s = StyleSheet.create({
     padding: spacing.md,
   },
   cardOn: { borderColor: colors.paris, backgroundColor: colors.surface.mintSoft },
-  cardLocked: { backgroundColor: colors.surface.page },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   cardIcon: {
     width: 34,
@@ -312,8 +293,6 @@ const s = StyleSheet.create({
   tickEmpty: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.surface.inputBorder },
   cardTitle: { ...typeStyles.cardTitle, fontSize: 14, color: colors.ink, marginTop: spacing.sm },
   cardBlurb: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 3 },
-  lockedNote: { ...typeStyles.caption, fontSize: 11, color: colors.warn, marginTop: 4 },
-  consentNote: { ...typeStyles.caption, fontSize: 11, color: colors.warn, marginTop: 4 },
 
   more: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44, marginTop: spacing.sm },
   moreText: { ...typeStyles.buttonSmall, color: colors.surfie },

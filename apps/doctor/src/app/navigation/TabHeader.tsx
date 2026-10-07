@@ -20,7 +20,9 @@ import { resetDemoData, setVerification } from '../../state/actions';
  * has no backend for. So a tester can walk the Pending → Approved / Rejected
  * states, a long press (1.5s) on the wordmark opens a small menu that moves
  * the account between them, or resets the demo data. It is deliberately
- * undiscoverable in normal use and documented for testers.
+ * undiscoverable in normal use and documented for testers — and compiled in
+ * for development builds only: a release build must not let anyone mark their
+ * own account approved, even locally.
  */
 export const TabHeader = () => {
   const navigation = useContext(NavigationContext);
@@ -32,7 +34,7 @@ export const TabHeader = () => {
     <View style={s.header}>
       <Pressable
         testID="brand-logo"
-        onLongPress={() => setDemoOpen(true)}
+        onLongPress={__DEV__ ? () => setDemoOpen(true) : undefined}
         delayLongPress={1500}
         accessibilityRole="image"
         accessibilityLabel="CoraCure"
@@ -60,61 +62,63 @@ export const TabHeader = () => {
         </View>
       )}
 
-      <ActionSheet
-        visible={demoOpen}
-        title="Demo tools"
-        onClose={() => setDemoOpen(false)}
-        testID="demo-tools"
-        actions={[
-          {
-            key: 'approve',
-            label: 'Approve verification',
-            hint: 'As if an administrator approved the account',
-            icon: 'shieldCheck',
-            onPress: () => {
-              setVerification('approved');
-              toast.show('Verification set to Approved');
+      {__DEV__ && (
+        <ActionSheet
+          visible={demoOpen}
+          title="Demo tools"
+          onClose={() => setDemoOpen(false)}
+          testID="demo-tools"
+          actions={[
+            {
+              key: 'approve',
+              label: 'Approve verification',
+              hint: 'As if an administrator approved the account',
+              icon: 'shieldCheck',
+              onPress: () => {
+                setVerification('approved');
+                toast.show('Verification set to Approved');
+              },
             },
-          },
-          {
-            key: 'reject',
-            label: 'Reject verification',
-            hint: 'Shows the issues the doctor must fix',
-            icon: 'banCircle',
-            onPress: () => {
-              setVerification('rejected');
-              toast.show('Verification set to Rejected', 'info');
+            {
+              key: 'reject',
+              label: 'Reject verification',
+              hint: 'Shows the issues the doctor must fix',
+              icon: 'banCircle',
+              onPress: () => {
+                setVerification('rejected');
+                toast.show('Verification set to Rejected', 'info');
+              },
             },
-          },
-          {
-            key: 'pending',
-            label: 'Set to pending review',
-            icon: 'clock',
-            onPress: () => {
-              setVerification('pending');
-              toast.show('Verification set to Pending', 'info');
+            {
+              key: 'pending',
+              label: 'Set to pending review',
+              icon: 'clock',
+              onPress: () => {
+                setVerification('pending');
+                toast.show('Verification set to Pending', 'info');
+              },
             },
-          },
-          {
-            key: 'reset',
-            label: 'Reset demo data',
-            hint: 'Restores patients, notes, alerts and messages',
-            icon: 'refresh',
-            destructive: true,
-            onPress: () =>
-              confirm({
-                title: 'Reset demo data?',
-                message: 'Every change made in this session to patients, notes, alerts and messages is undone.',
-                confirmLabel: 'Reset',
-                destructive: true,
-                onConfirm: () => {
-                  resetDemoData();
-                  toast.show('Demo data reset');
-                },
-              }),
-          },
-        ]}
-      />
+            {
+              key: 'reset',
+              label: 'Reset demo data',
+              hint: 'Restores patients, notes, alerts and messages',
+              icon: 'refresh',
+              destructive: true,
+              onPress: () =>
+                confirm({
+                  title: 'Reset demo data?',
+                  message: 'Every change made in this session to patients, notes, alerts and messages is undone.',
+                  confirmLabel: 'Reset',
+                  destructive: true,
+                  onConfirm: () => {
+                    resetDemoData();
+                    toast.show('Demo data reset');
+                  },
+                }),
+            },
+          ]}
+        />
+      )}
     </View>
   );
 };

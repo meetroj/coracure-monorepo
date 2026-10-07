@@ -20,6 +20,9 @@ export type {
 } from './endpoints/doctorAuth';
 import * as doctorProfileApi from './endpoints/doctorProfile';
 export { doctorProfileApi };
+import * as doctorLegalApi from './endpoints/doctorLegal';
+export { doctorLegalApi };
+export type { LegalDocumentView } from './endpoints/doctorLegal';
 export type {
   DoctorSelfProfile,
   VerificationProgress,
@@ -30,6 +33,7 @@ export type {
   RegistrationView,
   SaveRegistration,
   RegistrationIdType,
+  OwnProfilePatch,
 } from './endpoints/doctorProfile';
 import * as doctorConsultationsApi from './endpoints/doctorConsultations';
 export { doctorConsultationsApi };
@@ -58,7 +62,68 @@ export type {
   PatientFileCategory,
   ReportRequest as DoctorReportRequest,
   ReportRequestCategory,
+  UploadContentType,
+  UploadableFileCategory,
 } from './endpoints/doctorFiles';
+import * as doctorNotificationsApi from './endpoints/doctorNotifications';
+export { doctorNotificationsApi };
+export type { NotificationRecord as DoctorNotificationRecord } from './endpoints/doctorNotifications';
+import * as doctorClarificationApi from './endpoints/doctorClarification';
+export { doctorClarificationApi };
+export type {
+  ClarificationStatus,
+  ClarificationUrgency,
+  ClarificationMessageType,
+  CaseMessage,
+  AuthorCaseView,
+  ExpertCaseView,
+  CaseInput,
+  IdentifierFound,
+} from './endpoints/doctorClarification';
+import * as doctorClinicalRecordApi from './endpoints/doctorClinicalRecord';
+export { doctorClinicalRecordApi };
+export type {
+  RiskCategory as ClinicalRiskCategory,
+  MedicineInput as ClinicalMedicineInput,
+  Medicine as ClinicalMedicine,
+  Advice as ClinicalAdvice,
+  Outstanding as ClinicalOutstanding,
+  ClinicalRecordView,
+  SaveClinicalRecordRequest,
+} from './endpoints/doctorClinicalRecord';
+import * as doctorFollowupApi from './endpoints/doctorFollowup';
+export { doctorFollowupApi };
+export type {
+  FollowupPathway,
+  FollowupPlan,
+  FollowupStatus,
+  CheckinStatus,
+  CheckinRecord,
+} from './endpoints/doctorFollowup';
+import * as doctorTemplatesApi from './endpoints/doctorTemplates';
+export { doctorTemplatesApi };
+export type {
+  TemplateKind as ClinicalTemplateKind,
+  TemplateMedicine as ClinicalTemplateMedicine,
+  TemplateContent as ClinicalTemplateContent,
+  TemplateInput as ClinicalTemplateInput,
+  TemplateRecord as ClinicalTemplateRecord,
+} from './endpoints/doctorTemplates';
+import * as doctorCareHubApi from './endpoints/doctorCareHub';
+export { doctorCareHubApi };
+export type { CareHubItem, ContentItemType } from './endpoints/doctorCareHub';
+import * as doctorVideoApi from './endpoints/doctorVideo';
+export { doctorVideoApi };
+export type { CallSession } from './endpoints/doctorVideo';
+import * as doctorPayoutsApi from './endpoints/doctorPayouts';
+export { doctorPayoutsApi };
+export type { Payout as DoctorPayout } from './endpoints/doctorPayouts';
+import * as doctorFeedbackApi from './endpoints/doctorFeedback';
+export { doctorFeedbackApi };
+export type { DoctorFeedback, DoctorFeedbackEntry } from './endpoints/doctorFeedback';
+import * as doctorChatApi from './endpoints/doctorChat';
+export { doctorChatApi };
+export type { ChatMessageRecord, ChatThreadSummary } from './endpoints/doctorChat';
 export { configureApi, getApiConfig } from './config';
 import * as profileApi from './endpoints/profile';
 export { profileApi };

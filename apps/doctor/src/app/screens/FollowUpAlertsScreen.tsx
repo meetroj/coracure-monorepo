@@ -1,34 +1,51 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
+import type { SafetyAlert } from '@coracure/api';
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen, EmptyState } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import { SkeletonRowList, SectionError } from '../../components/skeletons';
 import { toast } from '../../components/Toast';
-import { useStore } from '../../state/store';
-import { isOpenAlert, selectAlerts, type AlertView } from '../../state/selectors';
-import { acknowledgeAlert } from '../../state/actions';
-import { patientById } from '../../data/patients';
-import { ALERT_STATUS, ALERT_CHIPS, alertReceivedLabel, type AlertCategory } from '../../data/followup';
+import {
+  ALERT_STATE_LABEL,
+  ALERT_TYPE_LABEL,
+  acknowledgeAlert,
+  alertReceivedLabel,
+  sortedAlerts,
+  useSafetyAlerts,
+} from '../../data/safetyAlerts';
 
-/** Per-category tint. Red is reserved for genuine safety, never for workload. */
-const TONE: Record<AlertCategory, { fg: string; bg: string; icon: IconName }> = {
-  redFlag: { fg: colors.danger, bg: colors.dangerSoft, icon: 'flag' },
+type AlertType = SafetyAlert['alertType'];
+
+/** Per-type tint. Red is reserved for genuine safety, never for workload. */
+const TONE: Record<AlertType, { fg: string; bg: string; icon: IconName }> = {
+  red_flag: { fg: colors.danger, bg: colors.dangerSoft, icon: 'flag' },
   amber: { fg: '#B87316', bg: '#FDF4E5', icon: 'alertTriangle' },
-  sideEffect: { fg: '#B87316', bg: '#FDF4E5', icon: 'prescription' },
-  missed: { fg: colors.surfie, bg: colors.successSoft, icon: 'calendar' },
-  due: { fg: colors.surfie, bg: colors.successSoft, icon: 'clock' },
+  medication_side_effect: { fg: '#B87316', bg: '#FDF4E5', icon: 'prescription' },
+  missed_checkin: { fg: colors.surfie, bg: colors.successSoft, icon: 'calendar' },
+  followup_due: { fg: colors.surfie, bg: colors.successSoft, icon: 'clock' },
 };
+
+const CHIPS: { key: AlertType; label: string }[] = [
+  { key: 'red_flag', label: 'Red Flags' },
+  { key: 'amber', label: 'Amber Alerts' },
+  { key: 'medication_side_effect', label: 'Side Effects' },
+  { key: 'missed_checkin', label: 'Missed Check-ins' },
+  { key: 'followup_due', label: 'Follow-up Due' },
+];
 
 /**
  * Follow-up Alerts — psychiatry check-in triage.
  *
  * Severity drives order: red flags sort above everything and are the only
- * place danger red appears. Alert copy is the patient's reported wording,
- * never a diagnosis, and only assigned patients appear. Acknowledging is
- * recorded on the alert, so it stays acknowledged when the doctor comes back.
+ * place danger red appears. `reason` is the patient's reported wording,
+ * never a diagnosis, and only patients assigned to this doctor appear —
+ * that scope is enforced server-side, not filtered here.
  */
 export const FollowUpAlertsScreen = ({
   onBack,
@@ -37,17 +54,27 @@ export const FollowUpAlertsScreen = ({
 }: {
   onBack: () => void;
   onOpenAlert: (alertId: string) => void;
-  initialCategory?: AlertCategory;
+  initialCategory?: AlertType;
 }) => {
-  const alerts = useStore(selectAlerts);
-  const [chip, setChip] = useState<AlertCategory | 'all'>(initialCategory ?? 'all');
+  const { data, showSkeleton, error, retry } = useSafetyAlerts();
+  const [chip, setChip] = useState<AlertType | 'all'>(initialCategory ?? 'all');
+  const [acking, setAcking] = useState<string | null>(null);
 
-  const list = useMemo(() => (chip === 'all' ? alerts : alerts.filter((a) => a.category === chip)), [alerts, chip]);
-  const openCount = (c: AlertCategory) => alerts.filter((a) => a.category === c && isOpenAlert(a)).length;
+  const alerts = useMemo(() => sortedAlerts(data ?? []), [data]);
+  const list = useMemo(() => (chip === 'all' ? alerts : alerts.filter((a) => a.alertType === chip)), [alerts, chip]);
+  const openCount = (c: AlertType) => alerts.filter((a) => a.alertType === c && a.state !== 'closed').length;
 
-  const acknowledge = (a: AlertView) => {
-    acknowledgeAlert(a.id);
-    toast.show(`Acknowledged — ${patientById(a.patientId)?.name ?? 'patient'}`);
+  const acknowledge = async (a: SafetyAlert) => {
+    setAcking(a.id);
+    try {
+      await acknowledgeAlert(a.id);
+      toast.show(`Acknowledged — ${a.patientName ?? a.patientInitials ?? 'patient'}`);
+      retry();
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setAcking(null);
+    }
   };
 
   return (
@@ -58,7 +85,7 @@ export const FollowUpAlertsScreen = ({
       }
     >
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipWrap}>
-        {ALERT_CHIPS.map((c) => {
+        {CHIPS.map((c) => {
           const on = chip === c.key;
           const tone = TONE[c.key];
           const count = openCount(c.key);
@@ -84,14 +111,17 @@ export const FollowUpAlertsScreen = ({
         })}
       </ScrollView>
 
-      {list.length === 0 ? (
+      {showSkeleton ? (
+        <SkeletonRowList rows={4} avatar="circle" />
+      ) : error ? (
+        <SectionError testID="alerts-error" message="Could not load follow-up alerts." onRetry={retry} />
+      ) : list.length === 0 ? (
         <EmptyState icon="checkCircle" title="Nothing to review" body="No alerts match this filter." actionLabel="Show all" onAction={() => setChip('all')} />
       ) : (
         list.map((a) => {
-          const tone = TONE[a.category];
-          const patient = patientById(a.patientId);
-          const status = a.live.status;
-          const isOpen = status === 'open';
+          const tone = TONE[a.alertType];
+          const name = a.patientName ?? a.patientInitials ?? 'Patient';
+          const isOpen = a.state === 'open';
           return (
             <View key={a.id} testID={`alert-${a.id}`} style={s.card}>
               <Pressable
@@ -99,79 +129,57 @@ export const FollowUpAlertsScreen = ({
                 onPress={() => onOpenAlert(a.id)}
                 style={({ pressed }) => [s.cardTop, pressed && s.pressed]}
                 accessibilityRole="button"
-                accessibilityLabel={`Open alert for ${patient?.name}: ${a.trigger}`}
+                accessibilityLabel={`Open alert for ${name}: ${a.reason ?? ALERT_TYPE_LABEL[a.alertType]}`}
               >
                 <View>
                   <View style={s.avatar}>
-                    <Text style={s.avatarText}>{patient?.initials}</Text>
+                    <Text style={s.avatarText}>{a.patientInitials ?? '??'}</Text>
                   </View>
                   <View style={[s.avatarDot, { backgroundColor: tone.fg }]} />
                 </View>
                 <View style={s.flex}>
-                  <View style={s.nameRow}>
-                    <Text style={s.name} numberOfLines={1}>
-                      {patient?.name}
-                    </Text>
-                    {!a.live.read && <View style={s.unreadDot} accessibilityLabel="Unread" />}
-                  </View>
+                  <Text style={s.name} numberOfLines={1}>
+                    {name}
+                  </Text>
                   <Text style={s.meta} numberOfLines={1}>
-                    {patient?.gender} • {patient?.age} years • {a.patientId}
+                    {a.patientGender} • {a.patientAge ?? '—'} years • {a.patientId}
                   </Text>
                   <View style={[s.reason, { backgroundColor: tone.bg }]}>
                     <Icon name={tone.icon} size={12} color={tone.fg} />
                     <Text style={[s.reasonText, { color: tone.fg }]} numberOfLines={2}>
-                      {a.trigger}
+                      {a.reason ?? ALERT_TYPE_LABEL[a.alertType]}
                     </Text>
                   </View>
                   <View style={s.timeRow}>
                     <Text style={s.time}>{alertReceivedLabel(a)}</Text>
                     <View style={[s.statusPill, isOpen && s.statusPillOpen]}>
-                      <Text style={[s.statusText, isOpen && s.statusTextOpen]}>{ALERT_STATUS[status]}</Text>
+                      <Text style={[s.statusText, isOpen && s.statusTextOpen]}>{ALERT_STATE_LABEL[a.state]}</Text>
                     </View>
                   </View>
                 </View>
                 <Icon name="chevronRight" size={18} color={colors.inkFaint} />
               </Pressable>
 
-              {a.checkIn ? (
-                <View style={s.checkIn}>
-                  <View style={s.checkInHead}>
-                    <Icon name="message" size={12} color={colors.surfie} />
-                    <Text style={s.checkInLabel}>Latest check-in</Text>
-                  </View>
-                  <Text style={s.checkInText} numberOfLines={2}>
-                    &ldquo;{a.checkIn}&rdquo;
-                  </Text>
-                </View>
-              ) : (
-                <View style={s.checkIn}>
-                  <View style={s.checkInHead}>
-                    <Icon name="calendar" size={12} color={colors.inkMuted} />
-                    <Text style={[s.checkInLabel, { color: colors.inkMuted }]}>No check-in submitted</Text>
-                  </View>
-                </View>
-              )}
-
               <View style={s.actions}>
                 <Pressable
                   testID={`ack-${a.id}`}
                   onPress={() => acknowledge(a)}
-                  disabled={!isOpen}
+                  disabled={!isOpen || acking === a.id}
                   style={({ pressed }) => [s.btn, s.btnGhost, !isOpen && s.btnDisabled, pressed && isOpen && s.pressed]}
                   accessibilityRole="button"
                   accessibilityState={{ disabled: !isOpen }}
-                  accessibilityLabel={isOpen ? `Acknowledge alert for ${patient?.name}` : `${ALERT_STATUS[status]}`}
+                  accessibilityLabel={isOpen ? `Acknowledge alert for ${name}` : ALERT_STATE_LABEL[a.state]}
                 >
-                  <Text style={s.btnGhostText}>{isOpen ? 'Acknowledge' : ALERT_STATUS[status]}</Text>
+                  <Text style={s.btnGhostText}>{isOpen ? 'Acknowledge' : ALERT_STATE_LABEL[a.state]}</Text>
                 </Pressable>
                 <Pressable
                   testID={`open-btn-${a.id}`}
                   onPress={() => onOpenAlert(a.id)}
                   style={({ pressed }) => [s.btn, s.btnSolid, pressed && s.pressed]}
                   accessibilityRole="button"
-                  accessibilityLabel={`Review ${patient?.name}`}
+                  accessibilityLabel={`Review ${name}`}
                 >
-                  <Text style={s.btnSolidText}>{a.category === 'redFlag' && isOpen ? 'Review now' : 'Review'}</Text>
+                  <Text style={s.btnSolidText}>{a.alertType === 'red_flag' && isOpen ? 'Review now' : 'Review'}</Text>
                 </Pressable>
               </View>
             </View>
@@ -240,9 +248,7 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.white,
   },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   name: { ...typeStyles.name, fontWeight: fontWeight.bold, color: colors.ink, flexShrink: 1 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.surfie },
   meta: { ...typeStyles.caption, color: colors.inkMuted, marginTop: 2 },
   reason: {
     flexDirection: 'row',
@@ -262,11 +268,6 @@ const s = StyleSheet.create({
   statusPillOpen: { backgroundColor: colors.warnSoft },
   statusText: { ...typeStyles.caption, fontSize: 11, lineHeight: 16, fontWeight: fontWeight.bold, color: colors.surfie },
   statusTextOpen: { color: colors.warn },
-
-  checkIn: { marginTop: spacing.md, backgroundColor: colors.surface.mint, borderRadius: 12, padding: spacing.md },
-  checkInHead: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  checkInLabel: { ...typeStyles.caption, fontWeight: fontWeight.bold, color: colors.surfie },
-  checkInText: { ...typeStyles.bodySmall, color: colors.ink, marginTop: 4 },
 
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   btn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, borderRadius: 12 },

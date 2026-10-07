@@ -7,29 +7,27 @@ const view = (over: Partial<RegistrationView> = {}): RegistrationView => ({
   dateOfBirth: '1988-03-12',
   gender: 'male',
   email: 'meet@coracure.in',
-  identity: { idType: 'aadhaar', idTypeName: null, numberLast4: '1156' },
-  qualifications: [
-    {
-      id: 'q-1',
-      degree: 'MD Psychiatry',
-      specialty: 'Psychiatry',
-      institution: 'KEM Hospital',
-      university: 'MUHS',
-      year: 2016,
-      documentId: 'doc-1',
-    },
-  ],
+  registrationNumber: 'KMC-4471',
+  identity: { idType: 'aadhaar', idTypeName: null, numberLast4: '1156', abhaId: 'meet@abdm' },
+  qualifications: {
+    basicQualification: 'MBBS',
+    pgSpecialisation: 'MD Psychiatry',
+    superSpecialisation: null,
+    fellowship: null,
+    degreeCertificateId: 'doc-1',
+    registrationCertificateId: 'doc-3',
+  },
   experience: [
     {
       id: 'e-1',
-      position: 'Consultant Psychiatrist',
+      designation: 'Consultant Psychiatrist',
       institution: 'Lilavati',
-      startMonth: '2018-01',
-      endMonth: null,
-      isCurrent: true,
+      years: 8,
       documentId: 'doc-2',
     },
   ],
+  signatureDocumentId: null,
+  specialtyId: null,
   totalExperienceYears: 8,
   editable: true,
   ...over,
@@ -41,38 +39,33 @@ test('the API codes come back as the labels the form shows', () => {
   const draft = draftFromRegistration(view(), '9406879532');
   expect(draft.basic.gender).toBe('Male');
   expect(draft.identity.idType).toBe('Aadhaar');
+  expect(draft.identity.abhaId).toBe('meet@abdm');
 });
 
-test('dates come back in the shape the fields hold, not ISO', () => {
+test('dates and numbers come back in the shape the fields hold', () => {
   const draft = draftFromRegistration(view(), '9406879532');
   expect(draft.basic.dob).toBe('12 / 03 / 1988');
-  expect(draft.experience[0].start).toBe('2018 / 01');
+  expect(draft.experience[0].years).toBe('8');
 });
 
-test('a current role keeps a null end date rather than an empty string', () => {
-  const draft = draftFromRegistration(view(), '9406879532');
-  expect(draft.experience[0].current).toBe(true);
-  expect(draft.experience[0].end).toBeNull();
+test('null optional qualifications come back blank, not "null"', () => {
+  const q = draftFromRegistration(view(), '9406879532').qualifications;
+  expect([q.basicQualification, q.pgSpecialisation, q.superSpecialisation, q.fellowship]).toEqual(['MBBS', 'MD Psychiatry', '', '']);
 });
 
-test('a past role carries its end month', () => {
-  const draft = draftFromRegistration(
-    view({
-      experience: [
-        {
-          id: 'e-2',
-          position: 'Senior Resident',
-          institution: 'KEM',
-          startMonth: '2014-07',
-          endMonth: '2017-06',
-          isCurrent: false,
-          documentId: null,
-        },
-      ],
-    }),
-    '9406879532',
-  );
-  expect(draft.experience[0].end).toBe('2017 / 06');
+test('a specialty already on file — chosen earlier, or set by an admin — comes back selected; none comes back empty', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  expect(draftFromRegistration(view({ specialtyId: id }), '9406879532').qualifications.specialtyId).toBe(id);
+  expect(draftFromRegistration(view(), '9406879532').qualifications.specialtyId).toBe('');
+});
+
+test('the registration number comes back into the form', () => {
+  expect(draftFromRegistration(view(), '9406879532').qualifications.registrationNumber).toBe('KMC-4471');
+  expect(draftFromRegistration(view({ registrationNumber: null }), '9406879532').qualifications.registrationNumber).toBe('');
+});
+
+test('a registration with no qualifications yet opens an empty section', () => {
+  expect(draftFromRegistration(view({ qualifications: null }), '9406879532').qualifications.basicQualification).toBe('');
 });
 
 /**
@@ -88,8 +81,34 @@ test('no document comes back as an attached file', () => {
   const draft = draftFromRegistration(view(), '9406879532');
   expect(draft.basic.photo).toBeNull();
   expect(draft.identity.document).toBeNull();
-  expect(draft.qualifications[0].certificate).toBeNull();
-  expect(draft.experience[0].proof).toBeNull();
+  expect(draft.qualifications.degreeCertificate).toBeNull();
+  expect(draft.qualifications.registrationCertificate).toBeNull();
+  expect(draft.experience[0].certificate).toBeNull();
+  expect(draft.signature).toBeNull();
+});
+
+const onServer = (id: string, documentType: string, reviewStatus = 'pending', uploadedAt = '2026-05-15T00:00:00.000Z') =>
+  ({ id, documentType, fileName: `${id}.pdf`, reviewStatus, rejectionReason: null, verifiedByAdminId: null, verifiedAt: null, uploadedAt }) as never;
+
+test('a file the server holds comes back marked with its id, so a resubmit keeps it', () => {
+  const draft = draftFromRegistration(view(), '9406879532', [
+    onServer('doc-1', 'degree_certificate'),
+    onServer('doc-2', 'experience_letter', 'approved'),
+    onServer('doc-3', 'registration_certificate', 'rejected'),
+    onServer('photo-old', 'profile_photo', 'rejected'),
+    onServer('photo-new', 'profile_photo', 'pending', '2026-05-16T00:00:00.000Z'),
+  ]);
+
+  expect(draft.qualifications.degreeCertificate).toMatchObject({ documentId: 'doc-1', name: 'doc-1.pdf' });
+  expect(draft.experience[0].certificate?.documentId).toBe('doc-2');
+  // the newest photo, not the one it replaced
+  expect(draft.basic.photo?.documentId).toBe('photo-new');
+  // a refused file is left for the doctor to replace, never re-sent as it was
+  expect(draft.qualifications.registrationCertificate).toBeNull();
+});
+
+test('languages come back from the profile as the labels the form shows', () => {
+  expect(draftFromRegistration(view(), '9406879532', [], ['en', 'hi', 'xx']).basic.languages).toEqual(['English', 'Hindi']);
 });
 
 test('a null date or unknown code is left blank, not rendered as "null"', () => {

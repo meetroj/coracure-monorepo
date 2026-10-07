@@ -27,6 +27,7 @@ export const StatusSheet = ({
   onSave,
   todayHours,
   onEditSchedule,
+  availableBlockedReason,
 }: {
   visible: boolean;
   current: LiveStatus;
@@ -35,6 +36,8 @@ export const StatusSheet = ({
   /** Today's bookable hours from the weekly schedule, already formatted. */
   todayHours: string;
   onEditSchedule: () => void;
+  /** Why "Available Now" would be refused, said before the press rather than after a failed one. */
+  availableBlockedReason?: string | null;
 }) => {
   const initial = (MANUAL_STATUSES.find((m) => m.key === current)?.key ?? 'offline') as ManualStatus;
   const [draft, setDraft] = useState<ManualStatus>(initial);
@@ -65,22 +68,26 @@ export const StatusSheet = ({
       {MANUAL_STATUSES.map((m) => {
         const selected = draft === m.key;
         const meta = STATUS_META[m.key];
+        const blocked = m.key === 'available' ? availableBlockedReason : null;
         return (
           <View key={m.key}>
             <Pressable
               testID={`sheet-status-${m.key}`}
-              onPress={() => setDraft(m.key)}
-              style={[s.row, selected && s.rowSelected, m.key === 'scheduledOnly' && selected && s.rowJoined]}
+              onPress={() => (blocked ? undefined : setDraft(m.key))}
+              disabled={!!blocked}
+              style={[s.row, selected && s.rowSelected, m.key === 'scheduledOnly' && selected && s.rowJoined, !!blocked && s.rowBlocked]}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              accessibilityLabel={`${m.label}. ${meta.description}`}
+              accessibilityState={{ selected, disabled: !!blocked }}
+              accessibilityLabel={`${m.label}. ${blocked ?? meta.description}`}
             >
               <View style={[s.rowIcon, { backgroundColor: meta.bg }]}>{renderIcon(m.key)}</View>
               <View style={s.flex}>
                 <Text style={s.rowTitle}>{m.label}</Text>
-                <Text style={s.rowBody}>{meta.description}</Text>
+                <Text testID={blocked ? `blocked-${m.key}` : undefined} style={[s.rowBody, !!blocked && s.rowBodyBlocked]}>
+                  {blocked ?? meta.description}
+                </Text>
               </View>
-              {selected ? (
+              {blocked ? null : selected ? (
                 <Icon name="checkCircle" size={24} color={colors.surfie} filled />
               ) : (
                 <View style={s.radio} />
@@ -127,6 +134,8 @@ const s = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   rowSelected: { borderColor: colors.paris, backgroundColor: colors.surface.mintSoft },
+  rowBlocked: { opacity: 0.6 },
+  rowBodyBlocked: { color: colors.danger },
   // the hours box sits flush under the row it belongs to, so the pair reads as one
   rowJoined: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 },
   hoursBox: {

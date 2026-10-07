@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+
+import { messageFor } from '@coracure/api/errors';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
@@ -13,15 +15,19 @@ import { useStore } from '../../state/store';
 import { selectDoctor, selectRecord } from '../../state/selectors';
 import { setSummary, submitSummary } from '../../state/actions';
 import { detailFor, type Appointment } from '../../data/doctor';
+import { finaliseWriteUp, outstandingFrom, useClinicalRecordSync } from '../../data/clinicalRecord';
 import {
   CASE_SUMMARY_MAX,
-  CASE_SUMMARY_MIN,
+  CASE_SUMMARY_MAX_LINES,
+  CASE_SUMMARY_MIN_LINES,
   RISK_LABEL,
   canPrescribe,
   completionOf,
+  generateCaseSummary,
+  summaryLineCount,
   type CompletionState,
 } from '../../data/clinical';
-import { pathwayByKey, reviewDateFor } from '../../data/followup';
+import { reviewDateFor } from '../../data/followup';
 
 /**
  * Case Summary — DOC-CLN-04, and the completion gate from DOC-CLN-06.
@@ -29,8 +35,10 @@ import { pathwayByKey, reviewDateFor } from '../../data/followup';
  * The summary is the doctor's own words, typed here and saved to the record as
  * they write. The checklist is computed from the consultation's actual state:
  * each item links to the screen that completes it, and submitting stays
- * blocked until notes, the prescription and the follow-up plan are done.
- * Nothing written is discarded when the gate blocks.
+ * blocked until notes and the prescription are done. The follow-up plan is
+ * NOT part of the gate: the backend refuses to start one (NOT_YET_DOCUMENTED)
+ * until the record is finalised, and this submit is what finalises it — so it
+ * is offered as the step after. Nothing written is discarded when the gate blocks.
  */
 export const CaseSummaryScreen = ({
   appointment,
@@ -50,34 +58,62 @@ export const CaseSummaryScreen = ({
   const a = appointment;
   const d = detailFor(a);
   const doctor = useStore(selectDoctor);
+  useClinicalRecordSync(a.id);
   const record = useStore((st) => selectRecord(st, a.id));
   const completion = completionOf(record);
   const submitted = record.summaryStatus === 'submitted';
   const [attempted, setAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  /** The backend's own reasons, when it refused to finalise. Beats any local guess. */
+  const [serverOutstanding, setServerOutstanding] = useState<string[]>([]);
 
   const length = record.summary.trim().length;
-  const longEnough = length >= CASE_SUMMARY_MIN;
+  const lineCount = summaryLineCount(record.summary);
+  const longEnough = lineCount >= CASE_SUMMARY_MIN_LINES && lineCount <= CASE_SUMMARY_MAX_LINES;
   const prescriber = canPrescribe(doctor.professionalType);
 
-  const checklist: { key: keyof CompletionState; label: string; done: boolean; fix?: () => void; fixLabel?: string }[] = [
+  // The case is never rewritten from scratch: once notes are saved, the summary
+  // drafts itself from the consultation. The doctor can still adjust the wording.
+  useEffect(() => {
+    if (submitted || record.summary.trim() || record.notesStatus !== 'saved') return;
+    setSummary(a.id, generateCaseSummary(record, doctor.professionalType));
+  }, [a.id, doctor.professionalType, record, submitted]);
+
+  const checklist: {
+    key: keyof CompletionState;
+    label: string;
+    done: boolean;
+    fix?: () => void;
+    fixLabel?: string;
+    /** Not part of the gate — only possible once the record is finalised. */
+    afterSubmit?: boolean;
+  }[] = [
     { key: 'notesFinalised', label: 'Clinical notes completed', done: completion.notesFinalised, fix: onOpenNotes, fixLabel: 'Open notes' },
     {
       key: 'outputFinalised',
-      label: prescriber ? 'Prescription or advice finalised' : 'Advice & therapy plan finalised',
+      label: prescriber ? 'Prescription finalised' : 'Care plan finalised',
       done: completion.outputFinalised,
       fix: onOpenPrescription,
       fixLabel: prescriber ? 'Open prescription' : 'Open plan',
     },
-    { key: 'followUpAssigned', label: 'Follow-up plan assigned', done: completion.followUpAssigned, fix: onAssignPlan, fixLabel: 'Assign plan' },
+    {
+      key: 'followUpAssigned',
+      label: 'Follow-up plan (optional)',
+      done: completion.followUpAssigned,
+      fix: onAssignPlan,
+      fixLabel: 'Assign plan',
+      afterSubmit: true,
+    },
     { key: 'summarySubmitted', label: 'Case summary', done: submitted || longEnough },
   ];
-  const outstanding = checklist.filter((c) => c.key !== 'summarySubmitted' && !c.done);
+  const outstanding = checklist.filter((c) => c.key !== 'summarySubmitted' && !c.afterSubmit && !c.done);
   const canSubmit = !submitted && longEnough && outstanding.length === 0;
 
   const submit = () => {
     setAttempted(true);
+    setServerOutstanding([]);
     if (!longEnough) {
-      toast.show(`Write at least ${CASE_SUMMARY_MIN} characters`, 'error');
+      toast.show(`Write the summary in ${CASE_SUMMARY_MIN_LINES}–${CASE_SUMMARY_MAX_LINES} lines`, 'error');
       return;
     }
     if (outstanding.length > 0) {
@@ -88,15 +124,27 @@ export const CaseSummaryScreen = ({
       title: 'Submit summary and complete?',
       message: `This closes ${a.name}'s consultation. Notes, prescription and summary become read-only.`,
       confirmLabel: 'Submit & complete',
-      onConfirm: () => {
-        submitSummary(a.id);
-        toast.show('Consultation completed');
-        onSubmitted();
+      onConfirm: async () => {
+        setSubmitting(true);
+        try {
+          // `a.id` is the real consultation id. This is the ONE place the
+          // backend record is locked — save the whole record, then finalise.
+          await finaliseWriteUp(a.id, prescriber);
+          submitSummary(a.id);
+          toast.show('Consultation completed — you can now assign a follow-up plan');
+          onSubmitted();
+        } catch (e) {
+          const missing = outstandingFrom(e);
+          if (missing) setServerOutstanding(missing.map((o) => o.message));
+          else toast.show(messageFor(e), 'error');
+        } finally {
+          setSubmitting(false);
+        }
       },
     });
   };
 
-  const plan = record.plan ? pathwayByKey(record.plan.pathway) : undefined;
+  const plan = record.plan;
 
   return (
     <Screen
@@ -117,10 +165,11 @@ export const CaseSummaryScreen = ({
         ) : (
           <Button
             testID="submit-summary"
-            label="Submit Summary & Complete"
+            label={submitting ? 'Submitting…' : 'Submit Summary & Complete'}
             icon="arrowRight"
             iconRight
             onPress={submit}
+            disabled={submitting}
             accessibilityHint={canSubmit ? undefined : 'Shows what is still needed before the consultation can be completed'}
           />
         )
@@ -148,9 +197,9 @@ export const CaseSummaryScreen = ({
 
         <View style={s.patientFoot}>
           <View style={s.footCell}>
-            <Text style={s.footLabel}>Diagnosis</Text>
+            <Text style={s.footLabel}>{prescriber ? 'Diagnosis' : 'Assessment'}</Text>
             <Text testID="summary-diagnosis" style={s.footValue} numberOfLines={2}>
-              {record.notes.diagnosis.trim() || 'Not recorded in notes'}
+              {(prescriber ? record.notes.diagnosis : record.notes.observations).trim() || 'Not recorded in notes'}
             </Text>
           </View>
           <View style={s.footRule} />
@@ -172,18 +221,18 @@ export const CaseSummaryScreen = ({
       {/* -------------------------------- summary -------------------------------- */}
       <View style={s.card}>
         <View style={s.cardHead}>
-          <Text style={s.cardTitle}>Your summary</Text>
+          <Text style={s.cardTitle}>Case summary · auto-generated</Text>
           <Text style={s.required}>{submitted ? 'Submitted' : '3–5 lines required'}</Text>
         </View>
         <Text style={s.helper}>
-          Summarise the concern, relevant history, assessment, treatment or advice, risk level and follow-up plan.
+          Drafted from your notes and {prescriber ? 'prescription' : 'care plan'} for this consultation. Review and adjust the wording before submitting.
         </Text>
         <View style={s.inputWrap}>
           <NoteInput
             testID="summary-input"
             value={record.summary}
             onChangeText={(v) => setSummary(a.id, v)}
-            placeholder="Write your case summary here…"
+            placeholder="Save clinical notes to draft the summary automatically, or write it here…"
             max={CASE_SUMMARY_MAX}
             minHeight={160}
             editable={!submitted}
@@ -193,11 +242,18 @@ export const CaseSummaryScreen = ({
         </View>
         {!submitted && length > 0 && !longEnough && (
           <Text testID="summary-short" style={s.countHint}>
-            {CASE_SUMMARY_MIN - length} more characters needed
+            {lineCount < CASE_SUMMARY_MIN_LINES
+              ? `${CASE_SUMMARY_MIN_LINES - lineCount} more line${CASE_SUMMARY_MIN_LINES - lineCount === 1 ? '' : 's'} needed — one point per line`
+              : `Keep it to ${CASE_SUMMARY_MAX_LINES} lines (now ${lineCount})`}
           </Text>
         )}
+        {serverOutstanding.length > 0 && (
+          <Notice testID="summary-server-outstanding" tone="danger" icon="alertCircle">
+            {serverOutstanding.join(' ')}
+          </Notice>
+        )}
         {!submitted && length > 0 && (
-          <Text style={s.savedHint}>Draft saved as you type</Text>
+          <Text style={s.savedHint}>Draft kept on this device — it reaches the record when you submit</Text>
         )}
       </View>
 
@@ -211,15 +267,15 @@ export const CaseSummaryScreen = ({
             </View>
             <View style={s.flex}>
               <Text style={[s.checkText, !c.done && s.checkTextPending]}>{c.label}</Text>
-              {c.key === 'followUpAssigned' && plan && record.plan && (
+              {c.key === 'followUpAssigned' && plan && (
                 <Text style={s.checkSub}>
-                  {plan.label} · {record.plan.duration} days · review {reviewDateFor(record.plan.start, record.plan.duration)}
+                  {plan.pathway} · {plan.duration} days · review {reviewDateFor(plan.start, plan.duration)}
                 </Text>
               )}
             </View>
             {c.done ? (
               <Text style={s.checkState}>Done</Text>
-            ) : c.fix && !submitted ? (
+            ) : c.fix && submitted === !!c.afterSubmit ? (
               <Pressable
                 testID={`fix-${c.key}`}
                 onPress={c.fix}
@@ -231,7 +287,7 @@ export const CaseSummaryScreen = ({
                 <Text style={s.fixText}>{c.fixLabel}</Text>
               </Pressable>
             ) : (
-              <Text style={[s.checkState, s.checkStatePending]}>Pending</Text>
+              <Text style={[s.checkState, s.checkStatePending]}>{c.afterSubmit ? 'After submit' : 'Pending'}</Text>
             )}
           </View>
         ))}

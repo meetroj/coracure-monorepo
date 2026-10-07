@@ -1,14 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, EmptyState, Note } from '../../components/ui';
 import { ScreenHeader, HeaderTextAction } from '../../components/ScreenHeader';
-import { useStore } from '../../state/store';
-import { selectNotifications } from '../../state/selectors';
-import { markAllNotificationsRead } from '../../state/actions';
+import { SkeletonRowList, SectionError } from '../../components/skeletons';
+import { toast } from '../../components/Toast';
+import { useDoctorNotifications, markAllNotificationsReadApi, markOneRead } from '../../data/notifications';
+import { clearUnreadCount } from '../../state/actions';
 import { NOTIF_META, notifGroup, notifTimeLabel, type AppNotification } from '../../data/messaging';
 
 const TONE = {
@@ -36,8 +39,25 @@ export const NotificationsScreen = ({
   onBack: () => void;
   onOpen: (n: AppNotification) => void;
 }) => {
-  const list = useStore(selectNotifications);
+  const { data, showSkeleton, error, retry } = useDoctorNotifications();
+  // rows opened on this screen: the resource keeps its own copy until it reloads
+  const [opened, setOpened] = React.useState<string[]>([]);
+  const list = (data ?? []).map((n) => (opened.includes(n.id) ? { ...n, read: true } : n));
   const unread = list.filter((n) => !n.read).length;
+  const [markingAll, setMarkingAll] = React.useState(false);
+
+  const markAllRead = async () => {
+    setMarkingAll(true);
+    try {
+      await markAllNotificationsReadApi();
+      clearUnreadCount();
+      retry();
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setMarkingAll(false);
+    }
+  };
 
   return (
     <Screen
@@ -49,15 +69,21 @@ export const NotificationsScreen = ({
           subtitle={unread ? `${unread} unread` : 'You are all caught up'}
           right={
             unread > 0 ? (
-              <HeaderTextAction testID="mark-all-read" label="Mark all read" onPress={markAllNotificationsRead} />
+              <HeaderTextAction testID="mark-all-read" label="Mark all read" onPress={markAllRead} disabled={markingAll} />
             ) : undefined
           }
         />
       }
     >
-      {list.length === 0 && <EmptyState icon="bell" title="No notifications" body="Updates about your patients will appear here." />}
+      {showSkeleton ? (
+        <SkeletonRowList rows={4} avatar="square" />
+      ) : error ? (
+        <SectionError testID="notifications-error" message="Could not load your notifications." onRetry={retry} />
+      ) : list.length === 0 ? (
+        <EmptyState icon="bell" title="No notifications" body="Updates about your patients will appear here." />
+      ) : null}
 
-      {GROUPS.map((g) => {
+      {!showSkeleton && !error && GROUPS.map((g) => {
         const rows = list.filter((n) => notifGroup(n) === g.key);
         if (rows.length === 0) return null;
         return (
@@ -70,7 +96,11 @@ export const NotificationsScreen = ({
                 <Pressable
                   key={n.id}
                   testID={`notif-${n.id}`}
-                  onPress={() => onOpen(n)}
+                  onPress={() => {
+                    markOneRead(list, n);
+                    if (!n.read) setOpened((ids) => [...ids, n.id]);
+                    onOpen(n);
+                  }}
                   style={({ pressed }) => [s.row, !n.read && s.rowUnread, pressed && s.pressed]}
                   accessibilityRole="button"
                   accessibilityLabel={`${n.read ? '' : 'Unread. '}${n.title}. ${n.body}. ${meta.actionLabel}`}

@@ -424,14 +424,19 @@ export const Avatar = ({
   online?: boolean;
   photo?: ImageSourcePropType;
   tone?: 'mint' | 'brand';
-}) => (
+}) => {
+  // A link that will not load (expired, offline, a stub store) shows initials, never a blank circle.
+  const [failed, setFailed] = useState(false);
+  const src = photo && !failed ? photo : undefined;
+  return (
   <View>
     <View
       style={[s.avatar, tone === 'brand' && s.avatarBrand, { width: size, height: size, borderRadius: size / 2 }]}
     >
-      {photo ? (
+      {src ? (
         <Image
-          source={photo}
+          source={src}
+          onError={() => setFailed(true)}
           style={{ width: size, height: size, borderRadius: size / 2 }}
           resizeMode="cover"
           accessibilityIgnoresInvertColors
@@ -451,7 +456,8 @@ export const Avatar = ({
     </View>
     {online !== undefined && <View style={[s.avatarDot, !online && s.avatarDotOff]} />}
   </View>
-);
+  );
+};
 
 /* -------------------------------- buttons --------------------------------- */
 

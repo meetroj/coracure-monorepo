@@ -1,18 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { VideoTrack } from '@livekit/react-native';
+import { messageFor } from '@coracure/api/errors';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
 import { BackButton } from '../../components/ScreenHeader';
+import { Button } from '../../components/ui';
 import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
 import { confirm } from '../../components/confirm';
+import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
 import { selectDoctor, selectRecord } from '../../state/selectors';
-import { sendMessage } from '../../state/actions';
-import { detailFor, type Appointment } from '../../data/doctor';
+import type { Appointment } from '../../data/doctor';
+import { sendToThread, useChatThread } from '../../data/chat';
+import { useConsultationDetail } from '../../data/consultationDetail';
 import { MESSAGE_MAX } from '../../data/messaging';
+import { minutesToClock, relativeDay } from '../../data/calendar';
+import { useVideoCall, type CallPhase, type VideoCall } from '../../data/videoCall';
 
 /**
  * Consultation Room — the live call, in-app.
@@ -22,9 +29,11 @@ import { MESSAGE_MAX } from '../../data/messaging';
  * the room, which stays mounted underneath — the call and its timer carry on
  * while the doctor writes a note.
  *
- * The video surface is a placeholder until the video SDK is integrated, so it
- * renders identity, never a face, and controls that need the SDK (switch
- * camera, add participant) are not offered at all.
+ * A real consultation is a LiveKit call, run by `useVideoCall`: the stage shows
+ * the patient's camera, or says plainly what it is waiting for, and leaving the
+ * screen is what hangs up. A demo appointment has no call behind it, so its
+ * stage renders identity, never a face. Controls with nothing behind them
+ * (switch camera, add participant) are not offered at all.
  */
 
 export type CallLog = {
@@ -40,10 +49,74 @@ export type RoomAction = 'note' | 'rx' | 'followUp' | 'report';
 const pad = (n: number) => String(n).padStart(2, '0');
 const clock = (total: number) =>
   `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+/** Whole seconds of call so far; zero while there is no call to time. */
+const secondsSince = (from: number | undefined, to: number) => (from === undefined ? 0 : Math.max(0, Math.floor((to - from) / 1000)));
+
+/* ------------------------------- call status ------------------------------ */
+
+/**
+ * What each phase of the call says: `line` in the header, and — while there is
+ * no call to show — `title` on the stage and `retry` on its button.
+ * "Secure connection" is only ever said while there is one.
+ */
+const PHASE: Record<CallPhase, { line: string; title?: string; retry?: string }> = {
+  demo: { line: 'Secure connection' },
+  checking: { line: 'Checking…', title: 'Checking the consultation…' },
+  notJoinable: { line: 'Not connected', title: 'Not open to join', retry: 'Check again' },
+  micRefused: { line: 'Not connected', title: 'Microphone access is off', retry: 'Try again' },
+  connecting: { line: 'Connecting…', title: 'Connecting…' },
+  connected: { line: 'Secure connection' },
+  reconnecting: { line: 'Reconnecting…' },
+  failed: { line: 'Not connected', title: 'Not connected', retry: 'Try again' },
+};
+
+/** The stage before (or instead of) a call. A refusal is shown in the server's own words. */
+const CallStatus = ({ call }: { call: VideoCall }) => {
+  const { title, retry } = PHASE[call.phase];
+  const opens = call.opensAt ? new Date(call.opensAt) : undefined;
+  return (
+    <View style={s.status} testID="call-status">
+      <Text style={s.statusTitle}>{title}</Text>
+      {call.phase === 'micRefused' ? (
+        <Text style={s.statusBody}>
+          Coracure needs your microphone for a consultation. Allow it in your phone settings, then try again.
+        </Text>
+      ) : (
+        !!call.message && <Text style={s.statusBody}>{call.message}</Text>
+      )}
+      {opens && (
+        <Text style={s.statusBody}>
+          Opens {relativeDay(opens)}, {minutesToClock(opens.getHours() * 60 + opens.getMinutes()).replace(/^0/, '')}
+        </Text>
+      )}
+      {!!retry && (
+        <View style={s.statusActions}>
+          <Button testID="call-retry" size="sm" label={retry} onPress={call.retry} />
+          {call.phase === 'micRefused' && (
+            <Button testID="call-settings" size="sm" variant="ghost" label="Open settings" onPress={() => Linking.openSettings()} />
+          )}
+        </View>
+      )}
+    </View>
+  );
+};
 
 /* ------------------------------ video surface ----------------------------- */
 
-const Feed = ({ initials, self, muted, videoOff }: { initials: string; self?: boolean; muted?: boolean; videoOff?: boolean }) => (
+const Feed = ({
+  initials,
+  self,
+  muted,
+  videoOff,
+  note,
+}: {
+  initials: string;
+  self?: boolean;
+  muted?: boolean;
+  videoOff?: boolean;
+  /** Why there is no picture: nobody there yet, an audio consultation, a camera switched off. */
+  note?: string;
+}) => (
   <View style={[s.feed, self ? s.feedSelf : s.feedMain]}>
     {self && videoOff ? (
       <View style={s.camOff}>
@@ -54,6 +127,11 @@ const Feed = ({ initials, self, muted, videoOff }: { initials: string; self?: bo
       <View style={[s.feedAvatar, self && s.feedAvatarSelf]}>
         <Text style={[s.feedInitials, self && s.feedInitialsSelf]}>{initials}</Text>
       </View>
+    )}
+    {!!note && (
+      <Text testID="call-note" style={s.feedNote}>
+        {note}
+      </Text>
     )}
     {self && muted && (
       <View style={s.pipMuted}>
@@ -103,14 +181,19 @@ const Control = ({
 
 const InCallChat = ({ visible, threadId, onClose }: { visible: boolean; threadId?: string; onClose: () => void }) => {
   const thread = useStore((st) => st.threads.find((t) => t.id === threadId));
+  // the same conversation as Messages: loaded and polled only while the sheet is open
+  useChatThread(threadId, visible);
   const [draft, setDraft] = useState('');
   const scroll = useRef<ScrollView>(null);
 
   const send = () => {
     const body = draft.trim();
     if (!body || !threadId) return;
-    sendMessage(threadId, body);
     setDraft('');
+    sendToThread(threadId, body).catch((e) => {
+      setDraft((d) => d || body);
+      toast.show(messageFor(e, 'That message could not be sent. Please try again.'), 'error');
+    });
   };
 
   return (
@@ -121,30 +204,33 @@ const InCallChat = ({ visible, threadId, onClose }: { visible: boolean; threadId
       onClose={onClose}
       testID="room-chat"
       footerAboveKeyboard
+      // No thread means no chat to send into.
       footer={
-        <View style={s.chatComposer}>
-          <TextInput
-            testID="room-chat-input"
-            value={draft}
-            onChangeText={(t) => setDraft(t.slice(0, MESSAGE_MAX))}
-            placeholder="Write a message…"
-            placeholderTextColor={colors.inkFaint}
-            style={s.chatInput}
-            multiline
-            accessibilityLabel="Message"
-            underlineColorAndroid="transparent"
-          />
-          <Pressable
-            testID="room-chat-send"
-            onPress={send}
-            disabled={!draft.trim()}
-            style={[s.chatSend, !draft.trim() && s.chatSendOff]}
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-          >
-            <Icon name="arrowRight" size={17} color={colors.white} />
-          </Pressable>
-        </View>
+        threadId ? (
+          <View style={s.chatComposer}>
+            <TextInput
+              testID="room-chat-input"
+              value={draft}
+              onChangeText={(t) => setDraft(t.slice(0, MESSAGE_MAX))}
+              placeholder="Write a message…"
+              placeholderTextColor={colors.inkFaint}
+              style={s.chatInput}
+              multiline
+              accessibilityLabel="Message"
+              underlineColorAndroid="transparent"
+            />
+            <Pressable
+              testID="room-chat-send"
+              onPress={send}
+              disabled={!draft.trim()}
+              style={[s.chatSend, !draft.trim() && s.chatSendOff]}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              <Icon name="arrowRight" size={17} color={colors.white} />
+            </Pressable>
+          </View>
+        ) : undefined
       }
     >
       <ScrollView
@@ -152,8 +238,14 @@ const InCallChat = ({ visible, threadId, onClose }: { visible: boolean; threadId
         style={s.chatList}
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
       >
-        {(thread?.messages ?? []).length === 0 && (
-          <Text style={s.chatEmpty}>No messages yet. Messages here are part of this consultation.</Text>
+        {!threadId ? (
+          <Text testID="room-chat-unavailable" style={s.chatEmpty}>
+            Chat is not available for this consultation. Speak to the patient on the call.
+          </Text>
+        ) : (
+          (thread?.messages ?? []).length === 0 && (
+            <Text style={s.chatEmpty}>No messages yet. Messages here are part of this consultation.</Text>
+          )
         )}
         {(thread?.messages ?? []).map((m) => (
           <View key={m.id} style={[s.bubbleRow, m.from === 'me' && s.bubbleRowMine]}>
@@ -206,52 +298,74 @@ export const ConsultationRoomScreen = ({
   now?: () => number;
 }) => {
   const a = appointment;
-  const d = detailFor(a);
+  const d = useConsultationDetail(a);
   const insets = useSafeAreaInsets();
   const doctor = useStore(selectDoctor);
   const record = useStore((st) => selectRecord(st, a.id));
 
-  const joinedAt = useRef(joinedAtProp ?? now()).current;
-  const [elapsed, setElapsed] = useState(() => Math.max(0, Math.floor((now() - joinedAt) / 1000)));
-  const [muted, setMuted] = useState(false);
-  const [videoOff, setVideoOff] = useState(false);
+  // an audio consultation publishes no camera, so it has no camera control and no self-view
+  const video = a.mode === 'video';
+  const call = useVideoCall(a.id, video);
+  const { muted, videoOff } = call;
+  const real = call.phase !== 'demo';
+  // a demo appointment has no call behind it, and its room behaves as though one were running
+  const live = !real || call.phase === 'connected' || call.phase === 'reconnecting';
+
+  const opened = useRef(joinedAtProp ?? now()).current;
+  // a demo appointment is timed from when the room opened; a real call from when it connected
+  const joinedAt = real ? call.connectedAt : opened;
+  const [elapsed, setElapsed] = useState(() => secondsSince(joinedAt, now()));
   const [contextOpen, setContextOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((now() - joinedAt) / 1000)), 1000);
+    // no call, no clock: it holds where the call dropped, and carries on if the doctor gets back in
+    if (!live) return;
+    const t = setInterval(() => setElapsed(secondsSince(joinedAt, now())), 1000);
     return () => clearInterval(t);
-  }, [joinedAt, now]);
+  }, [live, joinedAt, now]);
+
+  useEffect(() => {
+    if (call.cameraUnavailable)
+      toast.show('Your camera could not be turned on. Allow the camera for Coracure in your phone settings.', 'error');
+  }, [call.cameraUnavailable]);
 
   const leave = () =>
-    confirm({
-      title: 'Leave the consultation room?',
-      message: `${a.name} will see that you left. You can rejoin from the appointment while it is still open.`,
-      confirmLabel: 'Leave room',
-      cancelLabel: 'Stay',
-      onConfirm: onLeave,
-    });
+    // a call that never connected: nobody saw the doctor arrive, so there is nothing to confirm
+    joinedAt === undefined
+      ? onLeave()
+      : confirm({
+          title: 'Leave the consultation room?',
+          message: `${a.name} will see that you left. You can rejoin from the appointment while it is still open.`,
+          confirmLabel: 'Leave room',
+          cancelLabel: 'Stay',
+          onConfirm: onLeave,
+        });
 
   const end = () =>
-    confirm({
-      title: 'End consultation?',
-      message: `This ends the call for you and ${a.name}. You will write up the notes next.`,
-      confirmLabel: 'End consultation',
-      cancelLabel: 'Continue call',
-      destructive: true,
-      onConfirm: () => {
-        const leftAt = now();
-        onEnd({
-          consultationId: d.consultationId,
-          appointmentId: a.id,
-          joinedAt,
-          leftAt,
-          durationSeconds: Math.floor((leftAt - joinedAt) / 1000),
+    // ...and nothing to end: it must not be marked as held and sent for a write-up
+    joinedAt === undefined
+      ? onLeave()
+      : confirm({
+          title: 'End consultation?',
+          // "for you": nothing removes the patient — the room closes itself once it is empty
+          message: `You will leave the call with ${a.name} and write up the notes next.`,
+          confirmLabel: 'End consultation',
+          cancelLabel: 'Continue call',
+          destructive: true,
+          onConfirm: () => {
+            const leftAt = now();
+            onEnd({
+              consultationId: d.consultationId,
+              appointmentId: a.id,
+              joinedAt,
+              leftAt,
+              durationSeconds: secondsSince(joinedAt, leftAt),
+            });
+          },
         });
-      },
-    });
 
   const actionStatus = (key: RoomAction) => {
     if (key === 'note') return record.notesStatus === 'saved' ? 'Saved' : record.notesStatus === 'draft' ? 'Draft' : '';
@@ -263,7 +377,24 @@ export const ConsultationRoomScreen = ({
 
   const stage = (
     <View style={[s.stage, fullscreen && s.stageFull]}>
-      <Feed initials={a.initials} />
+      {PHASE[call.phase].title ? (
+        <CallStatus call={call} />
+      ) : call.patientVideo ? (
+        <VideoTrack trackRef={call.patientVideo} style={s.video} />
+      ) : (
+        <Feed
+          initials={a.initials}
+          note={
+            !real
+              ? undefined
+              : !call.patientJoined
+                ? `Waiting for ${a.name} to join`
+                : video
+                  ? `${a.name}’s video is off`
+                  : 'Audio consultation'
+          }
+        />
+      )}
 
       <View style={s.tag}>
         <Text style={s.tagName} numberOfLines={1}>
@@ -274,9 +405,21 @@ export const ConsultationRoomScreen = ({
         </Text>
       </View>
 
-      <View style={s.pip}>
-        <Feed initials={doctor.initials} self muted={muted} videoOff={videoOff} />
-      </View>
+      {video && live && (
+        <View style={s.pip}>
+          {call.selfVideo ? (
+            <VideoTrack trackRef={call.selfVideo} style={s.video} mirror zOrder={1} />
+          ) : (
+            <Feed initials={doctor.initials} self muted={muted} videoOff={videoOff} />
+          )}
+        </View>
+      )}
+
+      {call.phase === 'reconnecting' && (
+        <View style={[s.tag, s.tagLow]} testID="call-reconnecting">
+          <Text style={s.tagName}>Reconnecting…</Text>
+        </View>
+      )}
 
       <Pressable
         testID="toggle-fullscreen"
@@ -302,14 +445,14 @@ export const ConsultationRoomScreen = ({
                 Consultation Room
               </Text>
               <View style={s.encRow}>
-                <Icon name="lock" size={11} color={colors.surfie} />
-                <Text style={s.enc} numberOfLines={1}>
-                  Secure connection
+                {live && <Icon name="lock" size={11} color={colors.surfie} />}
+                <Text testID="call-line" style={s.enc} numberOfLines={1}>
+                  {PHASE[call.phase].line}
                 </Text>
               </View>
             </View>
             <View style={s.timerCapsule}>
-              <View style={s.timerDot} />
+              {live && <View style={s.timerDot} />}
               <Text testID="call-timer" style={s.timer} accessibilityLabel={`Call time ${clock(elapsed)}`}>
                 {clock(elapsed)}
               </Text>
@@ -378,7 +521,16 @@ export const ConsultationRoomScreen = ({
                 {[
                   ['Previous consultation', d.past ? `${d.past.dateLabel} · ${d.past.note}` : 'First consultation'],
                   ['Total consultations', String(d.totalConsultations)],
-                  ['Consent', `Accepted · ${d.consent.version}`],
+                  [
+                    'Consent',
+                    d.consent.status === 'onFile'
+                      ? d.consent.version
+                        ? `Accepted · ${d.consent.version}`
+                        : 'On file'
+                      : d.consent.status === 'missing'
+                        ? 'Not on file'
+                        : 'Checking…',
+                  ],
                 ].map(([k, v], i, arr) => (
                   <View key={k} style={[s.expandLine, i < arr.length - 1 && s.hairline]}>
                     <Text style={s.expandLabel}>{k}</Text>
@@ -455,15 +607,17 @@ export const ConsultationRoomScreen = ({
           icon={muted ? 'micOff' : 'mic'}
           label={muted ? 'Unmute' : 'Mute'}
           active={muted}
-          onPress={() => setMuted((v) => !v)}
+          onPress={call.toggleMute}
         />
-        <Control
-          testID="ctl-video"
-          icon={videoOff ? 'videoOff' : 'video'}
-          label={videoOff ? 'Start Video' : 'Stop Video'}
-          active={videoOff}
-          onPress={() => setVideoOff((v) => !v)}
-        />
+        {video && (
+          <Control
+            testID="ctl-video"
+            icon={videoOff ? 'videoOff' : 'video'}
+            label={videoOff ? 'Start Video' : 'Stop Video'}
+            active={videoOff}
+            onPress={call.toggleVideo}
+          />
+        )}
         {/* a handset turned down — the universal end-call glyph */}
         <Control testID="ctl-end" icon="phone" label="End Call" danger onPress={end} />
         <Control testID="ctl-chat" icon="message" label="Chat" onPress={() => setChatOpen(true)} />
@@ -543,6 +697,13 @@ const s = StyleSheet.create({
   feedAvatarSelf: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.18)' },
   feedInitials: { ...typeStyles.pageTitle, fontSize: 28, lineHeight: 34, color: colors.surfie },
   feedInitialsSelf: { ...typeStyles.caption, color: colors.white, fontWeight: fontWeight.semibold },
+  feedNote: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.lg },
+  video: { flex: 1 },
+  // clear of the name tag above it
+  status: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
+  statusTitle: { ...typeStyles.cardTitle, color: colors.ink, textAlign: 'center' },
+  statusBody: { ...typeStyles.bodySmall, color: colors.inkMuted, textAlign: 'center' },
+  statusActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   camOff: { alignItems: 'center', gap: 4 },
   camOffText: { ...typeStyles.caption, fontSize: 11, color: colors.white },
   tag: {
@@ -555,6 +716,7 @@ const s = StyleSheet.create({
     paddingVertical: 6,
     maxWidth: '58%',
   },
+  tagLow: { top: undefined, bottom: spacing.md },
   tagName: { ...typeStyles.caption, fontWeight: fontWeight.bold, color: colors.white },
   tagMeta: { ...typeStyles.caption, fontSize: 11, color: 'rgba(255,255,255,0.86)' },
   pip: {

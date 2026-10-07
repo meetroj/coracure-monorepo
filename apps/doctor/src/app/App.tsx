@@ -14,7 +14,7 @@ import { ConfirmHost } from '../components/confirm';
 import { KeyboardDoneBar } from '../components/KeyboardDoneBar';
 import { brand } from '../theme/brand';
 import { useStore } from '../state/store';
-import { endSession, leaveIntro, leaveOnboarding, signIn, submitRegistration } from '../state/actions';
+import { completeSignIn, endSession, leaveIntro, leaveOnboarding, submitRegistration } from '../state/actions';
 
 /**
  * Doctor app root.
@@ -22,10 +22,10 @@ import { endSession, leaveIntro, leaveOnboarding, signIn, submitRegistration } f
  * A three-slide intro runs once before sign-in, then the stage moves to
  * `login` for the rest of the session.
  *
- * Doctors are created by an administrator, so there is no self-registration.
- * Sign-in is a mobile number and a one-time code. A doctor whose details are
- * already on file (the demo account, 98765 43210) lands on the Dashboard; a
- * new account first completes onboarding — basic details, identity,
+ * Doctors register themselves: sign-in and sign-up are one mobile number and a
+ * one-time code, and an administrator then approves or rejects the details. A
+ * doctor whose details are already on file (the demo account, 98765 43210)
+ * lands on the Dashboard; a new account first completes onboarding — basic details, identity,
  * qualifications and experience — and then reaches the app with its account
  * under review on the Profile tab.
  *
@@ -61,7 +61,7 @@ export const App = () => {
               <ActivityIndicator size="large" color={brand.colors.surfie} />
             </View>
           )}
-          {stage === 'login' && <DoctorLoginScreen onAuthenticated={signIn} />}
+          {stage === 'login' && <DoctorLoginScreen onAuthenticated={completeSignIn} />}
           {stage === 'onboarding' && (
             <OnboardingFlow
               mobile={mobile}

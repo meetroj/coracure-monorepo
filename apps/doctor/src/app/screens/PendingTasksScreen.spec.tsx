@@ -5,7 +5,9 @@ import PendingTasksScreen from './PendingTasksScreen';
 import { getState } from '../../state/store';
 import { selectTaskCounts, selectTasks } from '../../state/selectors';
 import { saveNotes, setRisk, updateNote } from '../../state/actions';
-import { NOTE_FIELDS } from '../../data/clinical';
+import { noteFieldsFor } from '../../data/clinical';
+
+const NOTE_FIELDS = noteFieldsFor('psychiatrist');
 
 test('the totals are derived from the worklist itself', () => {
   render(<PendingTasksScreen onBack={jest.fn()} onOpenTask={jest.fn()} />);

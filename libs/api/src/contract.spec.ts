@@ -89,6 +89,8 @@ const SHAPES: [string, string, string, string][] = [
   ['RegistrationView', 'doctorProfile.ts', 'doctors/doctor-registration.service.ts', 'RegistrationView'],
   ['PatientFile', 'doctorFiles.ts', 'files/patient-files.service.ts', 'PatientFileRecord'],
   ['ReportRequest', 'doctorFiles.ts', 'files/report-requests.service.ts', 'ReportRequestRecord'],
+  ['ChatMessageRecord', 'doctorChat.ts', 'chat/chat.service.ts', 'ChatMessageRecord'],
+  ['ChatThreadSummary', 'doctorChat.ts', 'chat/chat.service.ts', 'ThreadSummary'],
 ];
 
 const backendPresent = existsSync(BACKEND);

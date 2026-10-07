@@ -1,6 +1,8 @@
 import React from 'react';
+import { doctorClinicalRecordApi } from '@coracure/api';
+import { ApiError } from '@coracure/api/errors';
 import { confirm, confirmDiscard } from '../../components/confirm';
-import { render, fireEvent, screen, within } from '@testing-library/react-native';
+import { render, fireEvent, screen, within, waitFor } from '@testing-library/react-native';
 
 import ClinicalNotesScreen from './ClinicalNotesScreen';
 import EPrescriptionScreen from './EPrescriptionScreen';
@@ -9,7 +11,9 @@ import CaseSummaryScreen from './CaseSummaryScreen';
 import { getState } from '../../state/store';
 import { selectAppointment, selectRecord } from '../../state/selectors';
 import { assignPlan, finaliseRx, saveNotes, setRisk, updateNote } from '../../state/actions';
-import { NOTE_FIELDS } from '../../data/clinical';
+import { noteFieldsFor } from '../../data/clinical';
+
+const NOTE_FIELDS = noteFieldsFor('psychiatrist');
 
 const noop = () => undefined;
 const appt = () => selectAppointment(getState(), 'a1')!;
@@ -47,6 +51,18 @@ const completeNotes = () => {
   saveNotes('a1');
 };
 
+/** A summary within the backend's 3–5 line rule. */
+const THREE_LINES = 'Anxiety with poor sleep.\nModerate risk.\nEscitalopram started; review in two weeks.';
+
+beforeEach(() => {
+  // Nothing saved yet on the server: the screens keep the local record.
+  jest
+    .spyOn(doctorClinicalRecordApi, 'getClinicalRecord')
+    .mockRejectedValue(new ApiError({ statusCode: 404, code: 'RECORD_NOT_FOUND', message: 'No record yet.' }));
+  jest.spyOn(doctorClinicalRecordApi, 'saveClinicalRecord').mockResolvedValue({} as never);
+  jest.spyOn(doctorClinicalRecordApi, 'finaliseClinicalRecord').mockResolvedValue({} as never);
+});
+
 /* ------------------------------- notes · CLN-01 ----------------------------- */
 
 test('every clinical field is a real, empty input — nothing is pre-written', () => {
@@ -56,11 +72,11 @@ test('every clinical field is a real, empty input — nothing is pre-written', (
   expect(screen.queryByText('Autosaved')).toBeNull();
 });
 
-test('typing saves a draft to this consultation’s record, and says so', () => {
+test('typing keeps a draft on this consultation’s record, and does not claim a server save', () => {
   notes();
   fireEvent.changeText(screen.getByTestId('note-complaint'), 'Low mood for six weeks.');
   expect(record().notes.complaint).toBe('Low mood for six weeks.');
-  expect(screen.getByTestId('notes-status')).toHaveTextContent(/^Draft saved/);
+  expect(screen.getByTestId('notes-status')).toHaveTextContent('Unsaved changes');
 });
 
 test('saving names every missing required field and does not move on', () => {
@@ -69,18 +85,38 @@ test('saving names every missing required field and does not move on', () => {
   fireEvent.press(screen.getByTestId('save-notes'));
   expect(onSaved).not.toHaveBeenCalled();
   const missing = screen.getByTestId('notes-missing');
-  ['Chief Complaint', 'Diagnosis', 'Follow-up Plan', 'Risk category'].forEach((l) => expect(missing).toHaveTextContent(new RegExp(l)));
+  ['Chief Complaint', 'Provisional Diagnosis', 'Risk category'].forEach((l) => expect(missing).toHaveTextContent(new RegExp(l)));
 });
 
-test('a complete note saves and moves on to the next step', () => {
+test('a complete note saves to the real record and moves on to the next step', async () => {
   const onSaved = jest.fn();
   notes({ onSaved });
   NOTE_FIELDS.forEach((f) => fireEvent.changeText(screen.getByTestId(`note-${f.key}`), `${f.label} text.`));
   fireEvent.press(screen.getByTestId('risk-high'));
   fireEvent.press(screen.getByTestId('save-notes'));
-  expect(onSaved).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  // keyed by the real consultation id (`a.id`), never the human reference code
+  expect(doctorClinicalRecordApi.saveClinicalRecord).toHaveBeenCalledWith(
+    'a1',
+    expect.objectContaining({ chiefComplaint: 'Chief Complaint text.', riskCategory: 'high' })
+  );
   expect(record().notesStatus).toBe('saved');
   expect(record().risk.category).toBe('high');
+});
+
+test('a refused save keeps the notes as typed and does not move on', async () => {
+  (doctorClinicalRecordApi.saveClinicalRecord as jest.Mock).mockRejectedValueOnce(
+    new ApiError({ statusCode: 409, code: 'NOT_DOCUMENTABLE', message: 'This consultation cannot be documented yet.' })
+  );
+  const onSaved = jest.fn();
+  notes({ onSaved });
+  NOTE_FIELDS.forEach((f) => fireEvent.changeText(screen.getByTestId(`note-${f.key}`), `${f.label} text.`));
+  fireEvent.press(screen.getByTestId('risk-low'));
+  fireEvent.press(screen.getByTestId('save-notes'));
+  await waitFor(() => expect(doctorClinicalRecordApi.saveClinicalRecord).toHaveBeenCalled());
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(record().notesStatus).not.toBe('saved');
+  expect(record().notes.complaint).toBe('Chief Complaint text.');
 });
 
 test('notes survive leaving the screen and coming back', () => {
@@ -149,10 +185,11 @@ test('a medicine can be edited and, after confirming, removed', () => {
   expect(record().medicines).toHaveLength(0);
 });
 
-test('finalising needs something to issue, asks first, then locks the prescription', () => {
+test('finalising needs something to issue, asks first, saves, then locks the prescription', async () => {
   const onFinalised = jest.fn();
   // a new prescription starts blank: no medicines, advice or don'ts (N14)
   expect([record().medicines, record().advice, record().donts]).toEqual([[], [], []]);
+  completeNotes();
   prescription('psychiatrist', onFinalised);
   fireEvent.press(screen.getByTestId('finalise'));
   expect(onFinalised).not.toHaveBeenCalled();
@@ -163,23 +200,43 @@ test('finalising needs something to issue, asks first, then locks the prescripti
   fireEvent.press(screen.getByTestId('advice-add'));
   fireEvent.press(screen.getByTestId('finalise'));
   expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Finalise prescription?' }));
-  expect(onFinalised).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(onFinalised).toHaveBeenCalledTimes(1));
   expect(record().rxStatus).toBe('finalised');
   expect(screen.getByTestId('rx-locked')).toBeTruthy();
   expect(screen.queryByTestId('add-medicine')).toBeNull();
+  // Saved, NOT locked on the server: the one lock is the case summary submit.
+  expect(doctorClinicalRecordApi.saveClinicalRecord).toHaveBeenCalledWith(
+    'a1',
+    expect.objectContaining({ adviceCovered: 'Keep a sleep diary for two weeks.' })
+  );
+  expect(doctorClinicalRecordApi.finaliseClinicalRecord).not.toHaveBeenCalled();
 });
 
-test('Save Draft stamps the prescription without finalising it', () => {
+test('Save Draft persists the whole record — the notes ride along — without finalising it', async () => {
+  completeNotes();
   prescription('psychiatrist');
   fireEvent.press(screen.getByTestId('save-draft'));
-  expect(record().rxSavedAt).toBeTruthy();
+  await waitFor(() => expect(record().rxSavedAt).toBeTruthy());
   expect(record().rxStatus).toBe('draft');
+  // a PUT is a full replace: saving from here must still carry the notes
+  expect(doctorClinicalRecordApi.saveClinicalRecord).toHaveBeenCalledWith(
+    'a1',
+    expect.objectContaining({ chiefComplaint: 'Chief Complaint written by the doctor.', riskCategory: 'moderate' })
+  );
 });
 
-test('a non-prescriber gets an advice and therapy plan, never medicines', () => {
+test('a prescription cannot be saved before the notes the backend requires exist', async () => {
+  prescription('psychiatrist');
+  fireEvent.press(screen.getByTestId('save-draft'));
+  // refused locally with a plain reason, never sent as a request the server would 400
+  await waitFor(() => expect(record().rxSavedAt).toBeUndefined());
+  expect(doctorClinicalRecordApi.saveClinicalRecord).not.toHaveBeenCalled();
+});
+
+test('a non-prescriber gets a care plan, never medicines', () => {
   (['psychologist', 'counsellor'] as const).forEach((t) => {
     const r = prescription(t);
-    expect(screen.getByText('Therapy Plan')).toBeTruthy();
+    expect(screen.getByText('Care Plan')).toBeTruthy();
     expect(screen.getByTestId('no-prescribe')).toBeTruthy();
     expect(screen.queryByTestId('add-medicine')).toBeNull();
     r.unmount();
@@ -195,21 +252,13 @@ test('a non-prescriber never sees a medication template', () => {
   expect(screen.getByText('Low Mood Check-in')).toBeTruthy();
 });
 
-test('a template is applied, duplicated, or — for the doctor’s own — deleted after confirming', () => {
+test('tapping a template applies it', () => {
+  // Duplicate and delete go to the server - see ClinicalTemplates.spec.tsx.
   const onApply = jest.fn();
   render(<ClinicalTemplatesScreen onBack={noop} onApply={onApply} professionalType="psychiatrist" />);
 
   fireEvent.press(screen.getByTestId('template-tpl1'));
   expect(onApply).toHaveBeenCalledWith('tpl1');
-
-  fireEvent.press(screen.getByTestId('template-menu-tpl1'));
-  fireEvent.press(screen.getByTestId('sheet-action-duplicate'));
-  expect(screen.getByText('Anxiety Initial Care (Copy)')).toBeTruthy();
-
-  fireEvent.press(screen.getByTestId('template-menu-tpl2'));
-  fireEvent.press(screen.getByTestId('sheet-action-delete'));
-  expect(confirm).toHaveBeenCalled();
-  expect(screen.queryByText('Sleep Support Plan')).toBeNull();
 });
 
 test('applying a template fills the prescription draft and finalises nothing', () => {
@@ -232,6 +281,23 @@ const summary = (onSubmitted = jest.fn()) =>
     />
   );
 
+test('once notes are saved, the summary drafts itself from the record', () => {
+  completeNotes();
+  summary();
+  const drafted = screen.getByTestId('summary-input').props.value;
+  expect(drafted).toMatch(/^Chief Complaint written by the doctor\./);
+  // one point per line — the backend counts lines, not characters
+  expect(drafted).toMatch(/\nDiagnosis: Provisional Diagnosis written by the doctor\.\n/);
+  // notes typed with their own full stops never come out doubled
+  expect(drafted).not.toMatch(/\.\./);
+  expect(record().summary).toBe(drafted);
+});
+
+test('ending a call keeps how long it ran on the record', () => {
+  require('../../state/actions').endCall('a1', 125);
+  expect(record().durationSeconds).toBe(125);
+});
+
 test('the summary is the doctor’s own words, saved as they type', () => {
   summary();
   expect(screen.getByTestId('summary-input').props.value).toBe('');
@@ -243,29 +309,123 @@ test('the summary is the doctor’s own words, saved as they type', () => {
 test('submitting is blocked, with the reasons shown, until the checklist is complete', () => {
   const onSubmitted = jest.fn();
   summary(onSubmitted);
-  fireEvent.changeText(screen.getByTestId('summary-input'), 'A'.repeat(160));
+  fireEvent.changeText(screen.getByTestId('summary-input'), THREE_LINES);
   fireEvent.press(screen.getByTestId('submit-summary'));
   expect(onSubmitted).not.toHaveBeenCalled();
   expect(screen.getByTestId('summary-blocked')).toHaveTextContent(/clinical notes completed/);
-  expect(screen.getByTestId('fix-followUpAssigned')).toBeTruthy();
+  // the follow-up plan never blocks: the backend refuses it until the record is finalised
+  expect(screen.getByTestId('summary-blocked')).not.toHaveTextContent(/follow-up/i);
+  expect(screen.queryByTestId('fix-followUpAssigned')).toBeNull();
   // the work written so far is kept
-  expect(record().summary).toHaveLength(160);
+  expect(record().summary).toBe(THREE_LINES);
 });
 
-test('with notes, prescription and plan done, submitting asks, then completes the consultation', () => {
+test('one long paragraph is refused: the summary is counted in lines, not characters', () => {
+  summary();
+  fireEvent.changeText(screen.getByTestId('summary-input'), 'A'.repeat(400));
+  expect(screen.getByTestId('summary-short')).toHaveTextContent(/2 more lines needed/);
+});
+
+const readyToSubmit = () => {
   completeNotes();
   require('../../state/actions').addMedicine('a1', { name: 'Escitalopram', generic: '', dose: '5 mg', frequency: 'Once daily', duration: '14 days', route: 'After food', quantity: '', instruction: '' });
   finaliseRx('a1');
-  assignPlan('a1', { pathway: 'depressionAnxiety', duration: 14, start: '2026-05-16' } as never);
+};
 
+test('with notes and prescription done — no follow-up plan yet — submitting saves, locks the record, then completes', async () => {
+  readyToSubmit();
   const onSubmitted = jest.fn();
   summary(onSubmitted);
-  ['notesFinalised', 'outputFinalised', 'followUpAssigned'].forEach((k) =>
+  ['notesFinalised', 'outputFinalised'].forEach((k) =>
     expect(within(screen.getByTestId(`check-${k}`)).getByText('Done')).toBeTruthy()
   );
-  fireEvent.changeText(screen.getByTestId('summary-input'), 'Anxiety with poor sleep; moderate risk; escitalopram started; review in two weeks. '.repeat(2));
+  expect(within(screen.getByTestId('check-followUpAssigned')).getByText('After submit')).toBeTruthy();
+  fireEvent.changeText(screen.getByTestId('summary-input'), THREE_LINES);
   fireEvent.press(screen.getByTestId('submit-summary'));
   expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Submit summary and complete?' }));
-  expect(onSubmitted).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(onSubmitted).toHaveBeenCalledTimes(1));
   expect(record().summaryStatus).toBe('submitted');
+  expect(doctorClinicalRecordApi.saveClinicalRecord).toHaveBeenCalledWith('a1', expect.objectContaining({ caseSummary: THREE_LINES }));
+  expect(doctorClinicalRecordApi.finaliseClinicalRecord).toHaveBeenCalledWith('a1');
+  // assigning the plan is now possible, and offered
+  expect(screen.getByTestId('fix-followUpAssigned')).toBeTruthy();
+});
+
+test('when the backend refuses to finalise, its own reasons are shown and nothing is closed', async () => {
+  (doctorClinicalRecordApi.finaliseClinicalRecord as jest.Mock).mockRejectedValueOnce(
+    new ApiError({
+      statusCode: 409,
+      code: 'RECORD_INCOMPLETE',
+      message: 'The record is incomplete.',
+      details: { outstanding: [{ code: 'CASE_SUMMARY_TOO_SHORT', message: 'The case summary needs at least 3 lines.' }] },
+    })
+  );
+  readyToSubmit();
+  const onSubmitted = jest.fn();
+  summary(onSubmitted);
+  fireEvent.changeText(screen.getByTestId('summary-input'), THREE_LINES);
+  fireEvent.press(screen.getByTestId('submit-summary'));
+  await waitFor(() =>
+    expect(screen.getByTestId('summary-server-outstanding')).toHaveTextContent('The case summary needs at least 3 lines.')
+  );
+  expect(onSubmitted).not.toHaveBeenCalled();
+  expect(record().summaryStatus).not.toBe('submitted');
+});
+
+/* --------------------- server record vs newer local edits -------------------- */
+
+const REAL = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+const SERVER_VIEW = {
+  consultationId: REAL,
+  chiefComplaint: 'From the server',
+  clinicalHistory: null,
+  diagnosis: null,
+  isDiagnosisProvisional: true,
+  riskCategory: 'low',
+  referralNote: null,
+  referralAdvised: false,
+  medicines: [],
+  advice: { covered: null, homePractice: null, nextFocus: null, warningSigns: null },
+  caseSummary: null,
+  recommendedContentIds: [],
+  finalisedAt: null,
+  canPrescribe: true,
+  outstanding: [],
+  updatedAt: '2026-05-15T00:00:00.000Z',
+};
+
+const realNotes = () =>
+  render(
+    <ClinicalNotesScreen
+      appointment={{ ...appt(), id: REAL }}
+      onBack={noop}
+      onSaved={noop}
+      onViewProfile={noop}
+      onReferForClarification={noop}
+      onOpenCaseSummary={noop}
+    />
+  );
+
+test('the server record is laid over once; re-opening never overwrites newer local edits with the cached copy', async () => {
+  (doctorClinicalRecordApi.getClinicalRecord as jest.Mock).mockResolvedValue(SERVER_VIEW);
+  const first = realNotes();
+  await waitFor(() => expect(screen.getByTestId('note-complaint').props.value).toBe('From the server'));
+  fireEvent.changeText(screen.getByTestId('note-complaint'), 'Edited on this device');
+  first.unmount();
+
+  realNotes();
+  await waitFor(() => expect(doctorClinicalRecordApi.getClinicalRecord).toHaveBeenCalled());
+  expect(screen.getByTestId('note-complaint').props.value).toBe('Edited on this device');
+});
+
+test('a save caches the server’s answer, so the next open starts from it', async () => {
+  const saved = { ...SERVER_VIEW, chiefComplaint: 'Saved text' };
+  (doctorClinicalRecordApi.saveClinicalRecord as jest.Mock).mockResolvedValue(saved);
+  updateNote(REAL, 'complaint', 'Saved text');
+  setRisk(REAL, { category: 'low' });
+  await require('../../data/clinicalRecord').saveWriteUp(REAL, true);
+  realNotes();
+  // the cache answered: no GET, and nothing laid over the local record
+  expect(doctorClinicalRecordApi.getClinicalRecord).not.toHaveBeenCalled();
+  expect(screen.getByTestId('note-complaint').props.value).toBe('Saved text');
 });

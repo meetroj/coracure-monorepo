@@ -15,10 +15,19 @@ import { fmtDayTime } from './calendar';
 /** Fields stripped before a case is shared. */
 export const DIRECT_IDENTIFIERS = ['name', 'patientId', 'phone', 'email', 'address'] as const;
 
+/**
+ * The server's own patterns (`deidentify.ts`) — email, URL, Aadhaar, Indian
+ * mobile, long digit runs — so the doctor is told here, before the server
+ * refuses with `IDENTIFIER_PRESENT`. Plus this app's own patient and
+ * consultation reference codes, which the server does not know to look for.
+ */
 const IDENTIFIER_PATTERNS: RegExp[] = [
-  /\b[A-Z]{2}-\d{5,}\b/, // patient / consultation ids
-  /\b(?:\+91[- ]?)?[6-9]\d{9}\b/, // phone
-  /[\w.]+@[\w.]+\.\w{2,}/, // email
+  /[\w.+-]+@[\w-]+\.[\w.-]{2,}/, // email
+  /\b(?:https?:\/\/|www\.)\S{4,}/i, // url
+  /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/, // aadhaar
+  /(?:\+?91[\s-]?)?[6-9](?:[\s-]?\d){9}\b/, // indian mobile
+  /\b\d{8,}\b/, // long digit run
+  /\b[A-Z]{2}-\d{5,}\b/, // patient / consultation reference codes
   /\bPT-\d+\b/i,
 ];
 
@@ -80,62 +89,12 @@ export const GUIDANCE_AREAS = [
   'Referral advice',
 ];
 
-/**
- * The expert panel a clarification can be routed to.
- *
- * Stands in for `GET /experts` until it is wired. The doctor picks the
- * reviewer explicitly rather than the case going to an unnamed pool, so the
- * referral says who is being asked.
+/*
+ * There is no expert panel here on purpose. The author never chooses the
+ * reviewer: posting puts the case in an administrator's queue, and the admin
+ * assigns one. The backend has no doctor-facing expert list, and never tells
+ * the author who was assigned.
  */
-export type ExpertReviewer = {
-  id: string;
-  name: string;
-  speciality: string;
-  qualification: string;
-  years: number;
-  /** Typical turnaround, shown so the sender can set expectations. */
-  respondsIn: string;
-  available: boolean;
-};
-
-export const EXPERT_PANEL: ExpertReviewer[] = [
-  {
-    id: 'exp-kulkarni',
-    name: 'Dr. Anita Kulkarni',
-    speciality: 'Cardiology',
-    qualification: 'MD, DM (Cardiology)',
-    years: 18,
-    respondsIn: 'Usually within 4 hours',
-    available: true,
-  },
-  {
-    id: 'exp-rao',
-    name: 'Dr. Vikram Rao',
-    speciality: 'Orthopaedics',
-    qualification: 'MS (Orthopaedics)',
-    years: 15,
-    respondsIn: 'Usually within 6 hours',
-    available: true,
-  },
-  {
-    id: 'exp-fernandes',
-    name: 'Dr. Leena Fernandes',
-    speciality: 'Endocrinology',
-    qualification: 'MD, DM (Endocrinology)',
-    years: 12,
-    respondsIn: 'Usually within 8 hours',
-    available: true,
-  },
-  {
-    id: 'exp-banerjee',
-    name: 'Dr. Sandip Banerjee',
-    speciality: 'Neurology',
-    qualification: 'MD, DM (Neurology)',
-    years: 20,
-    respondsIn: 'Usually within 12 hours',
-    available: false,
-  },
-];
 
 export type ClarificationFile = { id: string; name: string; size: string };
 
@@ -148,6 +107,8 @@ export type ClarificationDraft = {
   patientId: string;
   consultationId: string;
   title: string;
+  /** What the backend stores — an age in years, not a band. Null when unknown. */
+  age: number | null;
   ageLabel: string;
   gender: 'Male' | 'Female' | 'Other';
   history: string;
@@ -157,12 +118,15 @@ export type ClarificationDraft = {
   guidanceArea: string;
   urgency: Urgency;
   speciality: string;
-  /** Which expert the case is addressed to. Empty until one is picked. */
-  expertId: string;
-  expertName: string;
   files: ClarificationFile[];
+  /** The expert chosen when posting. Unset for a draft, and for a case left to the admin queue. */
+  expertDoctorId?: string;
 };
 
+/** The backend's CaseInputDto limits, where they are tighter than nothing: a longer field is a hard 400. */
+export const TITLE_MAX = 200;
+export const DIAGNOSIS_MAX = 2000;
+export const PLAN_MAX = 2000;
 export const HISTORY_MAX = 1000;
 export const QUESTION_MAX = 1000;
 export const REPLY_MAX = 1000;

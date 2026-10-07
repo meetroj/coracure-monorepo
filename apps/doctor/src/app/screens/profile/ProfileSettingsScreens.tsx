@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Switch, TextInput, Keyboard } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../../theme/brand';
 import { typeStyles, fontWeight } from '../../../theme/typography';
 import { Icon } from '../../../components/Icon';
@@ -10,9 +12,9 @@ import { Checkbox } from '../../../components/Checkbox';
 import { toast } from '../../../components/Toast';
 import { useStore } from '../../../state/store';
 import { selectDoctor } from '../../../state/selectors';
-import { addChangeRequest, setConsultationDuration, setConsultationFee, setPrivacy } from '../../../state/actions';
+import { addChangeRequest, setConsultationDuration, setPrivacy } from '../../../state/actions';
+import { updateConsultationDuration } from '../../../data/profile';
 import { CONSULTATION_DURATIONS, inr } from '../../../data/doctor';
-import { doneBar } from '../../../components/KeyboardDoneBar';
 
 /**
  * The Profile rows that are settings rather than modules.
@@ -93,66 +95,43 @@ const ToggleRow = ({
 
 /* ------------------------------ consultation fee --------------------------- */
 
-const FEE_PRESETS = [499, 699, 899, 1199];
-const FEE_MAX = 99999;
-
+/**
+ * Read-only. `PATCH /me/doctor/profile` whitelists exactly four fields — bio,
+ * languages, consultation duration, buffer minutes — and the fee is not one
+ * of them (`API_CONTRACT.md` §7.2: "Name, qualification, registration number
+ * and fee are the admin's, `PATCH /v1/admin/doctors/:id`"). A doctor-side save
+ * button here would be a 400 on every press, so this shows the real fee and
+ * routes a change through the same request-changes flow as the other
+ * admin-only fields rather than pretending to accept an edit.
+ */
 export const ConsultationFeeScreen = ({
   onBack,
-  onSaved,
-  onDirtyChange,
+  onRequestChange,
 }: {
   onBack: () => void;
-  onSaved: () => void;
-  onDirtyChange?: (dirty: boolean) => void;
+  onRequestChange?: () => void;
 }) => {
   const saved = useStore((st) => st.profile.fee);
-  const [fee, setFee] = useState(String(saved));
-  const amount = Number(fee || 0);
-  const dirty = amount !== saved;
-  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
-
-  // a fee of zero is a mistake, not a free consultation
-  const error = !fee ? 'Enter the fee.' : amount <= 0 ? 'The fee must be more than ₹0.' : amount > FEE_MAX ? `Enter at most ${inr(FEE_MAX)}.` : undefined;
-
-  const save = () => {
-    if (error) return;
-    setConsultationFee(amount);
-    toast.show(`Consultation fee set to ${inr(amount)}`);
-    onSaved();
-  };
 
   return (
     <Screen
       testID="consultation-fee"
       header={<ScreenHeader onBack={onBack} title="Consultation fee" subtitle="What a patient pays for one consultation with you." />}
-      footer={<Button testID="save-fee" label="Save fee" disabled={!dirty || !!error} onPress={save} />}
+      footer={onRequestChange ? <Button testID="request-fee-change" label="Request a change" variant="secondary" onPress={onRequestChange} /> : undefined}
     >
       <Card style={s.card}>
         <Text style={s.fieldLabel}>Amount</Text>
-        <View style={[s.amountRow, !!error && s.amountRowInvalid]}>
+        <View style={s.amountRow}>
           <Text style={s.rupee}>₹</Text>
-          <TextInput
-            testID="fee-input"
-            value={fee}
-            onChangeText={(t) => setFee(t.replace(/[^\d]/g, '').replace(/^0+(?=\d)/, '').slice(0, 5))}
-            keyboardType="number-pad"
-            {...doneBar('number-pad')}
-            returnKeyType="done"
-            style={s.amountInput}
-            accessibilityLabel="Consultation fee amount"
-            underlineColorAndroid="transparent"
-          />
+          <Text testID="fee-value" style={s.amountInput}>
+            {saved}
+          </Text>
         </View>
-        {error ? <Text style={s.error}>{error}</Text> : <Text style={s.help}>CoraCure does not deduct a platform fee — you keep the full amount.</Text>}
+        <Text style={s.help}>CoraCure does not deduct a platform fee — you keep the full amount.</Text>
       </Card>
-
-      <Text style={s.section}>Common amounts</Text>
-      <Card style={s.listCard}>
-        {FEE_PRESETS.map((p, i) => (
-          <ChoiceRow key={p} testID={`fee-${p}`} label={inr(p)} selected={amount === p} onPress={() => setFee(String(p))} last={i === FEE_PRESETS.length - 1} />
-        ))}
-      </Card>
-      <Text style={s.note}>A new fee applies to consultations booked after you save. Existing bookings keep their fee.</Text>
+      <Note icon="info" style={s.note}>
+        Your consultation fee is set by CoraCure, not edited here. Request a change and the team will update it.
+      </Note>
     </Screen>
   );
 };
@@ -172,25 +151,29 @@ export const ConsultationDurationScreen = ({
 }) => {
   const saved = useStore((st) => st.availability.durationMin);
   const [minutes, setMinutes] = useState(saved);
+  const [saving, setSaving] = useState(false);
   const dirty = minutes !== saved;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateConsultationDuration(minutes);
+      setConsultationDuration(minutes);
+      toast.show(`Consultations set to ${minutes} minutes`);
+      onSaved();
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Screen
       testID="consultation-duration"
       header={<ScreenHeader onBack={onBack} title="Consultation duration" subtitle="How long one slot lasts. This sets how many slots fit your day." />}
-      footer={
-        <Button
-          testID="save-duration"
-          label="Save duration"
-          disabled={!dirty}
-          onPress={() => {
-            setConsultationDuration(minutes);
-            toast.show(`Consultations set to ${minutes} minutes`);
-            onSaved();
-          }}
-        />
-      }
+      footer={<Button testID="save-duration" label="Save duration" disabled={!dirty || saving} loading={saving} onPress={save} />}
     >
       <Card style={s.listCard}>
         {DURATIONS.map((d, i) => (
@@ -212,6 +195,12 @@ export const ConsultationDurationScreen = ({
 
 /* -------------------------------- bank details ----------------------------- */
 
+/**
+ * *** NO ACCOUNT DETAILS, BECAUSE THE APP HAS NONE. *** The backend exposes
+ * one fact about the payout account — `bankVerified` on the profile — and no
+ * bank name, number or IFSC. The screen used to show a made-up HDFC account,
+ * which a doctor would reasonably take as where their money goes.
+ */
 export const BankDetailsScreen = ({ onBack, onRequestChange }: { onBack: () => void; onRequestChange: () => void }) => {
   const doctor = useStore(selectDoctor);
   return (
@@ -226,26 +215,17 @@ export const BankDetailsScreen = ({ onBack, onRequestChange }: { onBack: () => v
             <Icon name="wallet" size={19} color={colors.surfie} />
           </View>
           <View style={s.flex}>
-            <Text style={s.bankName}>HDFC Bank</Text>
-            <Text style={s.choiceHint}>Savings account</Text>
+            <Text style={s.bankName}>Payout account</Text>
+            <Text testID="bank-state" style={s.choiceHint}>
+              {doctor.bankVerified ? 'Verified by the Coracure team' : 'Not verified yet'}
+            </Text>
           </View>
-          <StatusPill label={doctor.bankVerified ? 'Verified' : 'Pending'} tone={doctor.bankVerified ? 'success' : 'warn'} />
+          <StatusPill label={doctor.bankVerified ? 'Verified' : 'Not verified'} tone={doctor.bankVerified ? 'success' : 'warn'} />
         </View>
-        {/* masked, always — the full number is never displayed back */}
-        {[
-          ['Account number', '•••• •••• 4417'],
-          ['IFSC', 'HDFC0001234'],
-          ['Account holder', doctor.name],
-        ].map(([k, v], i, list) => (
-          <View key={k} style={[s.kv, i === list.length - 1 && s.kvLast]}>
-            <Text style={s.kvLabel}>{k}</Text>
-            <Text style={s.kvValue}>{v}</Text>
-          </View>
-        ))}
       </Card>
       <Text style={s.note}>
-        Bank details are verified by an administrator and cannot be edited directly. A change request pauses payouts until the new
-        account is verified.
+        Bank details are managed by the Coracure team. They are not shown or edited in the app — contact the team to add or change
+        your payout account.
       </Text>
     </Screen>
   );
@@ -258,9 +238,11 @@ export const PrivacySecurityScreen = ({ onBack }: { onBack: () => void }) => {
   const mobile = useStore((st) => st.session.mobile);
   const masked = mobile.length === 10 ? `+91 ${mobile.slice(0, 2)}••• ••${mobile.slice(7)}` : 'your registered number';
 
-  const change = (patch: Partial<typeof privacy>, message: string) => {
+  // These preferences have no backend yet: they are kept on this device, and
+  // the copy says so rather than claiming an effect nothing applies.
+  const change = (patch: Partial<typeof privacy>) => {
     setPrivacy(patch);
-    toast.show(message, 'info');
+    toast.show('Saved on this device', 'info');
   };
 
   return (
@@ -283,33 +265,32 @@ export const PrivacySecurityScreen = ({ onBack }: { onBack: () => void }) => {
         <ToggleRow
           testID="toggle-online"
           title="Show availability status"
-          subtitle="Patients can see when you are available now"
+          subtitle="A preference kept on this device. It does not change what patients see."
           value={privacy.showOnline}
-          onChange={(v) => change({ showOnline: v }, v ? 'Patients can see your availability' : 'Your availability is hidden from patients')}
+          onChange={(v) => change({ showOnline: v })}
         />
         <ToggleRow
           testID="toggle-analytics"
           title="Share usage analytics"
-          subtitle="Helps improve the app. Never includes patient data."
+          subtitle="A preference kept on this device. Never includes patient data."
           value={privacy.analytics}
-          onChange={(v) => change({ analytics: v }, v ? 'Usage analytics on' : 'Usage analytics off')}
+          onChange={(v) => change({ analytics: v })}
           last
         />
       </Card>
-      <Text style={s.note}>Changes save as soon as you make them. Patient records follow the clinic’s retention policy and are not affected by these settings.</Text>
+      <Text style={s.note}>These preferences are saved on this device only, not to your account. Patient records follow the clinic’s retention policy and are not affected by them.</Text>
     </Screen>
   );
 };
 
 /* ------------------------------ request changes ---------------------------- */
 
+/** Bio and languages are absent: the doctor edits those in Profile Details. */
 export const CHANGEABLE = [
   'Name or qualification',
   'Speciality',
   'Medical registration number',
-  'Languages spoken',
   'Profile photo',
-  'About / bio',
   'Bank account',
 ] as const;
 
@@ -343,16 +324,18 @@ export const RequestChangesScreen = ({
       setShowErrors(true);
       return;
     }
+    // There is no change-request endpoint: the request is kept on this device,
+    // and the toast says exactly that.
     addChangeRequest(picked, note.trim());
-    toast.show('Change request sent to an administrator');
+    toast.show('Request saved on this device');
     onSent();
   };
 
   return (
     <Screen
       testID="request-changes"
-      header={<ScreenHeader onBack={onBack} title="Request changes" subtitle="Ask an administrator to update a verified detail." />}
-      footer={<Button testID="submit-request" label="Send request" onPress={send} />}
+      header={<ScreenHeader onBack={onBack} title="Request changes" subtitle="Verified details are changed by the Coracure team." />}
+      footer={<Button testID="submit-request" label="Save request" onPress={send} />}
     >
       <Text style={s.section}>What needs to change?</Text>
       <Card style={[s.listCard, showErrors && !!errors.fields && s.cardInvalid]}>
@@ -383,7 +366,10 @@ export const RequestChangesScreen = ({
       </Card>
       {showErrors && !!errors.note && <Text style={[s.error, s.errorOut]}>{errors.note}</Text>}
 
-      <Note icon="info">An administrator reviews each request. Supporting documents may be asked for.</Note>
+      <Note icon="info">
+        Requests are saved on this device and are not sent to Coracure automatically. To have a detail changed, contact the Coracure
+        team through Help and support.
+      </Note>
 
       {requests.length > 0 && (
         <>
@@ -397,7 +383,7 @@ export const RequestChangesScreen = ({
                     {r.at} · {r.note}
                   </Text>
                 </View>
-                <StatusPill label="Pending" tone="warn" />
+                <StatusPill label="Not sent" tone="warn" />
               </View>
             ))}
           </Card>
@@ -442,13 +428,9 @@ const s = StyleSheet.create({
   rupee: { ...typeStyles.inputSingle, fontFamily: typeStyles.metric.fontFamily, fontWeight: fontWeight.semibold, fontSize: 26, color: colors.ink },
   amountInput: { ...typeStyles.inputSingle, fontFamily: typeStyles.metric.fontFamily, fontWeight: fontWeight.semibold, fontSize: 26, flex: 1, height: 50, color: colors.ink },
 
-  bankHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
+  bankHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   bankIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
   bankName: { ...typeStyles.name, color: colors.ink },
-  kv: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surface.line },
-  kvLast: { borderBottomWidth: 0, paddingBottom: 0 },
-  kvLabel: { ...typeStyles.caption, color: colors.inkMuted },
-  kvValue: { ...typeStyles.bodySmall, color: colors.ink, flexShrink: 1, textAlign: 'right' },
 
   noteInput: { ...typeStyles.input, minHeight: 92, textAlignVertical: 'top', color: colors.ink, padding: 0 },
   counter: { ...typeStyles.caption, color: colors.inkMuted, textAlign: 'right', marginTop: spacing.xs },

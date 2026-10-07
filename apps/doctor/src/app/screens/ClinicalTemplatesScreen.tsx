@@ -11,7 +11,8 @@ import { confirm } from '../../components/confirm';
 import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
 import { selectDoctor } from '../../state/selectors';
-import { deleteTemplate, duplicateTemplate } from '../../state/actions';
+import { SkeletonRowList, SectionError, RefreshBar } from '../../components/skeletons';
+import { deleteTemplate, duplicateTemplate, templateMessage, useTemplates } from '../../data/templates';
 import {
   TEMPLATE_FILTERS,
   canPrescribe,
@@ -133,6 +134,7 @@ export const ClinicalTemplatesScreen = ({
   const doctor = useStore(selectDoctor);
   const professionalType = typeProp ?? doctor.professionalType;
   const templates = useStore((st) => st.templates);
+  const { showSkeleton, error, isRefreshing, retry } = useTemplates();
   const [filter, setFilter] = useState<(typeof TEMPLATE_FILTERS)[number]['key']>('all');
   const [query, setQuery] = useState('');
   const [menuFor, setMenuFor] = useState<ClinicalTemplate | null>(null);
@@ -210,7 +212,17 @@ export const ClinicalTemplatesScreen = ({
         })}
       </ScrollView>
 
-      {visible.length === 0 ? (
+      {showSkeleton ? (
+        <SkeletonRowList rows={4} />
+      ) : error && templates.length === 0 ? (
+        <SectionError testID="templates-error" message="Could not load your templates." onRetry={retry} />
+      ) : templates.length === 0 ? (
+        <EmptyState
+          icon="notes"
+          title="No templates yet"
+          body="Save a prescription as a template from the prescription screen and it will appear here."
+        />
+      ) : visible.length === 0 ? (
         <EmptyState
           icon="notes"
           title="No templates"
@@ -222,9 +234,12 @@ export const ClinicalTemplatesScreen = ({
           }}
         />
       ) : (
-        visible.map((t) => (
+        [
+          isRefreshing && <RefreshBar key="refreshing" testID="templates-refreshing" />,
+          ...visible.map((t) => (
           <TemplateCard key={t.id} template={t} onApply={() => onApply(t.id)} onMenu={() => setMenuFor(t)} />
-        ))
+          )),
+        ]
       )}
 
       {!canPrescribe(professionalType) && (
@@ -252,9 +267,12 @@ export const ClinicalTemplatesScreen = ({
                   key: 'duplicate',
                   label: 'Duplicate as my template',
                   icon: 'copy',
-                  onPress: () => {
-                    duplicateTemplate(menuFor.id);
-                    toast.show(`${menuFor.name} duplicated`);
+                  onPress: async () => {
+                    try {
+                      if (await duplicateTemplate(menuFor)) toast.show(`${menuFor.name} duplicated`);
+                    } catch (e) {
+                      toast.show(templateMessage(e), 'error');
+                    }
                   },
                 },
                 ...(menuFor.mine
@@ -270,9 +288,12 @@ export const ClinicalTemplatesScreen = ({
                             message: 'Prescriptions already written from it are not changed.',
                             confirmLabel: 'Delete',
                             destructive: true,
-                            onConfirm: () => {
-                              deleteTemplate(menuFor.id);
-                              toast.show('Template deleted', 'info');
+                            onConfirm: async () => {
+                              try {
+                                if (await deleteTemplate(menuFor.id)) toast.show('Template deleted', 'info');
+                              } catch (e) {
+                                toast.show(templateMessage(e), 'error');
+                              }
                             },
                           }),
                       },

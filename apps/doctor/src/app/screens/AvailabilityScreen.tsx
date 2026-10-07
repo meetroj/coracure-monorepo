@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Switch, TextInput, Keyboard, type ScrollView } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing, shadow } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
@@ -8,10 +10,13 @@ import { Screen, Button, EmptyState, Note } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { BottomSheet, SheetActions } from '../../components/BottomSheet';
 import { CalendarSheet } from '../../components/form';
+import { SkeletonCard, SectionError } from '../../components/skeletons';
 import { confirm } from '../../components/confirm';
 import { toast } from '../../components/Toast';
 import { useStore, type AvailabilityState } from '../../state/store';
 import { saveAvailability } from '../../state/actions';
+import { useAvailability, saveWeekly, toAvailabilityState, setCustomHoursFor, blockWholeDay, removeAvailabilityRule } from '../../data/availability';
+import { updateDoctorProfile } from '../../data/profile';
 import {
   TODAY,
   MONTHS_SHORT,
@@ -201,11 +206,13 @@ type Editor = { kind: 'exception' | 'leave'; id?: string; date: string; details:
 
 const EntryEditor = ({
   editor,
+  busy,
   onChange,
   onApply,
   onClose,
 }: {
   editor: Editor | null;
+  busy: boolean;
   onChange: (patch: Partial<Editor>) => void;
   onApply: () => void;
   onClose: () => void;
@@ -222,7 +229,7 @@ const EntryEditor = ({
         subtitle={exception ? 'Custom hours that replace the weekly pattern on this date.' : 'Patients cannot book you on this date.'}
         onClose={onClose}
         testID="entry-editor"
-        footer={<SheetActions testID="entry" onCancel={onClose} confirmLabel="Apply" onConfirm={onApply} />}
+        footer={<SheetActions testID="entry" onCancel={onClose} confirmLabel="Apply" confirmDisabled={busy} onConfirm={onApply} />}
       >
         <Text style={s.editorLabel}>Date</Text>
         <View style={[s.editorInput, !!editor?.error && s.editorInputInvalid]}>
@@ -349,12 +356,15 @@ export const AvailabilityScreen = ({
   onDirtyChange?: (dirty: boolean) => void;
 }) => {
   const saved = useStore((st) => st.availability);
-  const [draft, setDraft] = useState<Draft>(() => clone(saved));
+  const { error: loadError, showSkeleton, retry } = useAvailability();
+  const [draft, setDraftState] = useState<Draft>(() => clone(saved));
   const [tab, setTab] = useState<Tab>('schedule');
   const [active, setActive] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [setting, setSetting] = useState<'duration' | 'buffer' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // where each day row sits in the scroll content, to bring a failing day into view
   const scrollRef = useRef<ScrollView | null>(null);
@@ -362,8 +372,30 @@ export const AvailabilityScreen = ({
   const cardY = useRef(0);
   const dayY = useRef<Record<string, number>>({});
 
+  /**
+   * Every doctor-initiated edit, routed through here, so the resync effect
+   * below can tell "the doctor changed something" apart from "`saved` just
+   * changed" — those are NOT the same thing: loading the diary for the first
+   * time changes `saved` too, and arrives looking exactly like an edit if
+   * dirtiness were the test, since draft (still the pre-load placeholder) and
+   * the newly-loaded `saved` differ. That inverted check is what used to
+   * block the initial load from ever reaching the screen.
+   */
+  const touched = useRef(false);
+  const setDraft: typeof setDraftState = (next) => {
+    touched.current = true;
+    setDraftState(next);
+  };
+
   const dirty = !same(draft, saved);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  // The diary arrives after this screen's own `useState(() => clone(saved))`
+  // read the store's loading placeholder — resync the draft once it lands,
+  // but never over a doctor's own unsaved edits.
+  useEffect(() => {
+    if (!touched.current) setDraftState(clone(saved));
+  }, [saved]);
 
   const checks = useMemo(
     () => Object.fromEntries(draft.schedule.map((d) => [d.day, checkDay(d, draft.durationMin)])) as Record<string, DayCheck>,
@@ -402,10 +434,16 @@ export const AvailabilityScreen = ({
 
   /* ---- exceptions + time off ---- */
   const openEditor = (e: Editor) => setEditor(e);
-  const applyEditor = () => {
+
+  /**
+   * Blocked days and custom hours are each their own row, created and deleted
+   * one at a time — there is no PATCH, so editing an existing one is a remove
+   * then a recreate (`DOCTOR_INTEGRATION_PLAN.md` step 5).
+   */
+  const applyEditor = async () => {
     if (!editor) return;
     const date = editor.date.trim();
-    const fail = (error: string) => setEditor({ ...editor, error });
+    const fail = (error: string) => setEditor((e) => (e ? { ...e, error } : e));
     if (!isValidISODate(date)) return fail('Enter a valid date as YYYY-MM-DD.');
     if (daysFromToday(date) < 0) return fail('Choose today or a later date.');
 
@@ -415,27 +453,57 @@ export const AvailabilityScreen = ({
       if (range.from >= range.to) return fail('The hours must end after they start.');
       if (draft.overrides.some((o) => o.date === date && o.id !== editor.id))
         return fail('This date already has an exception. Edit that one instead.');
-      const entry: ScheduleOverride = {
-        id: editor.id ?? `o-${Date.now().toString(36)}`,
-        date,
-        from: minutesToClock(range.from),
-        to: minutesToClock(range.to),
-      };
-      setDraft((dr) => ({
-        ...dr,
-        overrides: byDate(editor.id ? dr.overrides.map((o) => (o.id === editor.id ? entry : o)) : [...dr.overrides, entry]),
-      }));
+
+      setBusy(true);
+      let removed = false;
+      try {
+        if (editor.id) {
+          await removeAvailabilityRule(editor.id);
+          removed = true;
+        }
+        const entry = await setCustomHoursFor(date, minutesToClock(range.from), minutesToClock(range.to));
+        setDraft((dr) => ({
+          ...dr,
+          overrides: byDate(editor.id ? dr.overrides.map((o) => (o.id === editor.id ? entry : o)) : [...dr.overrides, entry]),
+        }));
+        setEditor(null);
+      } catch (e) {
+        // The old rule is already gone server-side but the recreate failed —
+        // showing it as still here would be a lie, so pull the real list
+        // instead of guessing at a patched-up local one.
+        if (removed) retry();
+        fail(messageFor(e));
+      } finally {
+        setBusy(false);
+      }
     } else {
       const reason = editor.details.trim();
       if (reason.length < 2) return fail('Add a reason, for example Personal leave.');
       if (draft.leave.some((l) => l.date === date && l.id !== editor.id)) return fail('This date is already marked as time off.');
-      const entry: Leave = { id: editor.id ?? `l-${Date.now().toString(36)}`, date, reason };
-      setDraft((dr) => ({
-        ...dr,
-        leave: byDate(editor.id ? dr.leave.map((l) => (l.id === editor.id ? entry : l)) : [...dr.leave, entry]),
-      }));
+
+      setBusy(true);
+      let removed = false;
+      try {
+        if (editor.id) {
+          await removeAvailabilityRule(editor.id);
+          removed = true;
+        }
+        const rule = await blockWholeDay(date);
+        // The reason stays the doctor's own words, not the server's "Full day" —
+        // it has no backing field, so a later reload won't remember it either.
+        const entry: Leave = { id: rule.id, date, reason };
+        setDraft((dr) => ({
+          ...dr,
+          leave: byDate(editor.id ? dr.leave.map((l) => (l.id === editor.id ? entry : l)) : [...dr.leave, entry]),
+        }));
+        setEditor(null);
+      } catch (e) {
+        if (removed) retry();
+        fail(messageFor(e));
+      } finally {
+        setBusy(false);
+      }
     }
-    setEditor(null);
   };
   const closeEditor = () => setEditor(null);
 
@@ -445,7 +513,14 @@ export const AvailabilityScreen = ({
       message: `${weekday(o.date)}, ${dayMonth(o.date)} goes back to your weekly hours.`,
       confirmLabel: 'Remove',
       destructive: true,
-      onConfirm: () => setDraft((dr) => ({ ...dr, overrides: dr.overrides.filter((x) => x.id !== o.id) })),
+      onConfirm: async () => {
+        try {
+          await removeAvailabilityRule(o.id);
+          setDraft((dr) => ({ ...dr, overrides: dr.overrides.filter((x) => x.id !== o.id) }));
+        } catch (e) {
+          toast.show(messageFor(e), 'error');
+        }
+      },
     });
   const removeLeave = (l: Leave) =>
     confirm({
@@ -453,11 +528,18 @@ export const AvailabilityScreen = ({
       message: `Patients will be able to book you on ${weekday(l.date)}, ${dayMonth(l.date)} again.`,
       confirmLabel: 'Remove',
       destructive: true,
-      onConfirm: () => setDraft((dr) => ({ ...dr, leave: dr.leave.filter((x) => x.id !== l.id) })),
+      onConfirm: async () => {
+        try {
+          await removeAvailabilityRule(l.id);
+          setDraft((dr) => ({ ...dr, leave: dr.leave.filter((x) => x.id !== l.id) }));
+        } catch (e) {
+          toast.show(messageFor(e), 'error');
+        }
+      },
     });
 
   /* ---- save ---- */
-  const save = () => {
+  const save = async () => {
     const failing = draft.schedule.find((d) => checks[d.day]?.message);
     if (failing) {
       setShowErrors(true);
@@ -468,13 +550,36 @@ export const AvailabilityScreen = ({
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.lg), animated: true }));
       return;
     }
-    // a day switched off keeps its hours, so switching it back on restores them
-    const next = clone(draft);
-    saveAvailability(next);
-    setDraft(next);
-    setShowErrors(false);
-    toast.show('Availability saved');
-    onSaved?.();
+    setSaving(true);
+    try {
+      // The server replaces the whole pattern and answers with what it kept —
+      // that is the saved draft now, not just what was sent.
+      const diary = await saveWeekly(draft.schedule);
+      // Duration and buffer are NOT in the weekly PUT — they live on the
+      // profile (`PATCH /me/doctor/profile`) — so a change to either needs
+      // its own call, made only when one of them actually moved.
+      const profilePatch: { consultationDurationMinutes?: number; bufferMinutes?: number } = {};
+      if (draft.durationMin !== saved.durationMin) profilePatch.consultationDurationMinutes = draft.durationMin;
+      if (draft.bufferMin !== saved.bufferMin) profilePatch.bufferMinutes = draft.bufferMin;
+      const profile = Object.keys(profilePatch).length ? await updateDoctorProfile(profilePatch) : undefined;
+      const next = {
+        ...toAvailabilityState(diary),
+        durationMin: profile?.consultationDurationMinutes ?? draft.durationMin,
+        bufferMin: profile?.bufferMinutes ?? draft.bufferMin,
+      };
+      saveAvailability(next);
+      // The draft now matches what was just saved — not an edit still pending,
+      // so a later background reload is free to resync over it again.
+      touched.current = false;
+      setDraftState(clone(next));
+      setShowErrors(false);
+      toast.show('Availability saved');
+      onSaved?.();
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const upcoming = (list: { date: string }[]) => list.filter((x) => daysFromToday(x.date) >= 0).length;
@@ -500,7 +605,7 @@ export const AvailabilityScreen = ({
       }
       footer={
         <View>
-          <Button testID="save-schedule" label="Save changes" onPress={save} disabled={!dirty} />
+          <Button testID="save-schedule" label="Save changes" onPress={save} loading={saving} disabled={!dirty || saving} />
           <Text style={s.savedAt}>{saved.savedAt ? `Last saved at ${saved.savedAt}` : 'Changes apply to new bookings once saved.'}</Text>
         </View>
       }
@@ -529,7 +634,14 @@ export const AvailabilityScreen = ({
         })}
       </View>
 
-      {tab === 'schedule' ? (
+      {showSkeleton ? (
+        <View style={s.body}>
+          <SkeletonCard height={260} />
+          <SkeletonCard height={140} />
+        </View>
+      ) : loadError ? (
+        <SectionError testID="availability-error" message="Could not load your availability." onRetry={retry} />
+      ) : tab === 'schedule' ? (
         <View style={s.body} onLayout={(e) => (bodyY.current = e.nativeEvent.layout.y)}>
           {/* weekly hours */}
           <SectionHead icon="calendar" title="Weekly hours" subtitle="Tap a day to add hours or copy them." />
@@ -729,7 +841,7 @@ export const AvailabilityScreen = ({
         </View>
       )}
 
-      <EntryEditor editor={editor} onChange={(patch) => setEditor((e) => (e ? { ...e, ...patch } : e))} onApply={applyEditor} onClose={closeEditor} />
+      <EntryEditor editor={editor} busy={busy} onChange={(patch) => setEditor((e) => (e ? { ...e, ...patch } : e))} onApply={applyEditor} onClose={closeEditor} />
 
       <BottomSheet
         visible={!!setting}

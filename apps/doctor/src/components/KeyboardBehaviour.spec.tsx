@@ -5,9 +5,9 @@ import { render, fireEvent, screen, act } from '@testing-library/react-native';
 import { Screen, Button } from './ui';
 import { BottomSheet } from './BottomSheet';
 import { Checkbox } from './Checkbox';
-import { SelectField } from './form';
+import { SelectField, TextField } from './form';
 import { KeyboardDoneBar, DONE_BAR_ID, doneBar } from './KeyboardDoneBar';
-import { ConsultationFeeScreen } from '../app/screens/profile/ProfileSettingsScreens';
+import { ConsultationDurationScreen } from '../app/screens/profile/ProfileSettingsScreens';
 import { DoctorLoginScreen } from '../app/screens/DoctorLoginScreen';
 
 /**
@@ -36,16 +36,20 @@ const keyboardDown = () => emit(['keyboardWillHide', 'keyboardDidHide'], { endCo
 /* ---------------------------- the bottom action ---------------------------- */
 
 test('a Save button stays at the foot of the screen while typing, and is back when the keyboard closes', () => {
-  render(<ConsultationFeeScreen onBack={jest.fn()} onSaved={jest.fn()} />);
-  expect(screen.getByTestId('save-fee')).toBeTruthy();
+  render(
+    <Screen footer={<Button testID="save" label="Save" onPress={jest.fn()} />}>
+      <TextInput testID="field" />
+    </Screen>
+  );
+  expect(screen.getByTestId('save')).toBeTruthy();
 
   keyboardUp();
   // behind the keys, not floating on top of them
-  expect(screen.queryByTestId('save-fee')).toBeNull();
-  expect(screen.getByTestId('fee-input')).toBeTruthy();
+  expect(screen.queryByTestId('save')).toBeNull();
+  expect(screen.getByTestId('field')).toBeTruthy();
 
   keyboardDown();
-  expect(screen.getByTestId('save-fee')).toBeTruthy();
+  expect(screen.getByTestId('save')).toBeTruthy();
 });
 
 test('a composer in the footer rides above the keyboard, since it is what the doctor is typing in', () => {
@@ -99,9 +103,9 @@ test('ticking a box puts the keyboard away first', () => {
   expect(onToggle).toHaveBeenCalled();
 });
 
-test('choosing a preset amount puts the keyboard away first', () => {
-  render(<ConsultationFeeScreen onBack={jest.fn()} onSaved={jest.fn()} />);
-  fireEvent.press(screen.getByTestId('fee-899'));
+test('choosing a preset choice puts the keyboard away first', () => {
+  render(<ConsultationDurationScreen onBack={jest.fn()} onSaved={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('duration-45'));
   expect(Keyboard.dismiss).toHaveBeenCalled();
 });
 
@@ -116,11 +120,11 @@ test('number pads get a Done key on iOS, which puts the keyboard away', () => {
   expect(Keyboard.dismiss).toHaveBeenCalled();
 });
 
-test('the sign-in number pad and the fee field use it', () => {
+test('the sign-in number pad and any other number-pad field use it', () => {
   const login = render(<DoctorLoginScreen onAuthenticated={jest.fn()} />);
   expect(screen.getByTestId('phone-input').props.inputAccessoryViewID).toBe(DONE_BAR_ID);
   login.unmount();
 
-  render(<ConsultationFeeScreen onBack={jest.fn()} onSaved={jest.fn()} />);
-  expect(screen.getByTestId('fee-input').props.inputAccessoryViewID).toBe(DONE_BAR_ID);
+  render(<TextField testID="amount" label="Amount" keyboardType="number-pad" value="" onChangeText={jest.fn()} />);
+  expect(screen.getByTestId('amount').props.inputAccessoryViewID).toBe(DONE_BAR_ID);
 });

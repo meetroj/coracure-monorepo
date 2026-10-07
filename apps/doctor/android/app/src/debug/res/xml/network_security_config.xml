@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY (this file shadows the one in src/main for the debug variant).
+
+  A debug build downloads its JavaScript from Metro on the developer's machine over plain HTTP
+  (localhost / the computer's IP), so cleartext has to be allowed here. The release build, which
+  has its JavaScript inside the APK, uses src/main's stricter file and allows no cleartext at all.
+
+  The live server stays HTTPS-only with its self-signed certificate trusted, same as release.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">3.111.230.242</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/coracure_selfsigned" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

@@ -14,36 +14,37 @@ import { useCallback, useRef, useSyncExternalStore } from 'react';
 import {
   type Appointment,
   doctor,
-  initialLeave,
-  initialOverrides,
-  initialSchedule,
   type DaySchedule,
   type Leave,
   type ManualStatus,
   type ScheduleOverride,
 } from '../data/doctor';
-import { clinicalTemplates, type ClinicalTemplate, type ConsultationRecord } from '../data/clinical';
-import { patientAlerts, type AlertAction, type AlertStatus } from '../data/followup';
-import { messagesByThread, notifications, threads as seedThreads, type ChatMessage, type ChatThread } from '../data/messaging';
-import { clarifications as seedClarifications, type Clarification } from '../data/clarification';
-import { seedRequests, type ReportRequest } from '../data/documents';
-import { supportIssues as seedIssues, type SupportIssue } from '../data/support';
+import type { ClinicalTemplate, ConsultationRecord } from '../data/clinical';
+import type { DoctorSelfProfile, PendingDocumentation, SafetyAlert } from '@coracure/api';
+import type { ChatMessage, ChatThread } from '../data/messaging';
+import type { Clarification } from '../data/clarification';
+import { patientDocs, seedRequests, type PatientDoc, type ReportRequest } from '../data/documents';
+import type { SupportIssue } from '../data/support';
 import type { RegistrationDraft } from '../data/registration';
 import { seedRecords } from './seed';
 
 export type VerificationState = 'notSubmitted' | 'pending' | 'approved' | 'rejected';
 
-export type AlertLive = {
-  status: AlertStatus;
-  read: boolean;
-  action?: AlertAction;
-  note?: string;
-  reviewedAt?: string;
-};
-
 export type ThreadLive = ChatThread & { messages: ChatMessage[] };
 
 export type ChangeRequest = { id: string; fields: string[]; note: string; at: string; state: 'pending' };
+
+/**
+ * The week before the diary answers: every day present, all of them off.
+ *
+ * Not `[]` — the screen renders one row per day whatever is loaded, so the
+ * shape has to be the full week. Not seeded with sample hours either: the
+ * same reasoning as `appointments` below applies, a placeholder schedule a
+ * doctor never set is worse than a blank one while the real diary loads.
+ */
+const EMPTY_WEEK: DaySchedule[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(
+  (day) => ({ day, short: day.slice(0, 3), enabled: false, ranges: [], modes: ['video'] })
+);
 
 export type AvailabilityState = {
   schedule: DaySchedule[];
@@ -73,9 +74,17 @@ export type AppState = {
    */
   appointments: Appointment[];
   /** Held consultations with no write-up. Non-empty blocks going available. */
-  pendingDocumentation: { consultationId: string; referenceCode: string }[];
+  pendingDocumentation: PendingDocumentation[];
+  /** Open or acknowledged follow-up safety alerts, as the server has them. */
+  openAlerts: SafetyAlert[];
   /** The notification badge, as the server counts it. */
   unreadCount: number;
+  /**
+   * The signed-in doctor as the backend has them — name, registration number,
+   * fee, photo and, decisively, `canPrescribe`. Null until it loads; until
+   * then `selectDoctor` falls back to the local profile.
+   */
+  selfProfile: DoctorSelfProfile | null;
   onboardingCompleted: boolean;
   /** What the doctor submitted for verification, when they did it this session. */
   submission?: RegistrationDraft;
@@ -83,6 +92,10 @@ export type AppState = {
   profile: { fee: number; changeRequests: ChangeRequest[] };
   privacy: { showOnline: boolean; analytics: boolean };
   liveStatus: ManualStatus;
+  /** From the presence record. Non-null means `available_now` is refused until this write-up is done. */
+  presenceBlockedByConsultationId: string | null;
+  /** An admin permission; a doctor cannot grant it to themselves. */
+  allowInstantConsult: boolean;
   /** The consultation room currently open, if any. */
   activeCall?: { appointmentId: string; joinedAt: number };
   /** Set after a call ends until its case summary is submitted. */
@@ -91,47 +104,48 @@ export type AppState = {
   endedCalls: Record<string, string>;
   availability: AvailabilityState;
   records: Record<string, ConsultationRecord>;
-  alerts: Record<string, AlertLive>;
-  notifRead: Record<string, boolean>;
   instant: 'pending' | 'accepted' | 'declined' | 'expired';
   threads: ThreadLive[];
   clarifications: Clarification[];
   templates: ClinicalTemplate[];
   reportRequests: ReportRequest[];
+  documents: PatientDoc[];
   supportIssues: SupportIssue[];
-  reviewReports: Record<string, string>;
 };
 
 export const initialState = (): AppState => ({
   session: { stage: 'intro', mobile: '' },
   appointments: [],
   pendingDocumentation: [],
+  openAlerts: [],
   unreadCount: 0,
+  selfProfile: null,
   onboardingCompleted: false,
   verification: { status: 'notSubmitted', acknowledged: false },
   profile: { fee: doctor.consultationFee, changeRequests: [] },
   privacy: { showOnline: true, analytics: false },
   liveStatus: 'available',
+  presenceBlockedByConsultationId: null,
+  allowInstantConsult: true,
   endedCalls: {},
   availability: {
-    schedule: initialSchedule.map((d) => ({ ...d, ranges: d.ranges.map((r) => ({ ...r })) })),
-    overrides: initialOverrides.map((o) => ({ ...o })),
-    leave: initialLeave.map((l) => ({ ...l })),
+    schedule: EMPTY_WEEK.map((d) => ({ ...d, ranges: [], modes: [...d.modes] })),
+    overrides: [],
+    leave: [],
     durationMin: doctor.consultationMinutes,
     bufferMin: 10,
   },
   records: seedRecords(),
-  alerts: Object.fromEntries(
-    patientAlerts.map((a) => [a.id, { status: a.status, read: a.status !== 'open' }])
-  ),
-  notifRead: Object.fromEntries(notifications.map((n) => [n.id, n.read])),
   instant: 'pending',
-  threads: seedThreads.map((t) => ({ ...t, messages: [...(messagesByThread[t.id] ?? [])] })),
-  clarifications: seedClarifications.map((c) => ({ ...c, messages: [...c.messages] })),
-  templates: clinicalTemplates.map((t) => ({ ...t })),
+  // Never seeded with sample patients, cases or tickets — the same rule as
+  // `appointments`. A real doctor must not see invented ones; the spec harness
+  // seeds them (test/fixtures.ts).
+  threads: [],
+  clarifications: [],
+  templates: [],
   reportRequests: seedRequests.map((r) => ({ ...r })),
-  supportIssues: seedIssues.map((i) => ({ ...i, updates: [...i.updates] })),
-  reviewReports: {},
+  documents: patientDocs.map((d) => ({ ...d })),
+  supportIssues: [],
 });
 
 let state: AppState = initialState();

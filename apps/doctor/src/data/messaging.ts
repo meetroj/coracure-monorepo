@@ -7,7 +7,7 @@
  * Expert threads stay hidden from the patient, matching the clarification
  * rules.
  */
-import { fmtAgoShort } from './calendar';
+import { fmtAgoShort, nowMinutes } from './calendar';
 
 /* ------------------------------ notifications ----------------------------- */
 
@@ -17,16 +17,27 @@ export type NotifKind =
   | 'followUpAlert'
   | 'instantRequest'
   | 'appointment'
-  | 'payout';
+  | 'payout'
+  | 'message'
+  /** A real notification with no locally-recognised category — the server's own title/body carry the meaning. */
+  | 'generic';
 
 /** Where opening a notification takes the doctor — always with the record id. */
 export type NotifTarget =
   | { route: 'document'; patientId: string; docId: string }
   | { route: 'expertResponse'; clarificationId: string }
+  /** A case I raised — the thread, where the expert's reply is. */
+  | { route: 'clarification'; clarificationId: string }
+  /** A case assigned to me as the expert. */
+  | { route: 'expertReview'; caseId: string }
   | { route: 'alertDetail'; alertId: string }
   | { route: 'instantRequest' }
   | { route: 'apptDetails'; appointmentId: string }
-  | { route: 'earnings' };
+  | { route: 'earnings' }
+  /** A patient wrote — their conversation. */
+  | { route: 'chat'; patientId: string }
+  /** A real notification whose `deepLinkData` this app does not interpret — opening it only marks it read. */
+  | { route: 'none' };
 
 export const NOTIF_META: Record<
   NotifKind,
@@ -45,6 +56,8 @@ export const NOTIF_META: Record<
   instantRequest: { label: 'Instant', icon: 'video', tone: 'brand', actionLabel: 'Respond', actionVariant: 'primary' },
   appointment: { label: 'Appointments', icon: 'calendar', tone: 'brand', actionLabel: 'View', actionVariant: 'secondary' },
   payout: { label: 'Earnings', icon: 'wallet', tone: 'brand', actionLabel: 'View', actionVariant: 'secondary' },
+  message: { label: 'Messages', icon: 'message', tone: 'brand', actionLabel: 'Reply', actionVariant: 'primary' },
+  generic: { label: 'Update', icon: 'document', tone: 'brand', actionLabel: 'View', actionVariant: 'secondary' },
 };
 
 export type AppNotification = {
@@ -117,8 +130,9 @@ export const notifications: AppNotification[] = [
   },
 ];
 
+/** Arrived since midnight. */
 export const notifGroup = (n: AppNotification): 'today' | 'earlier' =>
-  n.minutesAgo < 11 * 60 + 45 ? 'today' : 'earlier';
+  n.minutesAgo < nowMinutes() ? 'today' : 'earlier';
 
 export const notifTimeLabel = (n: AppNotification) => fmtAgoShort(n.minutesAgo);
 
@@ -203,7 +217,7 @@ export const THREAD_FILTERS: { key: 'all' | ThreadKind | 'unread'; label: string
   { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
   { key: 'patient', label: 'Patients' },
-  { key: 'expert', label: 'Experts' },
+  // No "Experts" filter: expert discussion lives on the case, in Clarifications — not in a copy here.
 ];
 
 export type ChatMessage = {
@@ -213,6 +227,8 @@ export type ChatMessage = {
   at: string;
   /** Attachment name when the message carries a file. */
   file?: string;
+  /** ISO time, on a message the server holds — what a thread is ordered and paged by. */
+  createdAt?: string;
 };
 
 export const messagesByThread: Record<string, ChatMessage[]> = {

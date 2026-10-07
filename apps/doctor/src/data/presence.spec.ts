@@ -1,11 +1,16 @@
+import { doctorPresenceApi } from '@coracure/api';
 import type { InstantOffer, PresenceRecord } from '@coracure/api';
+import { act, renderHook } from '@testing-library/react-native';
 
 import {
   availableBlockedBecause,
   isActionable,
+  OFFER_POLL_MS,
   secondsLeft,
   toApiPresence,
+  toInstantRequest,
   toLiveStatus,
+  useInstantOfferPoll,
 } from './presence';
 import { AUTO_STATUSES, MANUAL_STATUSES } from './doctor';
 
@@ -134,4 +139,56 @@ test('an offer already decided is not actionable either', () => {
   expect(isActionable(offer({ outcome: 'timed_out' }), now)).toBe(false);
   expect(isActionable(offer({ outcome: 'accepted' }), now)).toBe(false);
   expect(isActionable(offer(), now)).toBe(true);
+});
+
+/* --------------------------------- the offer ------------------------------- */
+
+test('an offer never carries the patient’s name — only initials, even as "name"', () => {
+  // Accepting is not a decision this doctor has made yet; the full name is the
+  // treating side's view (`appointments.ts`), not an offer's.
+  const req = toInstantRequest(offer());
+
+  expect(req.name).toBe('AS');
+  expect(req.initials).toBe('AS');
+});
+
+test('falls back when the backend omits initials or age, and never invents a third gender', () => {
+  const req = toInstantRequest(offer({ patientInitials: null, patientAge: null, patientGender: 'undisclosed' }));
+
+  expect(req.name).toBe('Patient');
+  expect(req.age).toBe(0);
+  expect(req.gender).toBe('Other');
+});
+
+test('the countdown starts from what is left on the offer, not the whole window', () => {
+  // offered 10:00:00, expires 10:01:00, opened 20 seconds in
+  const req = toInstantRequest(offer(), new Date('2026-05-15T10:00:20.000Z').getTime());
+
+  expect(req.respondWithin).toBe(40);
+});
+
+/* ------------------------------- the poll ---------------------------------- */
+
+test('polls while enabled, hands each actionable offer over once, and stops when disabled', async () => {
+  jest.useFakeTimers({ now: new Date('2026-05-15T10:00:10.000Z') });
+  const open = jest.spyOn(doctorPresenceApi, 'openOffers').mockResolvedValue([offer()]);
+  const onOffer = jest.fn();
+  const flush = () => act(async () => {});
+
+  const { rerender, unmount } = renderHook(({ on }) => useInstantOfferPoll(on, onOffer), { initialProps: { on: true } });
+  await flush();
+  expect(onOffer).toHaveBeenCalledTimes(1);
+
+  // the same offer on the next tick is not opened a second time
+  await act(async () => jest.advanceTimersByTime(OFFER_POLL_MS));
+  expect(open).toHaveBeenCalledTimes(2);
+  expect(onOffer).toHaveBeenCalledTimes(1);
+
+  // switched off (not Available, or the dashboard lost focus): no more asking
+  rerender({ on: false });
+  await act(async () => jest.advanceTimersByTime(OFFER_POLL_MS * 3));
+  expect(open).toHaveBeenCalledTimes(2);
+
+  unmount();
+  jest.useRealTimers();
 });

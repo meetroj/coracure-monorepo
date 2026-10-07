@@ -39,6 +39,8 @@ export type DoctorConsultation = {
   holdExpiresAt: string | null;
   consultationFeeInr: number | null;
   cancelledAt: string | null;
+  /** Who cancelled it. Null on a booking that was not cancelled. */
+  cancelledByParty: 'patient' | 'doctor' | 'admin' | 'system' | null;
   cancellationReason: string | null;
   createdAt: string;
   intakeAnswers: Record<string, unknown> | null;
@@ -57,6 +59,16 @@ export type DoctorConsultation = {
     riskCategory: 'low' | 'moderate' | 'high' | null;
     totalPastConsultationsWithDoctor: number;
     hasCurrentTeleconsultationConsent: boolean;
+    /** What the patient entered on their own profile. The assigned doctor only; absent on an admin's read. */
+    patientHealth?: {
+      /** `a_positive` … `o_negative`. */
+      bloodGroup: string | null;
+      heightCm: number | null;
+      weightKg: number | null;
+      allergies: string | null;
+      medicalConditions: string | null;
+      currentMedications: string | null;
+    };
   };
 };
 
@@ -68,6 +80,8 @@ export type PatientCard = {
   age: number | null;
   gender: 'male' | 'female' | 'other' | 'undisclosed';
   preferredLanguage: string;
+  /** Every language the patient consults in, in their order. Never empty. */
+  languages: string[];
 };
 
 export type PendingDocumentation = {
@@ -132,6 +146,17 @@ export const pendingDocumentation = (): Promise<PendingDocumentation[]> =>
 export const listSafetyAlerts = (
   query: { openOnly?: boolean; alertType?: string; limit?: number } = {},
 ): Promise<SafetyAlert[]> => api.get<SafetyAlert[]>('/doctor/safety-alerts', { query });
+
+export const getSafetyAlert = (alertId: string): Promise<SafetyAlert> =>
+  api.get<SafetyAlert>(`/doctor/safety-alerts/${alertId}`);
+
+/** Idempotent — acknowledging an already-acknowledged alert just returns it. */
+export const acknowledgeSafetyAlert = (alertId: string): Promise<SafetyAlert> =>
+  api.post<SafetyAlert>(`/doctor/safety-alerts/${alertId}/acknowledge`);
+
+/** Refused with `ALERT_NOT_ACKNOWLEDGED` until the alert has been acknowledged first. */
+export const closeSafetyAlert = (alertId: string, closingNote: string): Promise<SafetyAlert> =>
+  api.post<SafetyAlert>(`/doctor/safety-alerts/${alertId}/close`, { closingNote });
 
 export const unreadNotifications = (): Promise<{ unread: number }> =>
   api.get<{ unread: number }>('/me/notifications/unread-count');

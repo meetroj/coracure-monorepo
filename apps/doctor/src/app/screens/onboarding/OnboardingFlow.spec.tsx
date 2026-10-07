@@ -2,6 +2,8 @@ import React from 'react';
 import { confirm, confirmDiscard } from '../../../components/confirm';
 import { render, fireEvent, screen, act } from '@testing-library/react-native';
 
+import { doctorProfileApi } from '@coracure/api';
+
 import OnboardingFlow from './OnboardingFlow';
 import { uploadConfig } from '../../../components/upload';
 import { demoRegistration, type RegistrationDraft } from '../../../data/registration';
@@ -34,8 +36,15 @@ const mockPicker = {
   },
 };
 
+/** The backend's catalogue (`GET /services`) — what the specialty dropdown is filled from. */
+const SERVICES = [
+  { id: '11111111-1111-4111-8111-111111111111', code: 'psychiatry', name: 'Psychiatry', description: null, consultationFeeInr: 800, providerType: 'doctor', canPrescribe: true },
+  { id: '22222222-2222-4222-8222-222222222222', code: 'psychology', name: 'Psychology', description: null, consultationFeeInr: 600, providerType: 'non_doctor', canPrescribe: false },
+];
+
 beforeEach(() => {
   mockPicker.queued = [];
+  jest.spyOn(doctorProfileApi, 'listServices').mockResolvedValue(SERVICES);
 });
 
 const setup = (over: Partial<React.ComponentProps<typeof OnboardingFlow>> = {}) => {
@@ -210,49 +219,144 @@ const toQualifications = async () => {
   pickSelect('idType', 'Aadhaar');
   fireEvent.changeText(screen.getByTestId('idNumber'), '4321 8765 1098');
   await upload('idDocument', 1);
+  // ABHA left blank on purpose: it must never block registration
   fireEvent.press(screen.getByTestId('onboarding-primary'));
   expect(screen.getByText('Professional Qualifications')).toBeTruthy();
 };
 
-const addQualification = async (degree: string, institution: string) => {
-  fireEvent.press(screen.getByTestId('add-qualification'));
-  pickSelect('degree', degree);
-  fireEvent.changeText(screen.getByTestId('institution'), institution);
-  fireEvent.changeText(screen.getByTestId('university'), 'State Health University');
-  fireEvent.changeText(screen.getByTestId('year'), '2014');
-  await upload('certificate', 2);
+test('qualifications are a specialty dropdown, four free-text fields and two uploads; the specialty, registration number, Basic Qualification and the uploads are required', async () => {
+  await toQualifications();
+  ['specialty', 'registrationNumber', 'basicQualification', 'pgSpecialisation', 'superSpecialisation', 'fellowship', 'degreeCertificate', 'registrationCertificate'].forEach(
+    (id) => expect(screen.getByTestId(id)).toBeTruthy()
+  );
+  // no per-qualification records, no institution / university / year
+  ['add-qualification', 'institution', 'university', 'year'].forEach((id) => expect(screen.queryByTestId(id)).toBeNull());
+
+  fireEvent.press(screen.getByTestId('onboarding-primary'));
+  [
+    'Select your specialty.',
+    'Enter your registration number.',
+    'Enter your basic qualification, e.g. MBBS.',
+    'Upload your degree certificate.',
+    'Upload your registration certificate.',
+  ].forEach((m) =>
+    expect(screen.getByText(m)).toBeTruthy()
+  );
+  expect(screen.getByText('Professional Qualifications')).toBeTruthy();
+});
+
+test('the specialty is chosen from what the backend returned — there is nothing to type, and nothing else to pick', async () => {
+  await toQualifications();
+  await act(async () => {});
+  expect(doctorProfileApi.listServices).toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('specialty'));
+  // exactly the catalogue, in the catalogue's words
+  expect(screen.getAllByTestId('specialty-Psychiatry').length).toBeGreaterThan(0);
+  expect(screen.getAllByTestId('specialty-Psychology').length).toBeGreaterThan(0);
+  expect(screen.queryByTestId('specialty-Dermatology')).toBeNull();
+});
+
+test('a specialty list that will not load says so and can be retried, rather than leaving an empty dropdown', async () => {
+  (doctorProfileApi.listServices as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+  await toQualifications();
+  await act(async () => {});
+  expect(screen.getByTestId('specialty-retry')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('specialty-retry'));
+  await act(async () => {});
+  expect(screen.queryByTestId('specialty-retry')).toBeNull();
+});
+
+const toExperience = async () => {
+  await toQualifications();
+  await act(async () => {});
+  pickSelect('specialty', 'Psychology');
+  fireEvent.changeText(screen.getByTestId('registrationNumber'), 'KMC-4471');
+  fireEvent.changeText(screen.getByTestId('basicQualification'), 'BDS');
+  await upload('degreeCertificate', 1);
+  await upload('registrationCertificate', 0);
+  fireEvent.press(screen.getByTestId('onboarding-primary'));
+  expect(screen.getByText('Experience Details')).toBeTruthy();
+};
+
+const addExperience = async (designation: string, institute: string, years: string) => {
+  fireEvent.press(screen.getByTestId('add-experience'));
+  fireEvent.changeText(screen.getByTestId('designation'), designation);
+  fireEvent.changeText(screen.getByTestId('workplace'), institute);
+  fireEvent.changeText(screen.getByTestId('years'), years);
+  await upload('experienceCertificate', 1);
   fireEvent.press(screen.getByTestId('onboarding-primary'));
 };
 
-test('the first button says Add Qualification; Add Another only once one exists', async () => {
-  await toQualifications();
-  expect(screen.getByText('Add Qualification')).toBeTruthy();
-  expect(screen.queryByText('Add Another Qualification')).toBeNull();
-  await addQualification('MBBS', 'Bangalore Medical College');
-  expect(screen.getByText('Add Another Qualification')).toBeTruthy();
+test('the first button says Add Experience; Add Another Experience once one exists', async () => {
+  await toExperience();
+  expect(screen.getByText('Add Experience')).toBeTruthy();
+  expect(screen.queryByText('Add Another Experience')).toBeNull();
+  await addExperience('Consultant', 'City Dental Clinic', '5');
+  expect(screen.getByText('Add Another Experience')).toBeTruthy();
 });
 
 test('the entry editor has Cancel, and asks before throwing away what was typed', async () => {
-  await toQualifications();
-  fireEvent.press(screen.getByTestId('add-qualification'));
-  fireEvent.changeText(screen.getByTestId('institution'), 'Half-typed college');
+  await toExperience();
+  fireEvent.press(screen.getByTestId('add-experience'));
+  fireEvent.changeText(screen.getByTestId('workplace'), 'Half-typed hospital');
   fireEvent.press(screen.getByTestId('onboarding-cancel'));
   expect(confirmDiscard).toHaveBeenCalled();
-  expect(screen.getByText('Professional Qualifications')).toBeTruthy();
-  expect(screen.queryByText('Half-typed college')).toBeNull();
+  expect(screen.getByText('Experience Details')).toBeTruthy();
+  expect(screen.queryByText(/Half-typed hospital/)).toBeNull();
 });
 
-test('removing an entry and adding another never overwrites a surviving one', async () => {
-  await toQualifications();
-  await addQualification('MBBS', 'First College');
-  await addQualification('MD Psychiatry', 'Second College');
-  // remove the first, then add a third
-  const first = screen.getAllByTestId(/^qual-q-.*-remove$/)[0];
-  fireEvent.press(first);
-  await addQualification('DPM', 'Third College');
-  expect(screen.getByText('Second College · 2014')).toBeTruthy();
-  expect(screen.getByText('Third College · 2014')).toBeTruthy();
-  expect(screen.queryByText('First College · 2014')).toBeNull();
+test('removing a role and adding another never overwrites a surviving one, and the total adds up', async () => {
+  await toExperience();
+  await addExperience('Resident', 'First Hospital', '2');
+  await addExperience('Consultant', 'Second Hospital', '3');
+  fireEvent.press(screen.getAllByTestId(/^exp-e-.*-remove$/)[0]);
+  await addExperience('Senior Consultant', 'Third Hospital', '4');
+  expect(screen.getByText('Second Hospital · 3 years')).toBeTruthy();
+  expect(screen.getByText('Third Hospital · 4 years')).toBeTruthy();
+  expect(screen.queryByText('First Hospital · 2 years')).toBeNull();
+  expect(screen.getByTestId('total-experience')).toHaveTextContent(/7 Years/);
+});
+
+test('years of experience must be a real number', async () => {
+  await toExperience();
+  fireEvent.press(screen.getByTestId('add-experience'));
+  fireEvent.changeText(screen.getByTestId('years'), '0');
+  fireEvent.press(screen.getByTestId('onboarding-primary'));
+  expect(screen.getByText('Enter a realistic number of years.')).toBeTruthy();
+});
+
+/* ---------------------------------- signature -------------------------------- */
+
+const toSignature = async () => {
+  await toExperience();
+  await addExperience('Consultant', 'City Dental Clinic', '5');
+  fireEvent.press(screen.getByTestId('onboarding-primary'));
+  expect(screen.getByText('Digital Signature')).toBeTruthy();
+};
+
+test('the signature is optional: continuing without one reaches Review', async () => {
+  await toSignature();
+  fireEvent.press(screen.getByTestId('onboarding-primary'));
+  expect(screen.getByTestId('onboarding-review')).toBeTruthy();
+  expect(screen.getByTestId('review-signature')).toHaveTextContent(/not uploaded/);
+});
+
+test('an uploaded signature is previewed, and only JPG or PNG is accepted', async () => {
+  await toSignature();
+  mockPicker.queue({ assets: [{ uri: 'file:///s.webp', fileName: 's.webp', fileSize: 20_000, type: 'image/webp' }] });
+  fireEvent.press(screen.getByTestId('signature'));
+  fireEvent.press(screen.getByTestId('signature-pick-library'));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.queryByTestId('signature-preview')).toBeNull();
+
+  await upload('signature', 0);
+  expect(screen.getByTestId('signature-preview')).toBeTruthy();
+  expect(screen.getByTestId('signature-replace')).toBeTruthy();
+  expect(screen.getByTestId('signature-remove')).toBeTruthy();
 });
 
 /* ---------------------------- review and submission --------------------------- */

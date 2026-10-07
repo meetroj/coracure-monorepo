@@ -1,5 +1,7 @@
 import React from 'react';
 import { BackHandler } from 'react-native';
+import { doctorConsultationsApi, doctorNotificationsApi } from '@coracure/api';
+import type { SafetyAlert } from '@coracure/api';
 import { confirm, confirmDiscard } from '../components/confirm';
 import { render, fireEvent, screen, act, waitFor } from '@testing-library/react-native';
 
@@ -31,8 +33,53 @@ const pressHardwareBack = (): boolean => {
   return false;
 };
 
+/**
+ * Rahul Sharma (red flag, appointment a1) and Neha Pillai (amber, appointment
+ * a12). `consultationId` matches the appointment's real id, not its human
+ * reference code — that's what `selectAppointmentByConsultation` matches on.
+ */
+const SAFETY_ALERTS: SafetyAlert[] = [
+  {
+    id: 'al1',
+    alertType: 'red_flag',
+    consultationId: 'a1',
+    patientId: 'PT-10482',
+    patientInitials: 'RS',
+    patientName: 'Rahul Sharma',
+    patientAge: 32,
+    patientGender: 'male',
+    checkinResponseId: null,
+    reason: 'Reported thoughts of self-harm',
+    state: 'open',
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    closedAt: null,
+    closingNote: null,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'al2',
+    alertType: 'amber',
+    consultationId: 'a12',
+    patientId: 'PT-10461',
+    patientInitials: 'NP',
+    patientName: 'Neha Pillai',
+    patientAge: 28,
+    patientGender: 'female',
+    checkinResponseId: null,
+    reason: 'Anxiety and restlessness have worsened',
+    state: 'open',
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    closedAt: null,
+    closingNote: null,
+    createdAt: new Date().toISOString(),
+  },
+];
+
 beforeEach(() => {
   jest.spyOn(BackHandler, 'addEventListener');
+  jest.spyOn(doctorConsultationsApi, 'listSafetyAlerts').mockResolvedValue(SAFETY_ALERTS);
 });
 
 /* --------------------------- back returns to origin ------------------------ */
@@ -48,9 +95,10 @@ test('back from a detail returns to the screen that opened it', () => {
   expect(screen.getByTestId('appointments')).toBeTruthy();
 });
 
-test('back unwinds a multi-level trail one step at a time', () => {
+test('back unwinds a multi-level trail one step at a time', async () => {
   renderShell();
   fireEvent.press(screen.getByTestId('open-alerts'));
+  await waitFor(() => screen.getByTestId('open-al1'));
   tap('open-al1');
   expect(screen.getByTestId('alert-detail')).toBeTruthy();
 
@@ -86,9 +134,10 @@ test('pressing the active tab again returns its stack to the root', async () => 
 
 /* ------------------------ android hardware back button --------------------- */
 
-test('hardware back pops the stack instead of closing the app', () => {
+test('hardware back pops the stack instead of closing the app', async () => {
   renderShell();
   fireEvent.press(screen.getByTestId('open-alerts'));
+  await waitFor(() => screen.getByTestId('open-al1'));
   tap('open-al1');
 
   expect(pressHardwareBack()).toBe(true);
@@ -156,29 +205,40 @@ test('the consultation room asks before Android back takes the doctor out of a c
 
 /* --------------------------- notifications routing ------------------------ */
 
-test('each notification opens its own record and is marked read', () => {
+test('a notification tied to a consultation opens that appointment and is marked read', async () => {
+  jest.spyOn(doctorNotificationsApi, 'listNotifications').mockResolvedValue([
+    {
+      id: 'n1',
+      templateCode: 'appointment_confirmed',
+      title: 'Appointment confirmed',
+      body: 'Priya Singh confirmed the 5:30 PM audio consultation.',
+      deepLinkData: null,
+      consultationId: 'a6',
+      status: 'sent',
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    },
+  ]);
+  jest.spyOn(doctorNotificationsApi, 'markNotificationRead').mockResolvedValue(undefined);
+
   renderShell();
   fireEvent.press(screen.getByTestId('nav-notifications'));
+  await waitFor(() => screen.getByTestId('notif-n1'));
 
-  // the uploaded-document notice opens that document, for that patient
-  tap('notif-n2');
-  expect(on('document-viewer').getAllByText('Sleep Tracking Report').length).toBeGreaterThan(0);
-  expect(on('document-viewer').getByText('Rahul Sharma · PT-10482')).toBeTruthy();
-  expect(getState().notifRead.n2).toBe(true);
-
-  pressBack();
-  // the red-flag notice opens its alert — Rahul's, not anyone else's
+  // the consultation id on the record — not a `kind` the server never sends — is the only thing this can route on
   tap('notif-n1');
-  expect(on('alert-detail').getAllByText(/Rahul Sharma/).length).toBeGreaterThan(0);
+  expect(on('appointment-details').getByTestId('appointment-ref')).toBeTruthy();
+  await waitFor(() => expect(doctorNotificationsApi.markNotificationRead).toHaveBeenCalledWith('n1'));
 });
 
 /* ----------------------- one patient, never another's ----------------------- */
 
-test('three patients’ records never bleed into each other', () => {
+test('three patients’ records never bleed into each other', async () => {
   renderShell();
 
   // A — Rahul Sharma, a red-flag alert
   fireEvent.press(screen.getByTestId('open-alerts'));
+  await waitFor(() => screen.getByTestId('open-al1'));
   tap('open-al1');
   expect(on('alert-detail').getAllByText(/Rahul Sharma/).length).toBeGreaterThan(0);
   expect(on('alert-detail').queryByText(/Neha Pillai/)).toBeNull();
@@ -217,11 +277,70 @@ test.each([
   ['a document', DocumentViewerRoute, { docId: 'd-missing' }, 'Could not open this document'],
   ['a patient', PatientDocumentsRoute, { patientId: 'PT-00000' }, 'Could not open this patient'],
   ['a support issue', SupportIssueRoute, { issueId: 'si-missing' }, 'Could not open this issue'],
-])('a link to %s that no longer exists says so and offers the way back', (_what, Route, params, message) => {
+])('a link to %s that no longer exists says so and offers the way back', async (_what, Route, params, message) => {
+  // the alert route waits for the list rather than calling a loading alert missing
+  jest.spyOn(doctorConsultationsApi, 'listSafetyAlerts').mockResolvedValue([]);
   const n = nav();
   const R = Route as unknown as React.ComponentType<{ route: object; navigation: object }>;
   render(<R route={{ key: 'k', name: 'x', params }} navigation={n} />);
-  expect(screen.getByText(message)).toBeTruthy();
+  expect(await screen.findByText(message)).toBeTruthy();
   fireEvent.press(screen.getByTestId('not-found-back'));
   expect(n.goBack).toHaveBeenCalled();
+});
+
+/* ------------------------ real records, not fixtures ----------------------- */
+
+const REAL_PATIENT = '9b2f1c3a-0000-4000-8000-000000000000';
+
+test('a closed alert — not in the open-only list — still opens, by id, in its closed state', async () => {
+  jest.spyOn(doctorConsultationsApi, 'listSafetyAlerts').mockResolvedValue([]);
+  jest
+    .spyOn(doctorConsultationsApi, 'getSafetyAlert')
+    .mockResolvedValue({ ...SAFETY_ALERTS[0], state: 'closed', closingNote: 'Called the patient.', closedAt: new Date().toISOString() });
+  jest.spyOn(doctorNotificationsApi, 'listNotifications').mockResolvedValue([
+    {
+      id: 'n-alert',
+      templateCode: 'safety_alert',
+      title: 'Follow-up alert',
+      body: 'A check-in needs your review.',
+      deepLinkData: { screen: 'safety_alert', alertId: 'al1' },
+      consultationId: null,
+      status: 'sent',
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    },
+  ] as never);
+  jest.spyOn(doctorNotificationsApi, 'markNotificationRead').mockResolvedValue(undefined);
+
+  renderShell();
+  fireEvent.press(screen.getByTestId('nav-notifications'));
+  await waitFor(() => screen.getByTestId('notif-n-alert'));
+  tap('notif-n-alert');
+  expect(await screen.findByTestId('alert-reviewed')).toBeTruthy();
+  expect(doctorConsultationsApi.getSafetyAlert).toHaveBeenCalledWith('al1');
+});
+
+test('a real patient’s documents open from the server’s patient card, not the demo fixture', async () => {
+  jest.spyOn(doctorConsultationsApi, 'getPatientCard').mockResolvedValue({
+    id: REAL_PATIENT,
+    fullName: 'Asha Verma',
+    initials: 'AV',
+    age: 41,
+    gender: 'female',
+    preferredLanguage: 'en',
+    languages: ['en'],
+  });
+  jest.spyOn(require('@coracure/api').doctorFilesApi, 'listPatientFiles').mockResolvedValue([]);
+  render(<PatientDocumentsRoute {...({ route: { key: 'k', name: 'x', params: { patientId: REAL_PATIENT } }, navigation: nav() } as never)} />);
+  expect((await screen.findAllByText('Asha Verma')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('Could not open this patient')).toBeNull();
+});
+
+test('a real file opened without its patient says it cannot be found — never a fixture', async () => {
+  render(
+    <DocumentViewerRoute
+      {...({ route: { key: 'k', name: 'x', params: { docId: '7c9e6679-7425-40de-944b-e07fc1f90ae7' } }, navigation: nav() } as never)}
+    />
+  );
+  expect(await screen.findByText('Could not open this document')).toBeTruthy();
 });

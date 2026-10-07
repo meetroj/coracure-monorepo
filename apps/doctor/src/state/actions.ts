@@ -5,25 +5,33 @@
  * such as "saving notes stamps the time and clears the draft flag" lives in
  * one place and every screen showing that record agrees.
  */
-import { doctorAuthApi, type DoctorVerificationStatus } from '@coracure/api';
+import {
+  doctorAuthApi,
+  type DoctorSelfProfile,
+  type DoctorVerificationStatus,
+  type PendingDocumentation,
+  type SafetyAlert,
+} from '@coracure/api';
 
-import { appointmentById, type Appointment, type ManualStatus } from '../data/doctor';
+import { isAutoStatus, type Appointment, type LiveStatus, type ManualStatus } from '../data/doctor';
 import {
   emptyRecord,
+  type ClinicalTemplate,
   type ConsultationRecord,
   type FollowUpPlan,
   type Medicine,
   type NoteKey,
   type RiskAssessment,
 } from '../data/clinical';
-import type { AlertAction } from '../data/followup';
-import type { ClarificationDraft, ClarificationMessage } from '../data/clarification';
+import type { Clarification } from '../data/clarification';
+import type { ChatMessage, ChatThread } from '../data/messaging';
 import type { ReportRequest } from '../data/documents';
 import type { RegistrationDraft } from '../data/registration';
 import type { SubmissionOutcome } from '../data/onboarding';
-import { readSession } from '../data/session';
+import { readSession, type RestoredSession } from '../data/session';
+import { clearResourceCache, seedResource } from '../data/useResource';
+import { KEYS as VERIFICATION_KEYS, screenStatus } from '../data/verification';
 import { ISSUE_CATEGORIES } from '../data/support';
-import { patientById } from '../data/patients';
 import { fmtDate, dayOffset } from '../data/calendar';
 import { getState, resetStore, setState, type AppState, type AvailabilityState, type VerificationState } from './store';
 import { nextMedicineId } from './seed';
@@ -49,42 +57,75 @@ export const DEMO_MOBILE = '9876543210';
 
 /**
  * Maps the backend's `verificationStatus` onto the app's own verification
- * state. `rejected` and `suspended` are absent on purpose: the backend refuses
- * those at sign-in with `ACCOUNT_NOT_ACTIVE`, so they never reach a signed-in
- * app and a branch for them here would be dead code pretending to be a rule.
+ * state. `suspended` is absent on purpose: the backend refuses it at sign-in
+ * with `ACCOUNT_NOT_ACTIVE`, so it never reaches a signed-in app. `rejected`
+ * IS here: that doctor signs in to read the admin's reason and resubmit.
  */
 const VERIFICATION: Record<string, VerificationState> = {
   verified: 'approved',
   under_review: 'pending',
   pending: 'notSubmitted',
+  rejected: 'rejected',
 };
 
 /**
  * Lands a doctor after `POST /auth/doctor/otp/verify`.
  *
- * *** WHERE THEY LAND IS THE SERVER'S ANSWER, NOT THIS DEVICE'S. *** The
- * account exists before the app ever sees it — an administrator created it —
- * so `verificationStatus` decides: `verified` opens the shell, anything else
- * goes to onboarding to finish credentials. The previous build guessed from a
- * hardcoded demo number, which was right only on one phone.
+ * *** WHERE THEY LAND IS THE SERVER'S ANSWER, NOT THIS DEVICE'S. *** A new
+ * doctor's account is created by this very sign-in, so `verificationStatus`
+ * decides: only `pending` (nothing submitted yet, including a brand-new
+ * account) goes to onboarding. Anything submitted — under review, or rejected
+ * and waiting for corrections — opens the shell, where an unacknowledged status
+ * lands on the Profile tab's Account Status. Sending a doctor whose papers are
+ * with the reviewers back into a blank form invited a second, conflicting
+ * submission. The previous build guessed from a hardcoded demo number, which
+ * was right only on one phone.
  */
 export const signIn = (mobile: string, verificationStatus: DoctorVerificationStatus = 'pending') => {
   const verified = verificationStatus === 'verified';
+  const submitted = verificationStatus !== 'pending';
   const s = getState();
 
   // The same doctor signing back in keeps everything they did this session.
-  if (s.session.mobile === mobile && s.onboardingCompleted && verified) {
+  if (s.session.mobile === mobile && s.onboardingCompleted && submitted) {
     setState((st) => ({ ...st, session: { stage: 'shell', mobile } }));
     return;
   }
 
   // A different doctor on this device starts from clean data — one account's
-  // drafts, records and alerts must never show under another's sign-in.
+  // drafts, records, alerts and cached reads must never show under another's.
+  if (s.session.mobile !== mobile) clearResourceCache();
   resetStore({
-    session: { stage: verified ? 'shell' : 'onboarding', mobile },
-    onboardingCompleted: verified,
+    session: { stage: submitted ? 'shell' : 'onboarding', mobile },
+    onboardingCompleted: submitted,
     verification: { status: VERIFICATION[verificationStatus] ?? 'notSubmitted', acknowledged: verified },
   });
+};
+
+/** Lands a session read off the server, draft and all. */
+const land = (mobile: string, restored: RestoredSession) => {
+  signIn(mobile, restored.verificationStatus);
+  // After `signIn`, never before: it calls `resetStore` for a doctor it does
+  // not recognise, which would drop the draft this just fetched.
+  if (restored.draft) {
+    const draft = restored.draft;
+    setState((s) => ({ ...s, submission: draft }));
+  }
+};
+
+/**
+ * After `POST /auth/doctor/otp/verify`.
+ *
+ * *** THE SAME READ A COLD START MAKES. *** Before this, a fresh sign-in opened
+ * onboarding blank even when the registration was on file, and only a restart
+ * (which goes through `readSession`) filled it in. A verified doctor has no
+ * form to fill, so they skip the read. A failed read still signs in, on the
+ * status the verify returned — an empty form beats refusing the session.
+ */
+export const completeSignIn = async (mobile: string, verificationStatus: DoctorVerificationStatus) => {
+  if (verificationStatus === 'verified') return signIn(mobile, verificationStatus);
+  const restored = await readSession().catch(() => null);
+  land(mobile, restored ?? { mobile, verificationStatus });
 };
 
 /**
@@ -109,13 +150,7 @@ export const restoreSession = async (): Promise<boolean> => {
       endSession();
       return false;
     }
-    signIn(restored.mobile, restored.verificationStatus);
-    // After `signIn`, never before: it calls `resetStore` for a doctor it does
-    // not recognise, which would drop the draft this just fetched.
-    if (restored.draft) {
-      const draft = restored.draft;
-      setState((s) => ({ ...s, submission: draft }));
-    }
+    land(restored.mobile, restored);
     return true;
   } catch {
     endSession();
@@ -131,8 +166,11 @@ export const restoreSession = async (): Promise<boolean> => {
  * the listener, which would call it again. Separating the two is what keeps a
  * revoked token from looping.
  */
-export const endSession = () =>
+export const endSession = () => {
+  // Cached reads are the signed-out doctor's data; none may outlive the session.
+  clearResourceCache();
   setState((s) => ({ ...s, session: { ...s.session, stage: 'login' }, activeCall: undefined }));
+};
 
 /**
  * The doctor pressing Log out.
@@ -167,17 +205,27 @@ export const leaveOnboarding = () => setState((s) => ({ ...s, session: { ...s.se
  * (see `UNMAPPED_FIELDS`): it is what the Review and Resubmit screens read.
  */
 export const submitRegistration = (draft: RegistrationDraft, outcome?: SubmissionOutcome) =>
-  setState((s) => ({
+  setState((s) => ({ ...recordSubmission(s, draft, outcome), onboardingCompleted: true, session: { ...s.session, stage: 'shell' } }));
+
+/**
+ * What a submit or resubmit leaves behind: the draft with the ids the server
+ * now holds for its files (so the next resubmit does not upload them again),
+ * the server's status, and the credentials cache primed with the same answer
+ * — Account Status reads that cache, and an old copy there showed the
+ * pre-submit state until it aged out.
+ */
+const recordSubmission = (s: AppState, draft: RegistrationDraft, outcome?: SubmissionOutcome): AppState => {
+  if (outcome) seedResource(VERIFICATION_KEYS.credentials, outcome.progress);
+  return {
     ...s,
-    onboardingCompleted: true,
-    submission: draft,
+    submission: outcome?.draft ?? draft,
     verification: {
-      status: VERIFICATION[outcome?.progress.status ?? 'under_review'] ?? 'pending',
+      status: outcome ? screenStatus(outcome.progress) : 'pending',
       acknowledged: false,
       submittedAt: fmtDate(dayOffset(0)),
     },
-    session: { ...s.session, stage: 'shell' },
-  }));
+  };
+};
 
 /**
  * The doctor's day, as the backend has it.
@@ -189,14 +237,47 @@ export const submitRegistration = (draft: RegistrationDraft, outcome?: Submissio
  */
 export const setDoctorDay = (day: {
   appointments: Appointment[];
-  pendingDocumentation: { consultationId: string; referenceCode: string }[];
+  pendingDocumentation: PendingDocumentation[];
+  openAlerts: SafetyAlert[];
   unreadNotifications: number;
 }) =>
   setState((s) => ({
     ...s,
     appointments: day.appointments,
     pendingDocumentation: day.pendingDocumentation,
+    openAlerts: day.openAlerts,
     unreadCount: day.unreadNotifications,
+  }));
+
+/**
+ * The doctor's own profile from the backend. The fee and consultation length
+ * are mirrored into the settings the profile screens edit, so both read the
+ * server's value.
+ */
+export const setSelfProfile = (p: DoctorSelfProfile) =>
+  setState((s) => ({
+    ...s,
+    selfProfile: p,
+    profile: { ...s.profile, fee: p.consultationFeeInr ?? s.profile.fee },
+    availability: {
+      ...s.availability,
+      durationMin: p.consultationDurationMinutes ?? s.availability.durationMin,
+      bufferMin: p.bufferMinutes ?? s.availability.bufferMin,
+    },
+  }));
+
+/** The inbox badge, zeroed the moment every notification is marked read — not on the next poll. */
+export const clearUnreadCount = () => setState((s) => (s.unreadCount === 0 ? s : { ...s, unreadCount: 0 }));
+
+/** The bell's count as the server has it, or one fewer after a row is read. Never below zero. */
+export const setUnreadCount = (count: number) =>
+  setState((s) => (s.unreadCount === Math.max(0, count) ? s : { ...s, unreadCount: Math.max(0, count) }));
+
+/** A no-show or cancel answer patched onto the one card it changed, everywhere that card is read. */
+export const patchAppointment = (appointmentId: string, patch: Partial<Appointment>) =>
+  setState((s) => ({
+    ...s,
+    appointments: s.appointments.map((a) => (a.id === appointmentId ? { ...a, ...patch } : a)),
   }));
 
 /* ------------------------------- verification ----------------------------- */
@@ -220,13 +301,9 @@ export const setVerification = (status: VerificationState) =>
 export const acknowledgeApproval = () =>
   setState((s) => ({ ...s, verification: { ...s.verification, acknowledged: true } }));
 
-/** Resubmitting replaces the submission and puts the account back under review. */
-export const resubmitVerification = (draft: RegistrationDraft) =>
-  setState((s) => ({
-    ...s,
-    submission: draft,
-    verification: { status: 'pending', acknowledged: false, submittedAt: fmtDate(dayOffset(0)) },
-  }));
+/** Resubmitting replaces the submission; where the account now stands is the server's answer. */
+export const resubmitVerification = (draft: RegistrationDraft, outcome?: SubmissionOutcome) =>
+  setState((s) => recordSubmission(s, draft, outcome));
 
 /* --------------------------------- profile -------------------------------- */
 
@@ -252,8 +329,32 @@ export const setPrivacy = (patch: Partial<AppState['privacy']>) =>
 
 export const setLiveStatus = (status: ManualStatus) => setState((s) => ({ ...s, liveStatus: status }));
 
+/**
+ * The presence record, as the server has it.
+ *
+ * An auto status (`inConsultation`, `completingNotes`, …) is left alone here —
+ * `selectLiveStatus` already derives those from this device's own call state,
+ * which outranks a presence poll that can lag a call by a few seconds. The
+ * blocker and permission fields are never local, so they always sync.
+ */
+export const setPresenceRecord = (record: {
+  liveStatus: LiveStatus;
+  blockedByConsultationId: string | null;
+  allowInstantConsult: boolean;
+}) =>
+  setState((s) => ({
+    ...s,
+    liveStatus: isAutoStatus(record.liveStatus) ? s.liveStatus : record.liveStatus,
+    presenceBlockedByConsultationId: record.blockedByConsultationId,
+    allowInstantConsult: record.allowInstantConsult,
+  }));
+
 export const saveAvailability = (next: Omit<AvailabilityState, 'savedAt'>) =>
   setState((s) => ({ ...s, availability: { ...next, savedAt: nowLabel() } }));
+
+/** Loads the diary from the server. Unlike `saveAvailability`, nothing was just saved, so `savedAt` is left alone. */
+export const loadAvailability = (next: Omit<AvailabilityState, 'savedAt'>) =>
+  setState((s) => ({ ...s, availability: { ...next, savedAt: s.availability.savedAt } }));
 
 /* ---------------------------------- calls --------------------------------- */
 
@@ -267,13 +368,17 @@ export const startCall = (appointmentId: string) =>
 /** Leaving the room without ending clears the live call only. */
 export const leaveCall = () => setState((s) => (s.activeCall ? { ...s, activeCall: undefined } : s));
 
-/** Ending a call completes the appointment and opens its write-up. */
-export const endCall = (appointmentId: string) =>
+/** Ending a call completes the appointment, keeps how long it ran, and opens its write-up. */
+export const endCall = (appointmentId: string, durationSeconds?: number) =>
   setState((s) => ({
     ...s,
     activeCall: undefined,
     postCall: { appointmentId },
     endedCalls: { ...s.endedCalls, [appointmentId]: nowLabel() },
+    records:
+      durationSeconds === undefined
+        ? s.records
+        : { ...s.records, [appointmentId]: { ...(s.records[appointmentId] ?? emptyRecord(appointmentId)), durationSeconds } },
   }));
 
 /* ------------------------------ clinical record --------------------------- */
@@ -284,6 +389,10 @@ const withRecord = (appointmentId: string, change: (r: ConsultationRecord) => Co
     return { ...s, records: { ...s.records, [appointmentId]: change(current) } };
   });
 
+/** The backend's copy of the write-up, laid over the local record once on first open. */
+export const hydrateClinicalRecord = (appointmentId: string, patch: Partial<ConsultationRecord>) =>
+  withRecord(appointmentId, (r) => ({ ...r, ...patch }));
+
 export const recordFor = (appointmentId: string) =>
   getState().records[appointmentId] ?? emptyRecord(appointmentId);
 
@@ -291,9 +400,9 @@ export const updateNote = (appointmentId: string, key: NoteKey, value: string) =
   withRecord(appointmentId, (r) => ({
     ...r,
     notes: { ...r.notes, [key]: value },
-    // editing a saved note re-opens it as a draft until saved again
+    // editing a saved note re-opens it as a draft until saved again; no
+    // `notesSavedAt` stamp — nothing reached the server
     notesStatus: 'draft',
-    notesSavedAt: nowLabel(),
   }));
 
 export const setRisk = (appointmentId: string, patch: Partial<RiskAssessment>) =>
@@ -301,7 +410,6 @@ export const setRisk = (appointmentId: string, patch: Partial<RiskAssessment>) =
     ...r,
     risk: { ...r.risk, ...patch },
     notesStatus: 'draft',
-    notesSavedAt: nowLabel(),
   }));
 
 export const saveNotes = (appointmentId: string) =>
@@ -374,74 +482,41 @@ export const submitSummary = (appointmentId: string) =>
     };
   });
 
-export const assignPlan = (appointmentId: string, plan: FollowUpPlan) =>
+/** `undefined` clears it — the plan was stopped. */
+export const assignPlan = (appointmentId: string, plan: FollowUpPlan | undefined) =>
   withRecord(appointmentId, (r) => ({ ...r, plan }));
 
 export const setRecommendations = (appointmentId: string, ids: string[], note: string) =>
   withRecord(appointmentId, (r) => ({ ...r, recommendations: { ids, note } }));
 
-/* ---------------------------------- alerts -------------------------------- */
-
-const withAlert = (alertId: string, change: (a: AppState['alerts'][string]) => AppState['alerts'][string]) =>
-  setState((s) => {
-    const current = s.alerts[alertId] ?? { status: 'open' as const, read: false };
-    return { ...s, alerts: { ...s.alerts, [alertId]: change(current) } };
-  });
-
-export const markAlertRead = (alertId: string) =>
-  setState((s) => (s.alerts[alertId]?.read ? s : { ...s, alerts: { ...s.alerts, [alertId]: { ...(s.alerts[alertId] ?? { status: 'open' }), read: true } } }));
-
-export const acknowledgeAlert = (alertId: string) =>
-  withAlert(alertId, (a) => ({ ...a, read: true, status: a.status === 'open' ? 'acknowledged' : a.status }));
-
-export const reviewAlert = (alertId: string, action: AlertAction, note: string) =>
-  withAlert(alertId, (a) => ({
-    ...a,
-    read: true,
-    status: action === 'urgentReview' ? 'escalated' : 'reviewed',
-    action,
-    note,
-    reviewedAt: nowLabel(),
-  }));
-
-/* ------------------------------ notifications ----------------------------- */
-
-export const markNotificationRead = (id: string) =>
-  setState((s) => (s.notifRead[id] ? s : { ...s, notifRead: { ...s.notifRead, [id]: true } }));
-
-export const markAllNotificationsRead = () =>
-  setState((s) => ({ ...s, notifRead: Object.fromEntries(Object.keys(s.notifRead).map((k) => [k, true])) }));
-
-export const setInstant = (value: AppState['instant']) =>
-  setState((s) => ({
-    ...s,
-    instant: value,
-    notifRead: value === 'pending' ? s.notifRead : { ...s.notifRead, n6: true },
-  }));
+export const setInstant = (value: AppState['instant']) => setState((s) => ({ ...s, instant: value }));
 
 /* --------------------------------- threads -------------------------------- */
 
-/** The patient thread for a consultation, creating one when none exists yet. */
+/**
+ * The patient thread for a consultation, creating one when none exists yet.
+ *
+ * Keyed by the patient's id: there is one conversation per patient, and that
+ * id is how the server addresses it (`/doctor/chat-threads/:patientId`). A new
+ * one exists only here until its first message creates the server's row.
+ */
 export const threadForAppointment = (appointmentId: string): string | undefined => {
   const s = getState();
-  const a = appointmentById(appointmentId);
+  const a = s.appointments.find((x) => x.id === appointmentId);
   if (!a) return undefined;
   const existing = s.threads.find((t) => t.kind === 'patient' && t.patientId === a.patientId);
   if (existing) return existing.id;
-  const pt = patientById(a.patientId);
-  if (!pt) return undefined;
-  const id = `th-${a.id}`;
   setState((st) => ({
     ...st,
     threads: [
       ...st.threads,
       {
-        id,
+        id: a.patientId,
         kind: 'patient',
-        initials: pt.initials,
-        name: pt.name,
+        initials: a.initials,
+        name: a.name,
         context: a.consultationId,
-        patientId: pt.id,
+        patientId: a.patientId,
         appointmentId: a.id,
         lastMessage: '',
         at: '',
@@ -451,8 +526,46 @@ export const threadForAppointment = (appointmentId: string): string | undefined 
       },
     ],
   }));
-  return id;
+  return a.patientId;
 };
+
+/**
+ * The server's conversations over the store's. Messages already loaded for one
+ * are kept, and so is a thread opened but not yet written in — the server has
+ * no row for it until its first message.
+ */
+export const setChatThreads = (list: ChatThread[]) =>
+  setState((s) => {
+    const held = new Map(s.threads.map((t) => [t.id, t]));
+    return {
+      ...s,
+      threads: [
+        ...list.map((t) => ({ ...t, messages: held.get(t.id)?.messages ?? [] })),
+        ...s.threads.filter((t) => !list.some((x) => x.id === t.id)),
+      ],
+    };
+  });
+
+/**
+ * Server messages into a thread, by id — a poll, an earlier page and a sent
+ * message all land the same way. With nothing new the state is left untouched:
+ * the poll runs every few seconds and must not re-render the thread for it.
+ */
+export const mergeThreadMessages = (threadId: string, incoming: ChatMessage[]) =>
+  setState((s) => {
+    const t = s.threads.find((x) => x.id === threadId);
+    if (!t || incoming.every((m) => t.messages.some((x) => x.id === m.id))) return s;
+    const byId = new Map([...t.messages, ...incoming].map((m) => [m.id, m]));
+    // ISO timestamps, so text order is time order
+    const messages = [...byId.values()].sort((x, y) => (x.createdAt ?? '').localeCompare(y.createdAt ?? ''));
+    const last = messages[messages.length - 1];
+    return {
+      ...s,
+      threads: s.threads.map((x) =>
+        x.id === threadId ? { ...x, messages, lastMessage: last.body || last.file || '', at: last.at } : x
+      ),
+    };
+  });
 
 export const sendMessage = (threadId: string, body: string, file?: string) =>
   setState((s) => ({
@@ -478,105 +591,40 @@ export const markThreadRead = (threadId: string) =>
 
 /* ------------------------------ clarifications ---------------------------- */
 
-const ICON_BY_AREA: Record<string, 'brain' | 'moon' | 'inPerson' | 'heart'> = {
-  'Treatment plan review': 'brain',
-  'Diagnostic clarification': 'inPerson',
-  'Medication adjustment': 'heart',
-  'Risk assessment': 'brain',
-  'Referral advice': 'inPerson',
-};
+/**
+ * The author's cases, as the backend has them — replaces the list wholesale,
+ * and points each source consultation's record at its case so Refer reopens
+ * the existing thread.
+ */
+export const setClarifications = (list: Clarification[]) =>
+  setState((s) => {
+    const records = { ...s.records };
+    // newest first: the first case seen for a consultation is the one Refer opens
+    [...list].reverse().forEach((c) => {
+      if (c.appointmentId) records[c.appointmentId] = { ...(records[c.appointmentId] ?? emptyRecord(c.appointmentId)), clarificationId: c.id };
+    });
+    return { ...s, clarifications: list, records };
+  });
 
-/** Saves a new clarification as a draft or posts it. Returns its id. */
-export const saveClarification = (draft: ClarificationDraft, post: boolean, existingId?: string): string => {
-  const id = existingId ?? uid('cl');
-  const count = getState().clarifications.length;
-  const caseId = existingId
-    ? getState().clarifications.find((c) => c.id === existingId)?.caseId ?? draft.caseId
-    : `CLR-2026-${String(192 + count).padStart(4, '0')}`;
-  const at = `Today, ${nowLabel()}`;
-  const record = {
-    id,
-    caseId,
-    appointmentId: draft.appointmentId,
-    title: draft.title,
-    blurb: draft.question.slice(0, 120),
-    icon: ICON_BY_AREA[draft.guidanceArea] ?? 'brain',
-    urgency: draft.urgency,
-    status: post ? ('posted' as const) : ('draft' as const),
-    lastActivity: at,
-    shared: {
-      ageLabel: draft.ageLabel,
-      gender: draft.gender,
-      provisionalDiagnosis: draft.provisionalDiagnosis,
-      history: draft.history,
-      currentPlan: draft.currentPlan,
-      question: draft.question,
-      guidanceArea: draft.guidanceArea,
-      files: draft.files,
-    },
-    expertId: 'ex1',
-    messages: post ? [{ id: uid('m'), author: 'me', body: draft.question, at }] : [],
-  };
-  setState((s) => ({
-    ...s,
-    clarifications: existingId
-      ? s.clarifications.map((c) => (c.id === existingId ? { ...c, ...record } : c))
-      : [record, ...s.clarifications],
-    records: {
-      ...s.records,
-      [draft.appointmentId]: { ...(s.records[draft.appointmentId] ?? emptyRecord(draft.appointmentId)), clarificationId: id },
-    },
-  }));
-  return id;
-};
-
-export const replyToClarification = (id: string, body: string, file?: string) =>
-  setState((s) => ({
-    ...s,
-    clarifications: s.clarifications.map((c) =>
-      c.id === id
-        ? {
-            ...c,
-            messages: [...c.messages, { id: uid('m'), author: 'me', body, at: `Today, ${nowLabel()}`, file } as ClarificationMessage],
-            // answering the expert's question hands the case back to them
-            status: c.status === 'clarificationNeeded' ? 'expertReview' : c.status,
-            lastActivity: `Today, ${nowLabel()}`,
-          }
-        : c
-    ),
-  }));
-
-export const recordOutcome = (id: string, value: string, note: string) =>
-  setState((s) => ({
-    ...s,
-    clarifications: s.clarifications.map((c) =>
-      c.id === id
-        ? { ...c, status: 'reviewed', outcome: { value, note, at: `Today, ${nowLabel()}` }, lastActivity: `Today, ${nowLabel()}` }
-        : c
-    ),
-  }));
-
-export const closeClarification = (id: string) =>
-  setState((s) => ({
-    ...s,
-    clarifications: s.clarifications.map((c) =>
-      c.id === id ? { ...c, status: 'closed', lastActivity: `Today, ${nowLabel()}` } : c
-    ),
-  }));
+/**
+ * One case the backend just answered with, in place or at the top. When it was
+ * raised from a consultation, that consultation's record points at it, so Refer
+ * reopens this thread rather than starting another.
+ */
+export const upsertClarification = (c: Clarification, replaces?: string) =>
+  setState((s) => {
+    const at = s.clarifications.findIndex((x) => x.id === c.id || (replaces !== undefined && x.id === replaces));
+    const clarifications = at === -1 ? [c, ...s.clarifications] : s.clarifications.map((x, i) => (i === at ? c : x));
+    const records = c.appointmentId
+      ? { ...s.records, [c.appointmentId]: { ...(s.records[c.appointmentId] ?? emptyRecord(c.appointmentId)), clarificationId: c.id } }
+      : s.records;
+    return { ...s, clarifications, records };
+  });
 
 /* -------------------------------- templates ------------------------------- */
 
-export const duplicateTemplate = (templateId: string) =>
-  setState((s) => {
-    const i = s.templates.findIndex((t) => t.id === templateId);
-    if (i === -1) return s;
-    const src = s.templates[i];
-    const copy = { ...src, id: uid('tpl'), name: `${src.name} (Copy)`, mine: true };
-    return { ...s, templates: [...s.templates.slice(0, i + 1), copy, ...s.templates.slice(i + 1)] };
-  });
-
-export const deleteTemplate = (templateId: string) =>
-  setState((s) => ({ ...s, templates: s.templates.filter((t) => t.id !== templateId) }));
+/** The doctor's templates as the server has them. The data layer calls this after every load and change. */
+export const setTemplates = (templates: ClinicalTemplate[]) => setState((s) => ({ ...s, templates }));
 
 /* -------------------------------- documents ------------------------------- */
 
@@ -610,18 +658,14 @@ export const raiseIssue = (category: string, title: string, description: string)
         dateLabel: today,
         state: 'open',
         icon: cat.icon,
-        updates: [{ at: today, body: 'We have received your request and will reply within 24 hours.' }],
+        // nothing is sent — no doctor support endpoint exists — so the note says where it really is
+        updates: [{ at: today, body: 'Saved on this device only. It has not been sent — email support and quote this reference.' }],
       },
       ...s.supportIssues,
     ],
   }));
   return id;
 };
-
-/* --------------------------------- reviews -------------------------------- */
-
-export const reportReview = (reviewId: string, reason: string) =>
-  setState((s) => ({ ...s, reviewReports: { ...s.reviewReports, [reviewId]: reason } }));
 
 /* ---------------------------------- demo ---------------------------------- */
 

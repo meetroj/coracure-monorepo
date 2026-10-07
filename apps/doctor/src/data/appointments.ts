@@ -54,9 +54,6 @@ const GENDER: Record<string, Appointment['gender']> = {
   undisclosed: 'Other',
 };
 
-/** Backend `en`/`hi` codes, for the language line on a card. */
-export const LANGUAGE_LABEL: Record<string, string> = { en: 'English', hi: 'Hindi' };
-
 /**
  * An instant consultation has no `scheduledStartAt` until a doctor accepts it,
  * so the created time stands in — it is still the moment the patient asked,
@@ -160,3 +157,17 @@ export const useDoctorDay = () => {
 
   return resource;
 };
+
+/** What a status/payment change from the backend means for the card already on screen. */
+export const patchFromConsultation = (c: DoctorConsultation): Pick<Appointment, 'state' | 'payment'> => ({
+  state: STATE[c.status],
+  payment: PAYMENT[c.paymentStatus],
+});
+
+/** The patient did not attend. Recorded against the consultation, not the person. */
+export const markNoShow = (consultationId: string): Promise<DoctorConsultation> =>
+  doctorConsultationsApi.markNoShow(consultationId);
+
+/** A consultation this doctor cannot take. The reason is recorded. */
+export const cancelConsultation = (consultationId: string, reason?: string): Promise<DoctorConsultation> =>
+  doctorConsultationsApi.cancelConsultation(consultationId, reason);

@@ -1,17 +1,25 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, EmptyState, Note, StatusPill } from '../../components/ui';
 import { ScreenHeader, HeaderTextAction } from '../../components/ScreenHeader';
+import { SkeletonRowList, SectionError } from '../../components/skeletons';
 import { confirm } from '../../components/confirm';
 import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
 import { selectDoctor } from '../../state/selectors';
-import { cancelReportRequest } from '../../state/actions';
-import { patientById } from '../../data/patients';
+import { cancelReportRequest as cancelReportRequestLocal } from '../../state/actions';
+import {
+  cancelReportRequest as cancelReportRequestApi,
+  usePatientFiles,
+  usePatientIdentity,
+  useReportRequests,
+} from '../../data/patientFiles';
 import {
   docsForPatient,
   visibleDocs,
@@ -45,14 +53,31 @@ export const PatientDocumentsScreen = ({
   onViewPatient: () => void;
   onRequestReport?: () => void;
 }) => {
-  const patient = patientById(patientId);
+  // a real patient is not in the demo fixture: their appointment, or the server's card, says who they are
+  const { patient } = usePatientIdentity(patientId);
   const doctor = useStore(selectDoctor);
-  const requests = useStore((st) => st.reportRequests.filter((r) => r.patientId === patientId));
+  const localRequests = useStore((st) => st.reportRequests.filter((r) => r.patientId === patientId));
+  const docs = useStore((st) => st.documents);
   const [filter, setFilter] = useState<(typeof DOC_FILTERS)[number]['key']>('all');
   const [query, setQuery] = useState('');
   const [newestFirst, setNewestFirst] = useState(true);
 
-  const all = useMemo(() => visibleDocs(docsForPatient(patientId)), [patientId]);
+  const { data: realFiles, showSkeleton, error: filesError, retry: retryFiles } = usePatientFiles(patientId);
+  // There is no "every request this patient has ever had" endpoint — requests
+  // are scoped to one consultation, so a patient opened without one gets
+  // nothing real here and falls back to whatever this session drafted locally.
+  const { data: realRequests, retry: retryRequests } = useReportRequests(patientId, appointmentId);
+  const realRequestIds = useMemo(() => new Set((realRequests ?? []).map((r) => r.id)), [realRequests]);
+
+  const localDocs = useMemo(() => docsForPatient(docs, patientId), [docs, patientId]);
+  const all = useMemo(() => visibleDocs([...(realFiles ?? []), ...localDocs]), [realFiles, localDocs]);
+  // A still-unsent draft has no server row at all, so it rides alongside
+  // whatever the backend answers for this consultation.
+  const requests = useMemo(() => {
+    if (!appointmentId || !realRequests) return localRequests;
+    const drafts = localRequests.filter((r) => r.status === 'draft' && r.appointmentId === appointmentId);
+    return [...realRequests, ...drafts];
+  }, [appointmentId, realRequests, localRequests]);
   const list = useMemo(() => {
     let out = all;
     if (filter === 'requested') out = out.filter((d) => d.source === 'requested');
@@ -82,7 +107,7 @@ export const PatientDocumentsScreen = ({
       header={
         <ScreenHeader
           onBack={onBack}
-          title="Patient Documents"
+          title="Patient Reports & Documents"
           subtitle="Reports and files shared across consultations."
           right={onRequestReport ? <HeaderTextAction testID="request-report" label="Request" icon="upload" onPress={onRequestReport} /> : undefined}
         />
@@ -123,7 +148,7 @@ export const PatientDocumentsScreen = ({
               </View>
             </View>
             <Text style={s.meta}>
-              {patient?.gender} • {patient?.age} years • {patientId}
+              {[patient?.gender, patient?.age != null ? `${patient.age} years` : undefined, patientId].filter(Boolean).join(' • ')}
             </Text>
           </View>
           <Pressable
@@ -183,7 +208,11 @@ export const PatientDocumentsScreen = ({
           })}
         </ScrollView>
 
-        {groups.length === 0 ? (
+        {showSkeleton ? (
+          <SkeletonRowList rows={4} avatar="square" trailing={0} />
+        ) : filesError ? (
+          <SectionError testID="documents-error" message="Could not load this patient's documents." onRetry={retryFiles} />
+        ) : groups.length === 0 ? (
           <EmptyState icon="folder" title="No documents" body={all.length ? 'Nothing matches this filter or search.' : 'This patient has not shared any files yet.'} />
         ) : (
           groups.map((g) => (
@@ -252,9 +281,22 @@ export const PatientDocumentsScreen = ({
                         message: `${r.itemName || 'The request'} will no longer be asked of the patient.`,
                         confirmLabel: r.status === 'draft' ? 'Discard' : 'Withdraw',
                         destructive: true,
-                        onConfirm: () => {
-                          cancelReportRequest(r.id);
-                          toast.show('Request withdrawn', 'info');
+                        onConfirm: async () => {
+                          // A draft never reached the server, and this id is
+                          // not one the real list answered with either — both
+                          // cases have nothing to withdraw anywhere but here.
+                          if (!realRequestIds.has(r.id)) {
+                            cancelReportRequestLocal(r.id);
+                            toast.show(r.status === 'draft' ? 'Draft discarded' : 'Request withdrawn', 'info');
+                            return;
+                          }
+                          try {
+                            await cancelReportRequestApi(r.id);
+                            retryRequests();
+                            toast.show('Request withdrawn', 'info');
+                          } catch (e) {
+                            toast.show(messageFor(e), 'error');
+                          }
                         },
                       })
                     }

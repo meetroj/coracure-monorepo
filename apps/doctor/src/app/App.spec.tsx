@@ -1,7 +1,7 @@
 import React from 'react';
 import { Keyboard } from 'react-native';
 import { render, fireEvent, act, screen } from '@testing-library/react-native';
-import { doctorAuthApi, type DoctorVerificationStatus } from '@coracure/api';
+import { doctorAuthApi, doctorProfileApi, type DoctorVerificationStatus } from '@coracure/api';
 
 import App from './App';
 import { getState, resetStore } from '../state/store';
@@ -10,13 +10,20 @@ import { setConsultationFee } from '../state/actions';
 /**
  * Sign-in is two real calls now, so where a doctor lands is the SERVER's
  * answer: `verificationStatus` decides between the dashboard and onboarding.
- * The account already exists before the app sees it — an administrator created
- * it — so these specs state what the backend said, rather than encoding a
- * number the app is supposed to recognise.
+ * A new doctor's account is created by the sign-in itself, so these specs state
+ * what the backend said, rather than encoding a number the app is supposed to
+ * recognise.
  */
 const serverSays = (verificationStatus: DoctorVerificationStatus) => {
   jest.spyOn(doctorAuthApi, 'requestOtp').mockResolvedValue({ challengeId: 'ch-1' });
-  jest.spyOn(doctorAuthApi, 'verifyOtp').mockResolvedValue({ verificationStatus });
+  jest.spyOn(doctorAuthApi, 'verifyOtp').mockResolvedValue({ verificationStatus, isNewAccount: false });
+  // After the verify, an unverified doctor's account is read the way a cold
+  // start reads it. Nothing on file unless a case says otherwise.
+  jest
+    .spyOn(doctorProfileApi, 'getProfile')
+    .mockResolvedValue({ mobileNumber: '+919123456780', verificationStatus, languages: [] } as never);
+  jest.spyOn(doctorProfileApi, 'getRegistration').mockRejectedValue(new Error('none on file'));
+  jest.spyOn(doctorProfileApi, 'getCredentials').mockRejectedValue(new Error('none on file'));
 };
 
 // Every case here starts from a backend that answers. The refusals live in
@@ -35,9 +42,12 @@ afterEach(() => {
 });
 
 const flush = async () => {
-  await act(async () => {
-    await Promise.resolve();
-  });
+  // Sign-in reads the account after the verify: a short chain of promises.
+  for (let i = 0; i < 6; i += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
 };
 
 /** Presses "Get verification code" and waits for the send to come back. */
@@ -148,12 +158,36 @@ test('a doctor the backend has not verified goes through onboarding first', asyn
   expect(screen.queryByTestId('tab-dashboard')).toBeNull();
 });
 
-test('an account still under review also lands in onboarding, not the dashboard', async () => {
+test('an account already submitted lands on its Account Status, not back in onboarding', async () => {
   serverSays('under_review');
   render(<App />);
   await signInWith('9123456780');
-  expect(screen.getByText('Basic Details')).toBeTruthy();
-  expect(screen.queryByTestId('tab-dashboard')).toBeNull();
+  // A blank form here invited a second, conflicting submission.
+  expect(screen.queryByText('Basic Details')).toBeNull();
+  expect(screen.getByTestId('account-status-pending')).toBeTruthy();
+});
+
+test('a fresh sign-in opens onboarding filled in with what is on file', async () => {
+  serverSays('pending');
+  jest
+    .spyOn(doctorProfileApi, 'getProfile')
+    .mockResolvedValue({ mobileNumber: '+919123456780', verificationStatus: 'pending', languages: ['hi'] } as never);
+  jest.spyOn(doctorProfileApi, 'getRegistration').mockResolvedValue({
+    fullName: 'Kavya Rao',
+    dateOfBirth: null,
+    gender: null,
+    email: null,
+    identity: null,
+    qualifications: null,
+    experience: [],
+    signatureDocumentId: null,
+    totalExperienceYears: 0,
+    editable: true,
+  });
+  render(<App />);
+  await signInWith('9123456780');
+  expect(screen.getByTestId('fullName').props.value).toBe('Kavya Rao');
+  expect(getState().submission?.basic.languages).toEqual(['Hindi']);
 });
 
 test('leaving an untouched first step returns to sign-in without asking', async () => {

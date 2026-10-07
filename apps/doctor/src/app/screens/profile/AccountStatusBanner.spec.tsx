@@ -36,7 +36,43 @@ test('progress is a real sequence, not a made-up percentage', () => {
   show('pending');
   expect(screen.queryByText(/% Complete/)).toBeNull();
   expect(screen.getByText('Submitted 15 May 2026')).toBeTruthy();
-  ['Submitted', 'Under review', 'Approved'].forEach((l) => expect(screen.getAllByText(l).length).toBeGreaterThan(0));
+  ['Profile incomplete', 'Submitted', 'Under review', 'Approved'].forEach((l) => expect(screen.getAllByText(l).length).toBeGreaterThan(0));
+});
+
+test('a rejection ends the sequence at Changes required, not Approved', () => {
+  show('rejected');
+  expect(screen.getByText('Changes required')).toBeTruthy();
+  expect(screen.queryByText('Approved')).toBeNull();
+});
+
+test('a rejection shows the admin’s own reason, and only then', () => {
+  const rejected = render(
+    <AccountStatusScreen
+      status="rejected"
+      acknowledged={false}
+      rejectionReason="The ID photo is unreadable."
+      items={verificationItems('rejected', draft)}
+      onAcknowledge={jest.fn()}
+      onGetSupport={jest.fn()}
+      onResubmit={jest.fn()}
+    />
+  );
+  expect(screen.getByTestId('rejection-reason')).toHaveTextContent(/Reason from the verification team.*The ID photo is unreadable\./);
+  rejected.unmount();
+
+  // never on a status that is not a rejection, even if a stale reason is passed
+  render(
+    <AccountStatusScreen
+      status="pending"
+      acknowledged={false}
+      rejectionReason="stale"
+      items={verificationItems('pending', draft)}
+      onAcknowledge={jest.fn()}
+      onGetSupport={jest.fn()}
+      onResubmit={jest.fn()}
+    />
+  );
+  expect(screen.queryByTestId('rejection-reason')).toBeNull();
 });
 
 test('a rejection names the issues and marks the rest verified', () => {

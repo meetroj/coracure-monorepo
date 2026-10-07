@@ -1,15 +1,17 @@
 /**
  * Doctor onboarding — the four sections completed after OTP sign-in.
  *
- * This is NOT self-registration. An administrator creates the account; the
- * doctor signs in and completes their own details and documents, which are
- * then verified. See `App.tsx` and DR-02-01.
+ * A doctor signs themselves up (the first verified OTP creates the account),
+ * then completes their own details and documents here. An administrator
+ * verifies them and approves or rejects. See `App.tsx` and DR-02-01.
  *
  * The governing rule is the split between what is collected and what is
  * shown: registration gathers enough to verify a doctor, while the patient
  * sees only what helps them choose one. `PATIENT_VISIBLE` below is the single
  * statement of that rule — screens read it rather than each deciding again.
  */
+
+import { doctorProfileApi, type ApiLanguage } from '@coracure/api';
 
 import { TODAY } from './calendar';
 
@@ -28,20 +30,19 @@ export const ID_TYPES = [
 /**
  * Offered for consultation. Multi-select.
  *
- * *** TWO, BECAUSE THE BACKEND HAS TWO. *** `UpdateOwnDoctorProfileDto` accepts
- * `'en' | 'hi'` and nothing else, and language is a MATCHING input — the
- * assignment engine pairs a patient's `preferredLanguage` with a provider who
- * speaks it (FR-20.2). Offering Marathi here would let a doctor claim a
- * language the matcher cannot route on and no patient can ask for: a promise
- * the platform silently drops. The list grows when the backend's does.
+ * *** THE BACKEND'S LIST, AND ONLY THAT. *** Language is a MATCHING input — the
+ * assignment engine pairs a patient with a provider who speaks one of their
+ * languages (FR-20.4) — and `UpdateOwnDoctorProfileDto` refuses any code
+ * outside its catalogue. Offering one here that it lacks would let a doctor
+ * claim a language the matcher cannot route on: a promise the platform
+ * silently drops. So the options ARE that catalogue (`LANGUAGE_NAMES`).
  */
-export const CONSULT_LANGUAGES = ['English', 'Hindi'] as const;
+export const CONSULT_LANGUAGES: readonly string[] = Object.values(doctorProfileApi.LANGUAGE_NAMES);
 
 /** What each label is called on the wire. */
-export const API_LANGUAGE: Record<string, 'en' | 'hi'> = {
-  English: 'en',
-  Hindi: 'hi',
-};
+export const API_LANGUAGE: Record<string, ApiLanguage> = Object.fromEntries(
+  Object.entries(doctorProfileApi.LANGUAGE_NAMES).map(([code, label]) => [label, code as ApiLanguage]),
+);
 
 /**
  * What this form collects that the doctor's own API still cannot take.
@@ -53,28 +54,12 @@ export const API_LANGUAGE: Record<string, 'en' | 'hi'> = {
  * `admin` means the column exists but is the administrator's to set
  * (`PATCH /v1/admin/doctors/:doctorId`). `none` means there is no column.
  *
- * It is nearly empty now: the September 2026 backend change added
- * `doctor_identity`, `doctor_qualifications` and `doctor_experience`, plus a
- * date of birth, gender and email on `doctors`, and `PUT /me/doctor/registration`
- * writes all of it. What remains is deliberate — a provider stating their own
- * medical council number is the one claim verification exists to check.
+ * It is EMPTY now: `PUT /me/doctor/registration` writes every field this form
+ * collects, including the medical council number the doctor states and an
+ * administrator then verifies. Only the specialty and fee stay the
+ * administrator's to set; the form never asks for them.
  */
-export const UNMAPPED_FIELDS = {
-  'basic.registrationNumber': 'admin',
-} as const;
-
-
-export const QUALIFICATION_OPTIONS = [
-  'MBBS', 'MD Psychiatry', 'DNB Psychiatry', 'DM Addiction Psychiatry',
-  'MD Psychological Medicine', 'DPM', 'MPhil Clinical Psychology',
-  'MA Clinical Psychology', 'PhD Clinical Psychology',
-] as const;
-
-export const POSITION_OPTIONS = [
-  'Consultant Psychiatrist', 'Senior Consultant', 'Senior Resident',
-  'Junior Resident', 'Assistant Professor', 'Associate Professor',
-  'Professor', 'Clinical Psychologist', 'Therapist', 'Counsellor',
-] as const;
+export const UNMAPPED_FIELDS = {} as Record<string, 'admin' | 'none'>;
 
 export const UPLOAD_HINT = 'PDF, JPG or PNG';
 
@@ -93,6 +78,12 @@ export type UploadedFile = {
   size: string;
   uri?: string;
   contentType?: string;
+  /**
+   * Set when the file is already on the server (`doctor_documents.id`): a
+   * resubmit references it rather than uploading it again. A re-picked file
+   * is a new object without one, so only what changed goes up.
+   */
+  documentId?: string;
 } | null;
 
 export type BasicDetails = {
@@ -112,37 +103,51 @@ export type IdentityProof = {
   idTypeName?: string;
   idNumber: string;
   document: UploadedFile;
+  /** Optional; must never block registration. ABHA ID or ABHA Address, whichever the doctor has. */
+  abhaId: string;
 };
 
 export const OTHER_ID = 'Other government ID';
 
-export type Qualification = {
-  id: string;
-  degree: string;
-  specialty?: string;
-  institution: string;
-  university: string;
-  year: string;
-  certificate: UploadedFile;
+/**
+ * Four free-text fields and two uploads for the whole doctor — never a
+ * per-qualification record. Only Basic Qualification is mandatory; the rest
+ * are optional free text, so a dentist, vet or psychologist can state their
+ * own qualification without a medicine-specific picklist.
+ */
+export type Qualifications = {
+  /**
+   * The specialty, as the id of a catalogue entry (`GET /services`) — chosen from
+   * that list, never typed. The registration number requirement, the credential
+   * list and prescribing all follow from it. Empty until chosen.
+   */
+  specialtyId: string;
+  /** The doctor's own statement of their council / professional registration number. */
+  registrationNumber: string;
+  basicQualification: string;
+  pgSpecialisation: string;
+  superSpecialisation: string;
+  fellowship: string;
+  degreeCertificate: UploadedFile;
+  registrationCertificate: UploadedFile;
 };
 
 export type Experience = {
   id: string;
-  position: string;
+  designation: string;
   institution: string;
-  /** `YYYY-MM`, so ranges sort and compare without a date library. */
-  start: string;
-  /** `YYYY-MM`, or null while `current` is set. */
-  end: string | null;
-  current: boolean;
-  proof: UploadedFile;
+  /** Free-text years at this role — the doctor states the total directly. */
+  years: string;
+  certificate: UploadedFile;
 };
 
 export type RegistrationDraft = {
   basic: BasicDetails;
   identity: IdentityProof;
-  qualifications: Qualification[];
+  qualifications: Qualifications;
   experience: Experience[];
+  /** Placed automatically on generated prescriptions once uploaded. Never mandatory. */
+  signature: UploadedFile;
   confirmed: boolean;
 };
 
@@ -183,61 +188,22 @@ export const PATIENT_VISIBLE = {
 /* ---------------------------- experience maths ---------------------------- */
 
 /**
- * Months since year zero, from a `YYYY-MM` or `YYYY / MM` string.
- *
- * The separator is ignored deliberately: the field types its own slashes as
- * the doctor enters digits, and authored fixtures use hyphens.
+ * Total professional experience: the doctor states years directly on each
+ * role now (no start/end dates to merge), so the total is simply their sum.
  */
-const monthsSinceEpoch = (ym: string) => {
-  const d = ym.replace(/\D/g, '');
-  // five digits is a single-digit month — 2020 / 1 counts the same as 2020 / 01
-  if (d.length < 5) return NaN;
-  const y = Number(d.slice(0, 4));
-  const m = Number(d.slice(4, 6));
-  return Number.isFinite(y) && m >= 1 && m <= 12 ? y * 12 + (m - 1) : NaN;
-};
-
-/**
- * Total professional experience in whole years, **merging overlaps**.
- *
- * Two concurrent posts — a hospital consultancy alongside a college
- * appointment — are one span of time, not two. Summing each row separately
- * would inflate the figure a patient sees, so intervals are merged first.
- *
- * `now` is injected so the result is testable and does not drift with the
- * clock; callers pass the current month.
- */
-export const totalExperienceYears = (rows: Experience[], now: string): number => {
-  const spans = rows
-    .map((r) => [monthsSinceEpoch(r.start), monthsSinceEpoch(r.current || !r.end ? now : r.end)])
-    .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b >= a)
-    .sort((x, y) => x[0] - y[0]);
-
-  if (spans.length === 0) return 0;
-
-  let months = 0;
-  let [curStart, curEnd] = spans[0];
-  for (const [s, e] of spans.slice(1)) {
-    if (s <= curEnd) {
-      curEnd = Math.max(curEnd, e);
-    } else {
-      months += curEnd - curStart;
-      [curStart, curEnd] = [s, e];
-    }
-  }
-  months += curEnd - curStart;
-  return Math.floor(months / 12);
-};
+export const totalExperienceYears = (rows: Experience[]): number =>
+  rows.reduce((sum, r) => sum + (Number(r.years) || 0), 0);
 
 /* -------------------------------- progress -------------------------------- */
 
-export type StepKey = 'basic' | 'identity' | 'qualifications' | 'experience';
+export type StepKey = 'basic' | 'identity' | 'qualifications' | 'experience' | 'signature';
 
 export const STEPS: { key: StepKey; label: string; short: string }[] = [
   { key: 'basic', label: 'Basic Details', short: 'Basic' },
   { key: 'identity', label: 'Proof of Identity', short: 'Identity' },
   { key: 'qualifications', label: 'Professional Qualifications', short: 'Qualifications' },
   { key: 'experience', label: 'Experience Details', short: 'Experience' },
+  { key: 'signature', label: 'Digital Signature', short: 'Signature' },
 ];
 
 /* ------------------------------- validation ------------------------------- */
@@ -314,45 +280,29 @@ export const validateIdentity = (idp: IdentityProof): FieldErrors => {
   return e;
 };
 
-export const validateQualification = (q: Qualification, today: Date = TODAY): FieldErrors => {
+/** The specialty, the registration number, Basic Qualification and the two uploads are mandatory. */
+export const validateQualifications = (q: Qualifications): FieldErrors => {
   const e: FieldErrors = {};
-  if (!q.degree) e.degree = 'Select the qualification.';
-  if (!q.institution.trim()) e.institution = 'Enter the institution.';
-  if (!q.university.trim()) e.university = 'Enter the university.';
-  const year = Number(q.year);
-  if (!q.year) e.year = 'Enter the year of passing.';
-  else if (q.year.length !== 4 || year < 1950 || year > today.getFullYear()) {
-    e.year = `Enter a year between 1950 and ${today.getFullYear()}.`;
-  }
-  if (!q.certificate) e.certificate = 'Upload the degree certificate.';
+  if (!q.specialtyId) e.specialtyId = 'Select your specialty.';
+  if (!q.registrationNumber.trim()) e.registrationNumber = 'Enter your registration number.';
+  if (!q.basicQualification.trim()) e.basicQualification = 'Enter your basic qualification, e.g. MBBS.';
+  if (!q.degreeCertificate) e.degreeCertificate = 'Upload your degree certificate.';
+  if (!q.registrationCertificate) e.registrationCertificate = 'Upload your registration certificate.';
   return e;
 };
 
-const ym = (v: string) => {
-  const d = v.replace(/\D/g, '');
-  if (d.length < 5) return NaN;
-  const y = Number(d.slice(0, 4));
-  const m = Number(d.slice(4, 6));
-  return m >= 1 && m <= 12 ? y * 12 + (m - 1) : NaN;
-};
-
-export const validateExperience = (x: Experience, today: Date = TODAY): FieldErrors => {
+export const validateExperience = (x: Experience): FieldErrors => {
   const e: FieldErrors = {};
-  const now = today.getFullYear() * 12 + today.getMonth();
-  if (!x.position) e.position = 'Select the position.';
-  if (!x.institution.trim()) e.institution = 'Enter where you worked.';
-  const start = ym(x.start);
-  if (!x.start) e.start = 'Enter the start month.';
-  else if (Number.isNaN(start) || Math.floor(start / 12) < 1950) e.start = 'Enter the month as YYYY / MM.';
-  else if (start > now) e.start = 'The start month cannot be in the future.';
-  if (!x.current) {
-    const end = ym(x.end ?? '');
-    if (!x.end) e.end = 'Enter the end month, or tick "I currently work here".';
-    else if (Number.isNaN(end)) e.end = 'Enter the month as YYYY / MM.';
-    else if (end > now) e.end = 'The end month cannot be in the future.';
-    else if (!Number.isNaN(start) && end < start) e.end = 'The end month must be after the start month.';
-  }
-  if (!x.proof) e.proof = 'Upload proof of employment.';
+  if (!x.designation.trim()) e.designation = 'Enter your designation.';
+  if (!x.institution.trim()) e.institution = 'Enter the name of the institute.';
+  const yearsText = x.years.trim();
+  const years = Number(yearsText);
+  // The backend's own rule — `@IsNumber({ maxDecimalPlaces: 1 }) @Min(0.1) @Max(60)` —
+  // so a value it would refuse never reaches the upload.
+  if (!yearsText) e.years = 'Enter years of experience.';
+  else if (!/^\d+(\.\d)?$/.test(yearsText)) e.years = 'Enter years as a number with at most one decimal, e.g. 2.5.';
+  else if (years < 0.1 || years > 60) e.years = 'Enter a realistic number of years.';
+  if (!x.certificate) e.certificate = 'Upload the experience certificate.';
   return e;
 };
 
@@ -367,17 +317,21 @@ export const isStepComplete = (draft: RegistrationDraft, step: StepKey): boolean
     case 'identity':
       return valid(validateIdentity(identity));
     case 'qualifications':
-      return qualifications.length > 0 && qualifications.every((q) => valid(validateQualification(q)));
+      return valid(validateQualifications(qualifications));
     case 'experience':
       return experience.length > 0 && experience.every((x) => valid(validateExperience(x)));
+    case 'signature':
+      // never mandatory — a prescription just shows "not yet uploaded" until one exists
+      return true;
   }
 };
 
 export const emptyDraft = (mobile: string, email = ''): RegistrationDraft => ({
   basic: { photo: null, fullName: '', dob: '', gender: '', mobile, email, languages: [] },
-  identity: { idType: '', idTypeName: '', idNumber: '', document: null },
-  qualifications: [],
+  identity: { idType: '', idTypeName: '', idNumber: '', document: null, abhaId: '' },
+  qualifications: { specialtyId: '', registrationNumber: '', basicQualification: '', pgSpecialisation: '', superSpecialisation: '', fellowship: '', degreeCertificate: null, registrationCertificate: null },
   experience: [],
+  signature: null,
   confirmed: false,
 });
 
@@ -395,14 +349,28 @@ export const demoRegistration = (mobile: string): RegistrationDraft => ({
     email: 'arjun.mehta@coracure.in',
     languages: ['English', 'Hindi'],
   },
-  identity: { idType: 'Aadhaar', idTypeName: '', idNumber: '4421 8830 1156', document: { name: 'aadhaar-card.pdf', kind: 'pdf', size: '640 KB' } },
-  qualifications: [
-    { id: 'q-demo-1', degree: 'MBBS', institution: 'Grant Medical College', university: 'Maharashtra University of Health Sciences', year: '2011', certificate: { name: 'mbbs-degree.pdf', kind: 'pdf', size: '1.2 MB' } },
-    { id: 'q-demo-2', degree: 'MD Psychiatry', specialty: 'Psychiatry', institution: 'KEM Hospital', university: 'Maharashtra University of Health Sciences', year: '2016', certificate: { name: 'md-psychiatry.pdf', kind: 'pdf', size: '980 KB' } },
-  ],
+  identity: {
+    idType: 'Aadhaar',
+    idTypeName: '',
+    idNumber: '4421 8830 1156',
+    document: { name: 'aadhaar-card.pdf', kind: 'pdf', size: '640 KB' },
+    abhaId: '',
+  },
+  qualifications: {
+    // a stand-in id: the demo doctor is not in the live catalogue
+    specialtyId: 'demo-psychiatry',
+    registrationNumber: 'MCI 12-45892',
+    basicQualification: 'MBBS',
+    pgSpecialisation: 'MD Psychiatry',
+    superSpecialisation: '',
+    fellowship: '',
+    degreeCertificate: { name: 'mbbs-degree.pdf', kind: 'pdf', size: '1.2 MB' },
+    registrationCertificate: { name: 'medical-council-registration.pdf', kind: 'pdf', size: '480 KB' },
+  },
   experience: [
-    { id: 'e-demo-1', position: 'Consultant Psychiatrist', institution: 'Lilavati Hospital', start: '2018 / 01', end: null, current: true, proof: { name: 'appointment-letter.pdf', kind: 'pdf', size: '520 KB' } },
+    { id: 'e-demo-1', designation: 'Consultant Psychiatrist', institution: 'Lilavati Hospital', years: '8', certificate: { name: 'appointment-letter.pdf', kind: 'pdf', size: '520 KB' } },
   ],
+  signature: null,
   confirmed: false,
 });
 
@@ -436,10 +404,3 @@ export const toApiDate = (dob: string): string | undefined => {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
 };
 
-/** `2018 / 01` or `2018-01` → `2018-01`. */
-export const toApiMonth = (value: string): string | undefined => {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 5) return undefined;
-  const month = digits.slice(4, 6).padStart(2, '0');
-  return Number(month) >= 1 && Number(month) <= 12 ? `${digits.slice(0, 4)}-${month}` : undefined;
-};

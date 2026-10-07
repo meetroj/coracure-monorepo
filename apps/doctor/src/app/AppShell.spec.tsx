@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, screen, within, act } from '@testing-library/react-native';
-import { doctorProfileApi } from '@coracure/api';
+import { fireEvent, screen, within, act, waitFor } from '@testing-library/react-native';
+import { doctorConsultationsApi, doctorFeedbackApi, doctorNotificationsApi, doctorPayoutsApi, doctorPresenceApi, doctorProfileApi } from '@coracure/api';
 
 import { renderShell, tap, on, toastText } from '../test/app';
 import { getState } from '../state/store';
@@ -157,7 +157,27 @@ test('an administrator decision reaches the Profile tab without a reload', () =>
 
 /* --------------------------------- status ---------------------------------- */
 
-test('the live status opens a sheet and commits only on Save', () => {
+test('the live status opens a sheet and commits only on Save', async () => {
+  // The Save button updates the pill at once and persists behind it — mocked
+  // so that background persistence resolves inside this test rather than
+  // leaking a pending rollback into whichever test runs next.
+  jest.spyOn(doctorPresenceApi, 'getPresence').mockResolvedValue({
+    doctorId: 'd-1',
+    presence: 'available_now',
+    canReceiveInstant: true,
+    blockedByConsultationId: null,
+    allowInstantConsult: true,
+  });
+  jest.spyOn(doctorPresenceApi, 'setPresence').mockImplementation((presence) =>
+    Promise.resolve({
+      doctorId: 'd-1',
+      presence,
+      canReceiveInstant: presence === 'available_now',
+      blockedByConsultationId: null,
+      allowInstantConsult: true,
+    })
+  );
+
   renderShell();
   expect(within(screen.getByTestId('status-trigger')).getByText('Available Now')).toBeTruthy();
 
@@ -166,7 +186,7 @@ test('the live status opens a sheet and commits only on Save', () => {
   fireEvent.press(screen.getByTestId('sheet-status-scheduledOnly'));
   // nothing changes until Save
   expect(getState().liveStatus).toBe('available');
-  fireEvent.press(screen.getByTestId('save-status'));
+  await act(async () => fireEvent.press(screen.getByTestId('save-status')));
 
   expect(getState().liveStatus).toBe('scheduledOnly');
   expect(within(screen.getByTestId('status-trigger')).getByText('Scheduled Only')).toBeTruthy();
@@ -208,14 +228,97 @@ test('ending a consultation moves it from upcoming to completed', () => {
   expect(within(screen.getByTestId('tile-done', { includeHiddenElements: true })).getByText('3', { includeHiddenElements: true })).toBeTruthy();
 });
 
-test('the header badges count what is actually unread', () => {
+test('the header badges count what is actually unread', async () => {
+  jest.spyOn(doctorConsultationsApi, 'listConsultations').mockResolvedValue([]);
+  jest.spyOn(doctorConsultationsApi, 'pendingDocumentation').mockResolvedValue([]);
+  jest.spyOn(doctorConsultationsApi, 'listSafetyAlerts').mockResolvedValue([]);
+  jest.spyOn(doctorConsultationsApi, 'unreadNotifications').mockResolvedValue({ unread: 4 });
+  jest.spyOn(doctorNotificationsApi, 'listNotifications').mockResolvedValue(
+    Array.from({ length: 4 }, (_, i) => ({
+      id: `n${i}`,
+      templateCode: 'appointment_confirmed',
+      title: `Notification ${i}`,
+      body: 'Body',
+      deepLinkData: null,
+      consultationId: null,
+      status: 'sent' as const,
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    }))
+  );
+  jest.spyOn(doctorNotificationsApi, 'markAllNotificationsRead').mockResolvedValue({ marked: 4 });
+
   renderShell();
-  expect(screen.getByLabelText('Notifications, 4 unread')).toBeTruthy();
+  await waitFor(() => expect(screen.getByLabelText('Notifications, 4 unread')).toBeTruthy());
   expect(screen.getByLabelText('Messages, 3 unread')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('nav-notifications'));
+  await waitFor(() => screen.getByTestId('mark-all-read'));
   fireEvent.press(screen.getByTestId('mark-all-read'));
+  await waitFor(() => expect(doctorNotificationsApi.markAllNotificationsRead).toHaveBeenCalled());
   fireEvent.press(screen.getByTestId('back'));
-  expect(screen.getByLabelText('Notifications')).toBeTruthy();
+  await waitFor(() => expect(screen.getByLabelText('Notifications')).toBeTruthy());
   expect(screen.queryByLabelText(/Notifications, \d+ unread/)).toBeNull();
+});
+
+/* ------------------------- earnings, feedback, badge ------------------------ */
+
+test('the earnings card shows what the backend has paid and still owes', async () => {
+  const { inr } = require('../data/doctor');
+  const row = (consultationId: string, doctorEarning: number, status: 'paid' | 'pending') => ({
+    consultationId,
+    referenceCode: consultationId.toUpperCase(),
+    consultationFee: doctorEarning,
+    platformDeduction: 0,
+    doctorEarning,
+    status,
+    paidAt: status === 'paid' ? '2026-05-10T00:00:00.000Z' : null,
+  });
+  jest.spyOn(doctorPayoutsApi, 'listPayouts').mockResolvedValue([row('c1', 800, 'paid'), row('c2', 600, 'pending'), row('c3', 600, 'pending')]);
+
+  renderShell();
+  await waitFor(() => expect(screen.getByTestId('earnings-paid')).toHaveTextContent(inr(800)));
+  expect(screen.getByTestId('earnings-pending')).toHaveTextContent(inr(1200));
+});
+
+test('the feedback card shows the rating the backend holds, and opens the reviews', () => {
+  renderShell();
+  // test-setup seeds the server's answer: 4.6 over 12 ratings.
+  expect(screen.getByTestId('feedback-rating')).toHaveTextContent('4.6');
+  expect(screen.getByTestId('feedback-count')).toHaveTextContent('12 reviews');
+  fireEvent.press(screen.getByTestId('view-reviews'));
+  expect(screen.getByTestId('reviews')).toBeTruthy();
+});
+
+test('a doctor nobody has rated yet sees the card at zero: 0.0 and "0 reviews"', () => {
+  const { seedResource } = require('../data/useResource');
+  const { KEYS, NO_FEEDBACK } = require('../data/feedback');
+  seedResource(KEYS.feedback, NO_FEEDBACK);
+  renderShell();
+  expect(screen.getByTestId('feedback-rating')).toHaveTextContent('0.0');
+  expect(screen.getByTestId('feedback-count')).toHaveTextContent('0 reviews');
+});
+
+test('a failed feedback load says so instead of showing a rating', async () => {
+  const { __resetResourceCache } = require('../data/useResource');
+  __resetResourceCache();
+  jest.spyOn(doctorFeedbackApi, 'getFeedback').mockRejectedValue(new Error('offline'));
+  renderShell();
+  await waitFor(() => expect(screen.getByTestId('feedback-error')).toBeTruthy());
+  expect(screen.queryByTestId('feedback-rating')).toBeNull();
+});
+
+test('a failed earnings load says so instead of showing numbers', async () => {
+  jest.spyOn(doctorPayoutsApi, 'listPayouts').mockRejectedValue(new Error('offline'));
+  renderShell();
+  await waitFor(() => expect(screen.getByTestId('earnings-error')).toBeTruthy());
+  expect(screen.queryByTestId('earnings-paid')).toBeNull();
+});
+
+test('the bell badge is loaded for every tab, not only by the dashboard', async () => {
+  jest.spyOn(doctorConsultationsApi, 'unreadNotifications').mockResolvedValue({ unread: 2 });
+  // a doctor under review lands on Profile; the dashboard never mounts
+  renderShell({ verification: { status: 'pending', acknowledged: false } });
+  await waitFor(() => expect(screen.getByLabelText('Notifications, 2 unread')).toBeTruthy());
+  expect(screen.queryByTestId('dashboard')).toBeNull();
 });

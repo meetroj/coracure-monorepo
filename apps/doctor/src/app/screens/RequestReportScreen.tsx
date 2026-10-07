@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
@@ -11,7 +13,7 @@ import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
 import { selectDoctor } from '../../state/selectors';
 import { addReportRequest } from '../../state/actions';
-import { patientById } from '../../data/patients';
+import { raiseReportRequest } from '../../data/patientFiles';
 import { fmtDate, dayOffset } from '../../data/calendar';
 import type { Appointment } from '../../data/doctor';
 import {
@@ -20,7 +22,6 @@ import {
   REQUEST_STATUS_LABEL,
   patientRequestNotice,
   type DocTypeKey,
-  type ReportRequest,
 } from '../../data/documents';
 
 /**
@@ -45,11 +46,13 @@ export const RequestReportScreen = ({
   onDirtyChange?: (dirty: boolean) => void;
 }) => {
   const doctor = useStore(selectDoctor);
-  const patient = patientById(appointment.patientId);
+  // the appointment already carries who the patient is — a real one is not in the demo fixture
+  const patient = appointment;
   const [docType, setDocType] = useState<DocTypeKey>('prescription');
   const [itemName, setItemName] = useState('');
   const [reason, setReason] = useState('');
   const [showErrors, setShowErrors] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const dirty = itemName.trim().length > 0 || reason.trim().length > 0;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
@@ -57,7 +60,8 @@ export const RequestReportScreen = ({
   const itemError = !itemName.trim() ? 'Name the report or document you need.' : undefined;
   const reasonError = !reason.trim() ? 'Explain why this document is needed.' : undefined;
 
-  const store = (status: ReportRequest['status']) => {
+  /** The draft has no backend equivalent — it never leaves this device. */
+  const storeDraft = () => {
     addReportRequest({
       patientId: appointment.patientId,
       appointmentId: appointment.id,
@@ -67,19 +71,34 @@ export const RequestReportScreen = ({
       requestedBy: doctor.name,
       requestedOn: fmtDate(dayOffset(0)),
       consultationId: appointment.consultationId,
-      status,
+      status: 'draft',
       fileIds: [],
     });
   };
 
-  const send = () => {
+  const send = async () => {
     if (itemError || reasonError) {
       setShowErrors(true);
       return;
     }
-    store('open');
-    toast.show(`Request sent to ${patient?.name.split(' ')[0] ?? 'the patient'}`);
-    onDone();
+    setSending(true);
+    try {
+      // `appointment.id` is the real consultation id; `.consultationId` is the
+      // human reference code (`CC-10482`) shown on screen — the backend wants
+      // the former.
+      await raiseReportRequest({
+        consultationId: appointment.id,
+        docType,
+        itemName: itemName.trim(),
+        reason: reason.trim(),
+      });
+      toast.show(`Request sent to ${patient?.name.split(' ')[0] ?? 'the patient'}`);
+      onDone();
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setSending(false);
+    }
   };
 
   const saveDraft = () => {
@@ -87,7 +106,7 @@ export const RequestReportScreen = ({
       setShowErrors(true);
       return;
     }
-    store('draft');
+    storeDraft();
     toast.show('Request saved as draft', 'info');
     onDone();
   };
@@ -99,8 +118,8 @@ export const RequestReportScreen = ({
       header={<ScreenHeader onBack={onBack} title="Request a Report" subtitle="Ask the patient to upload a specific document." />}
       footer={
         <View style={s.footer}>
-          <Button testID="send" label="Send request" onPress={send} />
-          <Button testID="draft" label="Save as draft" variant="ghost" size="sm" onPress={saveDraft} />
+          <Button testID="send" label="Send request" onPress={send} loading={sending} disabled={sending} />
+          <Button testID="draft" label="Save as draft" variant="ghost" size="sm" onPress={saveDraft} disabled={sending} />
         </View>
       }
     >
@@ -168,7 +187,7 @@ export const RequestReportScreen = ({
           value={reason}
           onChangeText={(t) => setReason(t.slice(0, REASON_MAX))}
           placeholder="Explain why this document is needed."
-          helper={`${reason.length}/${REASON_MAX} · Kept with the request; not sent to the patient.`}
+          helper={`${reason.length}/${REASON_MAX} · Shown to the patient with the request.`}
           error={showErrors ? reasonError : undefined}
         />
 
@@ -201,7 +220,7 @@ export const RequestReportScreen = ({
           <Text testID="notice-body" style={s.noticeBody}>
             {patientRequestNotice(doctor.name)}
           </Text>
-          <Text style={s.noticeNote}>The notification never includes a diagnosis or your reason.</Text>
+          <Text style={s.noticeNote}>The notification never includes a diagnosis. Your reason is shown to the patient when they open the request, so keep it free of one.</Text>
         </View>
 
         <View style={s.linkRow}>

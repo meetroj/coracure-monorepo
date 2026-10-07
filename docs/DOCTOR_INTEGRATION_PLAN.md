@@ -267,14 +267,14 @@ What is left in that file is `fetchReviews`, which has nowhere to go —
 Left: the detail screen's no-show and cancel actions. Both clients are written
 and exported; the buttons still change local state only.
 
-### 8. Patient card and documents 🟡 (client done, screens not wired)
+### 8. Patient card and documents ✅
 
 | | |
 |---|---|
-| Screens | `PatientDocumentsScreen`, `DocumentViewerScreen`, request sheet |
-| Endpoints | `GET /patients/:id/card`, `GET /doctor/patients/:id/files`, `GET /doctor/files/:id/download-url`, `POST /doctor/report-requests`, `POST .../cancel`, `GET /consultations/:id/report-requests` |
-| Client | `libs/api/src/endpoints/doctorFiles.ts` |
-| Tests | 7 (`doctorFiles.spec.ts`) + 2 contract shapes |
+| Screens | `PatientDocumentsScreen`, `DocumentViewerScreen`, request sheet, `AppointmentDetailsScreen`'s upload tile |
+| Endpoints | `GET /patients/:id/card`, `GET /doctor/patients/:id/files`, `GET /doctor/files/:id/download-url`, `POST /doctor/report-requests`, `POST .../cancel`, `GET /consultations/:id/report-requests`, `POST /doctor/patients/:id/files/upload-url`, `POST /doctor/patients/:id/files` |
+| Client | `libs/api/src/endpoints/doctorFiles.ts`, `libs/api/src/upload.ts` |
+| Tests | 11 (`doctorFiles.spec.ts`) + 2 contract shapes + backend: 6 new in `patient-files.service.spec.ts` |
 
 - **A download link is fetched per tap, never at list time.** Minting one per
   row would have them expiring while the doctor scrolls.
@@ -282,30 +282,104 @@ and exported; the buttons still change local state only.
   signed URL, so a document has no address that still works tomorrow.
 - A request carries the **actual ask AND the bucket**: "Lab" alone does not tell
   a patient which test.
+- **Added 1 Oct 2026: a doctor-upload route.** The backend had no endpoint for
+  a doctor to upload on a patient's behalf — only list/download/report-request
+  existed, and the only write path (`storeGeneratedPdf`) was for the
+  platform's own generated prescription PDF. Added
+  `POST doctor/patients/:patientId/files/upload-url` + a confirm pair,
+  reusing the patient's own signed-URL handshake but always anchored to a
+  consultation the doctor treats (`CONSULTATION_NOT_FOUND` otherwise, even for
+  another doctor's booking with the same patient) — never held against the
+  patient's general record, which stays theirs to add to. The PUT-to-signed-URL
+  mechanics (`react-native-blob-util` for a `file://` URI, since OkHttp
+  refuses that scheme) were already written once for credential uploads and
+  are now shared from `libs/api/src/upload.ts` rather than duplicated.
 
 ### 9. The call ⬜
 
 `GET /v1/consultations/:id/video/readiness`, `POST .../video/token`,
 `GET .../video/session`. Needs the LiveKit SDK — a dependency decision.
 
-### 10. Write-up ⬜
+### 10. Write-up ✅
 
-`GET|PUT /v1/doctor/consultations/:id/clinical-record`,
-`POST .../clinical-record/finalise`, `GET /v1/doctor/pending-documentation`.
-The response's `outstanding[]` is the live checklist; the finalise button should
-be disabled from it rather than discovering the same codes as a 409.
+| | |
+|---|---|
+| Screens | `ClinicalNotesScreen`, `EPrescriptionScreen`, `CaseSummaryScreen` |
+| Endpoints | `GET|PUT /v1/doctor/consultations/:id/clinical-record`, `POST .../clinical-record/finalise` |
+| Client | `libs/api/src/endpoints/doctorClinicalRecord.ts`, `apps/doctor/src/data/clinicalRecord.ts` |
+| Tests | 3 (`doctorClinicalRecord.spec.ts`) + 7 (`clinicalRecord.spec.ts`) + `ClinicalFlow.spec.tsx` |
 
-### 11. Follow-up and safety ⬜
+- **Every save sends the whole record.** The PUT is a full replace: saving from
+  the prescription screen still carries the notes. A save before the chief
+  complaint and risk category exist is refused locally, in words, rather than
+  sent as a request the server would 400.
+- **One lock, at the end.** The backend has a single `finalisedAt`. "Finalise
+  prescription" saves; only submitting the case summary calls `finalise` —
+  locking earlier would refuse the summary with `RECORD_FINALISED`.
+- **The case summary is counted in lines (3–5), not characters.** The drafted
+  summary is now one point per line; it used to be one paragraph, which the
+  backend would always have refused as too short. When finalise is refused
+  (`RECORD_INCOMPLETE`), the server's own `outstanding[]` reasons are shown.
+- Shapes that do not line up: `observations` has no field and rides inside
+  `clinicalHistory` under its own heading; advice/don'ts go out as
+  `adviceCovered`/`adviceWarningSigns`, one item per line; a local medicine id
+  (`med_001`) is never sent. `adviceHomePractice`/`adviceNextFocus` and the
+  allergies box have no screen field / no backend field respectively.
+
+### 11. Follow-up and safety ✅
 
 `GET /v1/doctor/followup-pathways`, `POST /v1/doctor/consultations/:id/followup`,
 `.../followup/cancel`, `.../checkins`, `.../followup-plan`,
 `GET /v1/doctor/safety-alerts`, `.../:alertId`, `.../acknowledge`, `.../close`.
 
-### 12. Clarifications ⬜
+- The workflow is the backend's two steps — acknowledge, then close with a
+  note. The old four-way action picker and per-question answer breakdown had no
+  backend data and are gone.
+- A plan's length comes from its pathway; there is no separate duration input.
+- **Keyed by `Appointment.id`.** `Appointment.consultationId` is the human
+  reference code (`CC-10482`) and must never reach a URL — an early version of
+  this step sent it, and every assign would have 404'd.
 
-`/v1/doctor/clarification-cases` (list, create, get, patch, post, reply,
-reviewed, close) and `/v1/doctor/expert-reviews` (list, get, reply). The backend
-de-identifies and **refuses** a case carrying identifiers.
+### 12. Clarifications ✅ (author side)
+
+| | |
+|---|---|
+| Screens | `ClarificationsScreen`, `CreateClarificationScreen`, `ExpertClarificationScreen`, `ExpertResponseScreen` |
+| Endpoints | `/v1/doctor/clarification-cases` (list, create, patch, post, reply, reviewed, close); `/v1/doctor/expert-reviews` client only |
+| Client | `libs/api/src/endpoints/doctorClarification.ts`, `apps/doctor/src/data/clarifications.ts` |
+| Tests | 3 (`doctorClarification.spec.ts`) + `ClarificationFlow.spec.tsx` + the mid-call referral in `DemoJourney.spec.tsx` |
+
+- **The author never picks the expert.** Posting puts the case in an
+  administrator's queue; the admin assigns. The "Select Doctor" panel is gone,
+  the button is "Post to expert panel", and a posted case waiting for a
+  reviewer says so instead of offering a reply box nobody will answer.
+- **The reviewer's name is never sent to the author**, so the thread reads
+  "Expert".
+- **Identifiers are refused, not redacted** (`IDENTIFIER_PRESENT`). The local
+  scan now uses the server's own patterns so the doctor is warned first; a
+  refusal names the field it was found in.
+- No attachments exist in either direction — the upload buttons on the case
+  and the thread are removed rather than left to drop files silently.
+- No decision field exists: a recorded decision is posted on the thread
+  (`Decision recorded: …`, visible to the expert) before marking reviewed, and
+  read back from it.
+- Age is sent as years (the backend's integer), not a band.
+- **Reviewer side (added 1 Oct 2026).** `ExpertInbox` (`GET /doctor/expert-reviews`)
+  and `ExpertReview` (`GET .../:caseId`, `POST .../:caseId/reply`) are routed
+  from the Clarifications tab — the entry shows only when
+  `GET /me/doctor/profile` says `seniorityLevel: 'expert'`, since only experts
+  are ever assigned. Both screens were unrouted prototypes: the inbox's
+  hard-coded sample cases (including cardiology and diabetes cases, outside
+  this app's scope) and its patient initials are gone — the expert's view has
+  no patient identifiers at all. The review screen now shows the discussion so
+  far, so an expert sees the doctor's answer to their own question. Its four
+  response types map to `comment`, `clinical_consideration`,
+  `clarification_request` and `followup_recommendation`; the prototype's
+  "In-person review" type had no backend value and was dropped. Tests:
+  `ExpertReviewFlow.spec.tsx`.
+- Done (1 Oct 2026): a `clarificationCase` notification now opens the case —
+  the author's thread when the row carries a `consultationId` (only the
+  treating doctor's does), the expert review otherwise. See "Gap close-out".
 
 ### 13. Earnings, reviews, notifications, profile ⬜
 
@@ -313,6 +387,100 @@ de-identifies and **refuses** a case carrying identifiers.
 `GET|POST /v1/me/notifications*`, `GET|PATCH /v1/me/doctor/profile`.
 ⛔ **Reviews have no doctor-facing endpoint** — `GET /v1/admin/feedback` is
 admin-only (audit gap G-3). The screen has no data source.
+
+### Gap close-out (1 Oct 2026)
+
+Items found by the whole-app scan after steps 8–12:
+
+- **Care Hub** — `GET /care-hub/items` through `doctorCareHubApi.listItems`
+  (`data/followup.ts` `useCareHubItems`). Tools = `self_help_tool`, Modules =
+  `education_module`. Published only, so no locked cards. The condition
+  filter is gone: there is no doctor-readable concern list to label
+  `concernId`. A pick no longer on the shelf is dropped on save, so the
+  write-up does not trip `CONTENT_NOT_RECOMMENDABLE`. The note to the patient
+  has no backend field and stays on the device.
+- **Prescription PDF** — once the record is finalised, the preview lists
+  `prescription_pdf` for the consultation and opens it via
+  `GET /doctor/files/:id/download-url`. The draft layout stays as the preview.
+- **Notification deep links** — `safety_alert` → alert, `instantRequest` →
+  instant offer, `clarificationCase` → thread or expert review,
+  `consultation` → appointment. Unknown shapes fall back to the consultation,
+  or only mark the notification read. AlertDetail and Clarification wait for
+  their list instead of showing "not found" on a cold open.
+- **Stop follow-up plan** — `POST /doctor/consultations/:id/followup/cancel`,
+  behind a confirm, on the assign-plan screen while the plan is `active`.
+- **Signature** — `/me/doctor/registration` `signatureDocumentId` →
+  `GET /doctor-credentials/:id/download-url`. Shown in Profile Details and on
+  the prescription preview. ⛔ The server-rendered PDF does not carry a
+  signature; that is a backend change.
+
+### Whole-app audit fixes (2 Oct 2026)
+
+Every screen was traced button by button. Fixed: case-summary deadlock (the
+follow-up plan is now optional and offered after submit — the server only
+accepts it once the record is finalised); doctor upload 400 (`upload-url`
+takes only category/fileName/contentType); stale cache overwriting newer
+notes and clarifications; the fake 11:45 clock; fixture patients, documents,
+clarifications, chats and support tickets no longer shown to real doctors;
+verification status (latest document per type wins; no demo registration;
+under-review lands on Account Status); cache cleared on sign-out; instant
+offers (server-trusted, polled every 15s while Available); notification and
+bell badge; real call duration (`GET /consultations/:id/video/session`);
+doctor-owned clinical templates (`/doctor/clinical-templates`, migration
+`20261002000000_clinical_templates` — apply with `npm run db:migrate:dev`).
+
+Still local, no backend: support/FAQ, bank account details, privacy toggles,
+profile change requests, reviews, Care Hub note to patient, the doctor's own
+allergies note on the prescription. Not doable yet: push token (no push
+library), video. Patient chat left this list on 5 Oct — see below.
+
+### Backend pull (5 Oct 2026)
+
+`synquic/main` merged into the backend checkout. What it gave the doctor app,
+and what was done with each:
+
+| Now in the backend | In the app |
+|---|---|
+| **Patient chat** — `/v1/doctor/chat-threads` (list, messages, send, attachment upload + open, read) | ✅ `libs/api/src/endpoints/doctorChat.ts`, `apps/doctor/src/data/chat.ts`; Messages, the thread, in-call chat, "Message patient" on a real consultation, and the `chat_message` notification all use it |
+| **12 consultation languages** (`common/languages.ts`), was `en`/`hi` | ✅ one catalogue, `doctorProfileApi.LANGUAGE_NAMES`; onboarding and profile offer all 12 |
+| **Patient-reported health** on `GET /doctor/consultations/:id` (`doctorContext.patientHealth`: allergies, conditions, medications, blood group, height, weight) | ✅ shown after the intake answers on the appointment, labelled patient-reported |
+| `InstantOffer.languages`, `PatientCard.languages`, `ConsultationRecord.cancelledByParty` | ✅ typed; an instant offer lists every language the patient consults in |
+| `PUT /v1/me/device` — register or refresh the push token after sign-in | ⛔ needs an FCM library and Firebase project files; none installed |
+| Paging: `after` on `GET /doctor/consultations`, `beforeId` on notifications, `GET …/clarification-cases/:id/messages?beforeSeq=` | ⬜ not wired — every list still reads its first page (50, or 100 for the day) |
+| `PATIENT_DID_NOT_ATTEND` on finalise, `UPLOAD_INCOMPLETE` / `FILE_TOO_LARGE` / `FILE_ALREADY_CONFIRMED` on a file confirm | ✅ no change needed — each surfaces through `messageFor` with the server's sentence |
+
+Chat, as built:
+
+- **A thread is the patient.** One conversation per doctor–patient pair; every
+  route takes `:patientId`, so a real thread's id IS the patient's id. The
+  server's row is created by the first message — a thread opened from an
+  appointment exists only on the device until then.
+- **Sent means the server has it.** The composer clears on send and the text
+  comes back if the send is refused. Nothing is shown as sent that was not.
+- **Polled, not pushed.** There is no socket and no push library, so the list
+  (and the Messages badge) is re-read every 30 s on the tabs, and an open
+  thread every 8 s. A thread covered by another screen stops polling, so
+  nothing is marked read unseen.
+- **An attachment has no address.** It is uploaded through a signed URL and
+  opened through a link minted on the tap, the same as a patient document.
+- **Names.** The chat list sends initials, age and gender only. Where one of
+  the patient's consultations is loaded, its name and reference code are shown.
+
+Still missing server-side after this pull — nothing to integrate against:
+doctor support tickets and FAQ (`/me/complaints` and `/support/contact` are
+`@Roles('patient')`), doctor-readable reviews (`GET /admin/feedback` is still
+admin-only, gap G-3), bank account details (only an admin `bankVerified` flag),
+privacy toggles, profile change requests, a Care Hub note to the patient, an
+allergies field on the clinical record, and the signature on the rendered
+prescription PDF.
+
+**Two fields the app reads that this backend does not send.** `libs/api`'s
+contract check fails on both: `PatientCard.fullName` (the upstream merge kept
+"initials, not a name" on `GET /patients/:id/card`) and
+`SafetyAlert.patientName` (never on `AlertRecord`). The screens fall back to
+initials, so nothing breaks — but decision D-4 (the doctor sees names) only
+holds on the consultation list, where `patient.fullName` survived. Restoring
+the other two is a backend change and a privacy decision, not an app one.
 
 ---
 
@@ -338,11 +506,28 @@ Every step ships all six, or it is not done:
 | D-1 | Which HTTP client for the doctor app? | `libs/api/src/http.ts` (single-flight refresh, keychain), not the older `client.ts` the patient screens use | Doctor endpoints are namespaced (`doctorAuthApi`, `doctorProfileApi`) so they cannot collide with the patient functions of the same name |
 | D-2 | Where does a signed-in doctor land? | The server's `verificationStatus` | The hardcoded demo number is gone from sign-in routing |
 | D-3 | The form collects ~15 fields with no backend column | First **wire what exists, flag the rest**; then **add the columns to the backend** | `UNMAPPED_FIELDS` is down to one entry (the registration number, admin-only). Migration `20260930000000_doctor_registration_details` |
-| D-4 | 12 consultation languages vs the API's 2 | **Restrict the picker to English and Hindi** | Language is a matching input; a doctor cannot claim one the assignment engine cannot route on |
+| D-4 | 12 consultation languages vs the API's 2 | ~~Restrict the picker to English and Hindi~~ **Superseded 5 Oct 2026: the API has 12, the picker offers the API's list** | Language is a matching input; a doctor cannot claim one the assignment engine cannot route on, so the options are read from the one catalogue (`LANGUAGE_NAMES`) |
 | D-4 | The doctor app shows patient names; the backend returned initials only (FR-9.2) | **Add the name to doctor-facing responses** | `PatientCard.fullName`, `ConsultationRecord.patient` (doctor/admin reads only — absent on the patient's own), `AlertRecord.patientName`. A Consult Now **offer** deliberately stays on initials: a doctor who has been offered a request has not accepted it and is not treating anybody yet |
 | D-5 | Native file picker | `react-native-image-picker` was **already installed** — used it | Camera and library work with no new dependency. A PDF cannot be *picked* (needs a document picker); the backend accepts images, so a photographed certificate is a complete submission. iOS needs `pod install` |
 
 ---
+
+## Checking types
+
+**`tsc -p apps/doctor/tsconfig.json` checks nothing.** That file has
+`"files": []` and `"include": []` and only references the real configs, so it
+exits 0 whatever is broken. Use:
+
+```bash
+npx tsc -p apps/doctor/tsconfig.app.json --noEmit    # app sources
+npx tsc -p apps/doctor/tsconfig.spec.json --noEmit   # specs
+```
+
+As of 1 Oct 2026 the app config has one error, in
+`components/AppointmentActions.tsx` — an orphan file nothing imports, which
+imports a constant (`RESCHEDULE_CUTOFF_HOURS`) that does not exist. The spec
+config has ~30 older errors (renders missing required props, an SVG module
+declaration); Jest compiles with Babel and does not typecheck, so they run.
 
 ## Known-failing tests we did not cause
 

@@ -24,25 +24,40 @@ type Entry<T> = { data: T; at: number };
 const cache = new Map<string, Entry<unknown>>();
 const inFlight = new Map<string, Promise<unknown>>();
 
-/** Test seam — drop everything between cases. */
-export const __resetResourceCache = () => {
+/** Bumped on every clear, so a response for the previous doctor cannot land in the next one's cache. */
+let generation = 0;
+
+/**
+ * Drops everything cached. Run on sign-out: the cache is module state, so
+ * without this the next doctor on the device opened screens on the last one's
+ * patients until each key aged out.
+ */
+export const clearResourceCache = () => {
+  generation += 1;
   cache.clear();
   inFlight.clear();
 };
+
+/** Test seam — drop everything between cases. */
+export const __resetResourceCache = clearResourceCache;
 
 /** Prime the cache, e.g. from a list response before a detail screen opens. */
 export const seedResource = <T,>(key: string, data: T) => {
   cache.set(key, { data, at: Date.now() });
 };
 
+/** What is cached for a key, fresh or not — undefined if it was never loaded. */
+export const peekResource = <T,>(key: string) => (cache.get(key) as Entry<T> | undefined)?.data;
+
 /** One request per key, however many callers ask for it. */
 const load = <T,>(key: string, fetcher: () => Promise<T>): Promise<T> => {
   const existing = inFlight.get(key);
   if (existing) return existing as Promise<T>;
 
+  const gen = generation;
   const p = fetcher()
     .then((data) => {
-      cache.set(key, { data, at: Date.now() });
+      if (gen === generation) cache.set(key, { data, at: Date.now() });
       return data;
     })
     .finally(() => {

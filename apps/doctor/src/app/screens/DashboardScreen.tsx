@@ -1,30 +1,32 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
+import { doctorPayoutsApi } from '@coracure/api';
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon, type IconName } from '../../components/Icon';
 import { Screen, Card, Avatar, Button, SectionHeader, StatusPill } from '../../components/ui';
 import StatusSheet from '../../components/StatusSheet';
 import { TabHeader } from '../navigation/TabHeader';
-import { Stars } from './ReviewsScreen';
-import { useStore } from '../../state/store';
+import { getState, useStore } from '../../state/store';
 import {
   JOIN_WINDOW_MIN,
   joinStateFor,
   selectAlertCounts,
+  selectAppointments,
   selectDoctor,
-  selectEarnings,
   selectLiveStatus,
   selectNextAppointment,
   selectTaskCounts,
   selectTodaySummary,
 } from '../../state/selectors';
 import { setLiveStatus } from '../../state/actions';
+import { availableBlockedBecause, setStatus, useDoctorPresence } from '../../data/presence';
 import { toast } from '../../components/Toast';
 import { photoPreview } from '../../components/upload';
 import {
-  feedback,
   inr,
   modeLabel,
   previousConsultations,
@@ -35,8 +37,14 @@ import {
   type Leave,
   type ScheduleOverride,
 } from '../../data/doctor';
-import { DEMO_NOW_MINUTES, TODAY, toISODate } from '../../data/calendar';
+import { TODAY, nowMinutes, toISODate } from '../../data/calendar';
 import { useDoctorDay } from '../../data/appointments';
+import { useAvailability } from '../../data/availability';
+import { useResource } from '../../data/useResource';
+import { useFeedback } from '../../data/feedback';
+import { useSpecialtyName } from '../../data/profile';
+import { Skeleton } from '../../components/Skeleton';
+import { Stars } from './ReviewsScreen';
 
 type Props = {
   onOpenTasks: () => void;
@@ -67,7 +75,10 @@ export const todayHoursLabel = (schedule: DaySchedule[], overrides: ScheduleOver
   return today.ranges.map((r) => `${r.from} – ${r.to}`).join(' · ');
 };
 
-const greeting = () => (DEMO_NOW_MINUTES < 12 * 60 ? 'Good morning,' : DEMO_NOW_MINUTES < 17 * 60 ? 'Good afternoon,' : 'Good evening,');
+const greeting = () => {
+  const now = nowMinutes();
+  return now < 12 * 60 ? 'Good morning,' : now < 17 * 60 ? 'Good afternoon,' : 'Good evening,';
+};
 
 type Tile = { key: string; icon: IconName; value: number; label: string };
 
@@ -88,12 +99,20 @@ export const DashboardScreen = ({
   onOpenProfile,
 }: Props) => {
   const doctor = useStore(selectDoctor);
+  // The speciality by its real name, from the same source Profile uses.
+  const speciality = useSpecialtyName() ?? doctor.speciality;
   const status = useStore(selectLiveStatus);
   const summary = useStore(selectTodaySummary);
   const next = useStore(selectNextAppointment);
   const tasks = useStore(selectTaskCounts);
   const alerts = useStore(selectAlertCounts);
-  const earnings = useStore(selectEarnings);
+  const all = useStore(selectAppointments);
+  // What the backend says this doctor has earned — never the demo figures.
+  const payouts = useResource('doctor:payouts', doctorPayoutsApi.listPayouts);
+  const earned = (status: 'paid' | 'pending') =>
+    (payouts.data ?? []).filter((p) => p.status === status).reduce((sum, p) => sum + p.doctorEarning, 0);
+  // What patients actually said (GET /v1/doctor/feedback) — never a sample rating.
+  const feedback = useFeedback();
   const schedule = useStore((s) => s.availability.schedule);
   const overrides = useStore((s) => s.availability.overrides);
   const leave = useStore((s) => s.availability.leave);
@@ -101,10 +120,21 @@ export const DashboardScreen = ({
   // Loads the day into the store: the counts below and the lists they open read
   // the same array, so they cannot disagree.
   useDoctorDay();
+  // The status sheet's "today hours" line reads the diary from the store.
+  useAvailability();
+  // Same for presence: the status pill and the sheet's blocker message both
+  // read `liveStatus` / `presenceBlockedByConsultationId` off the store.
+  const presence = useDoctorPresence();
   const blockedBy = useStore((st) => st.pendingDocumentation);
+  const presenceBlockedByConsultationId = useStore((st) => st.presenceBlockedByConsultationId);
+  const allowInstantConsult = useStore((st) => st.allowInstantConsult);
 
   const locked = isAutoStatus(status);
   const instantOpen = acceptsInstantRequests(status);
+  const availableBlockedReason = availableBlockedBecause({
+    blockedByConsultationId: presenceBlockedByConsultationId,
+    allowInstantConsult,
+  });
 
   const lead: Tile = { key: 'appts', icon: 'calendar', value: summary.appointments, label: 'Appointments' };
   const stack: Tile[] = [
@@ -114,7 +144,7 @@ export const DashboardScreen = ({
 
   const appt = next?.appointment;
   const join = appt ? joinStateFor(appt) : undefined;
-  const isFollowUp = appt ? previousConsultations(appt).length > 0 : false;
+  const isFollowUp = appt ? previousConsultations(appt, all).length > 0 : false;
 
   return (
     <Screen testID="dashboard">
@@ -136,7 +166,11 @@ export const DashboardScreen = ({
               <Text style={s.docName} numberOfLines={2}>
                 {doctor.name}
               </Text>
-              <Text style={s.docSpec}>{doctor.speciality}</Text>
+              {!!speciality && (
+                <Text testID="doctor-speciality" style={s.docSpec}>
+                  {speciality}
+                </Text>
+              )}
             </View>
           </Pressable>
           {locked ? (
@@ -171,15 +205,31 @@ export const DashboardScreen = ({
         current={status}
         onClose={() => setPickerOpen(false)}
         onSave={(nextStatus) => {
+          // Optimistic: the sheet closes and the pill updates at once, the way
+          // a doctor expects a status toggle to feel. `setStatus` persists it
+          // behind that, and a refusal rolls the pill back with why.
+          //
+          // `markWritten` first, synchronously: the initial presence GET may
+          // still be in flight, and a stale `available_now` landing after this
+          // write must not stomp the status the doctor just picked.
+          presence.markWritten();
+          // the doctor's own choice, not the displayed one — that can be an
+          // automatic state ("request pending") nobody can set by hand
+          const previous = getState().liveStatus;
           setLiveStatus(nextStatus);
           setPickerOpen(false);
           toast.show(`Status set to ${STATUS_LABEL[nextStatus]}`);
+          setStatus(nextStatus).catch((e) => {
+            setLiveStatus(previous);
+            toast.show(messageFor(e), 'error');
+          });
         }}
         todayHours={todayHoursLabel(schedule, overrides, leave)}
         onEditSchedule={() => {
           setPickerOpen(false);
           onEditSchedule();
         }}
+        availableBlockedReason={availableBlockedReason}
       />
 
       {/* today's summary */}
@@ -381,7 +431,7 @@ export const DashboardScreen = ({
         </Card>
       </View>
 
-      {/* earnings + patient feedback */}
+      {/* earnings + patient feedback, both read from the backend */}
       <View style={s.twoUp}>
         <Card testID="view-earnings" style={s.halfCard} onPress={onOpenEarnings} accessibilityLabel="Earnings summary">
           <View style={s.halfHead}>
@@ -393,20 +443,31 @@ export const DashboardScreen = ({
             </Text>
             <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </View>
-          <View style={s.earnCompact}>
-            <View style={s.earnCol}>
-              <Text style={s.earnLabel}>Today</Text>
-              <Text style={s.earnGreen} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {inr(earnings.daily.total)}
-              </Text>
+          {payouts.showSkeleton ? (
+            <View testID="earnings-loading" style={s.earnCompact}>
+              <Skeleton width="60%" height={16} />
+              <Skeleton width="40%" height={14} />
             </View>
-            <View style={s.earnCol}>
-              <Text style={s.earnLabel}>This week</Text>
-              <Text style={s.earnGreenMid} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {inr(earnings.weekly.total)}
-              </Text>
+          ) : payouts.error ? (
+            <Text testID="earnings-error" style={s.earnError}>
+              {messageFor(payouts.error)}
+            </Text>
+          ) : payouts.data ? (
+            <View style={s.earnCompact}>
+              <View style={s.earnCol}>
+                <Text style={s.earnLabel}>Paid out</Text>
+                <Text testID="earnings-paid" style={s.earnGreen} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                  {inr(earned('paid'))}
+                </Text>
+              </View>
+              <View style={s.earnCol}>
+                <Text style={s.earnLabel}>Pending</Text>
+                <Text testID="earnings-pending" style={s.earnGreenMid} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                  {inr(earned('pending'))}
+                </Text>
+              </View>
             </View>
-          </View>
+          ) : null}
         </Card>
 
         <Card testID="view-reviews" style={s.halfCard} onPress={onOpenReviews} accessibilityLabel="Patient feedback">
@@ -419,11 +480,27 @@ export const DashboardScreen = ({
             </Text>
             <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </View>
-          <View style={s.feedbackBlock}>
-            <Text style={s.feedbackRating}>{feedback.rating.toFixed(1)}</Text>
-            <Stars value={feedback.rating} size={14} />
-            <Text style={s.feedbackMeta}>{feedback.reviews} reviews</Text>
-          </View>
+          {feedback.showSkeleton ? (
+            <View testID="feedback-loading" style={s.earnCompact}>
+              <Skeleton width="40%" height={18} />
+              <Skeleton width="60%" height={14} />
+            </View>
+          ) : feedback.error ? (
+            <Text testID="feedback-error" style={s.earnError}>
+              {messageFor(feedback.error)}
+            </Text>
+          ) : feedback.data ? (
+            // Nobody has rated yet reads 0.0 and "0 reviews": the card keeps its shape.
+            <View style={s.feedbackBlock}>
+              <Text testID="feedback-rating" style={s.feedbackRating}>
+                {(feedback.data.averageRating ?? 0).toFixed(1)}
+              </Text>
+              <Stars value={feedback.data.averageRating ?? 0} size={14} />
+              <Text testID="feedback-count" style={s.feedbackMeta}>
+                {feedback.data.ratingCount} {feedback.data.ratingCount === 1 ? 'review' : 'reviews'}
+              </Text>
+            </View>
+          ) : null}
         </Card>
       </View>
     </Screen>
@@ -584,6 +661,8 @@ const s = StyleSheet.create({
   earnLabel: { ...typeStyles.caption, color: colors.inkMuted },
   earnGreen: { ...typeStyles.metricSmall, fontWeight: fontWeight.bold, color: colors.surfie },
   earnGreenMid: { ...typeStyles.body, fontFamily: typeStyles.metricSmall.fontFamily, fontWeight: fontWeight.semibold, color: colors.surfie },
+
+  earnError: { ...typeStyles.caption, color: colors.danger, marginTop: spacing.md },
 
   feedbackBlock: { marginTop: spacing.md, gap: 3 },
   feedbackRating: { ...typeStyles.metric, fontSize: 22, lineHeight: 28, fontWeight: fontWeight.bold, color: colors.ink },

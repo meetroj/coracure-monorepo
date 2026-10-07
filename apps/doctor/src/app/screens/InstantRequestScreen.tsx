@@ -8,7 +8,7 @@ import { Icon } from '../../components/Icon';
 import { Screen, Button, Avatar } from '../../components/ui';
 import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
 import { BottomSheet } from '../../components/BottomSheet';
-import { instantRequest, INSTANT_STEPS, modeLabel } from '../../data/doctor';
+import { instantRequest, INSTANT_STEPS, modeLabel, type InstantRequest } from '../../data/doctor';
 
 /** Amber is used for the countdown only — never as a brand accent. */
 const AMBER = colors.warn;
@@ -54,20 +54,25 @@ const CountdownRing = ({ left, total }: { left: number; total: number }) => {
  * request moves to another doctor when the clock runs out.
  */
 export const InstantRequestScreen = ({
+  request = instantRequest,
   onAccept,
   onDecline,
   onExpire,
   onBack,
 }: {
-  onAccept: () => void;
-  onDecline: () => void;
+  /** Defaults to the demo fixture; the real route passes the actual offer. */
+  request?: InstantRequest;
+  /** Rejects when the offer is already gone (raced by the clock) — the doctor can try again otherwise. */
+  onAccept: () => Promise<void> | void;
+  onDecline: () => Promise<void> | void;
   /** The window closed without an answer. */
   onExpire: () => void;
   onBack: () => void;
 }) => {
-  const req = instantRequest;
+  const req = request;
   const [left, setLeft] = useState(req.respondWithin);
   const [info, setInfo] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const answered = useRef(false);
 
   useEffect(() => {
@@ -82,11 +87,21 @@ export const InstantRequestScreen = ({
     return () => clearTimeout(id);
   }, [left, onExpire]);
 
-  // one answer per request — a second tap or the clock cannot answer again
-  const answer = (fn: () => void) => () => {
-    if (answered.current) return;
-    answered.current = true;
-    fn();
+  // One answer per request — a second tap or the clock cannot answer again.
+  // A rejection (the offer closed underneath them) leaves it unanswered so the
+  // doctor can see the error and the list re-poll, rather than being locked
+  // out of a request that moved to someone else before they pressed anything.
+  const answer = (fn: () => Promise<void> | void) => async () => {
+    if (answered.current || submitting) return;
+    setSubmitting(true);
+    try {
+      await fn();
+      answered.current = true;
+    } catch {
+      // the handler already told the doctor what happened
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const meta = useMemo(
@@ -110,8 +125,8 @@ export const InstantRequestScreen = ({
       }
       footer={
         <View style={s.actions}>
-          <Button testID="accept" label="Accept request" onPress={answer(onAccept)} />
-          <Button testID="decline" label="Decline" variant="secondary" onPress={answer(onDecline)} />
+          <Button testID="accept" label="Accept request" onPress={answer(onAccept)} loading={submitting} disabled={submitting} />
+          <Button testID="decline" label="Decline" variant="secondary" onPress={answer(onDecline)} disabled={submitting} />
           <Text style={s.footNote}>Declined or unanswered requests automatically move to another available doctor.</Text>
         </View>
       }

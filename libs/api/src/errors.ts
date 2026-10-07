@@ -146,6 +146,8 @@ const FRIENDLY: Record<string, string> = {
   [PlatformCode.STORAGE_UNAVAILABLE]: 'File storage is unavailable right now. Try again shortly.',
   [PlatformCode.NOT_FOUND]: 'We could not find that.',
   [PlatformCode.FORBIDDEN]: 'You do not have access to that.',
+  // the server's own sentence reads well, but a screen showing only this code should still say why
+  DOCTOR_NOT_APPROVED: 'Your account is not verified yet. This opens once the Coracure team approves it.',
   // The server phrasing names the SMS vendor, which means nothing to a user and
   // wrongly reads as "your number is wrong".
   [DomainCode.OTP_PROVIDER_UNAVAILABLE]:

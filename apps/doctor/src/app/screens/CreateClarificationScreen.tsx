@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Modal, ActivityIndicator } from 'react-native';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
@@ -7,8 +7,7 @@ import { Icon } from '../../components/Icon';
 import { Screen } from '../../components/ui';
 import { ScreenHeader, HeaderTextAction } from '../../components/ScreenHeader';
 import { SelectField } from '../../components/form';
-import { FilePickerSheet, type PickedFile } from '../../components/upload';
-import { confirm, confirmDiscard } from '../../components/confirm';
+import { confirmDiscard } from '../../components/confirm';
 import {
   C,
   Stepper,
@@ -23,46 +22,53 @@ import {
   GhostButton,
   SolidButton,
 } from '../../components/compact';
-import { BottomSheet } from '../../components/BottomSheet';
 import { useStore } from '../../state/store';
 import { selectCases, selectRecord, selectReferableCase } from '../../state/selectors';
 import {
-  EXPERT_PANEL,
   GUIDANCE_AREAS,
   URGENCIES,
+  DIAGNOSIS_MAX,
   HISTORY_MAX,
+  PLAN_MAX,
   QUESTION_MAX,
+  TITLE_MAX,
   hasIdentifiers,
   deIdentify,
   type Clarification,
   type ClarificationDraft,
   type Urgency,
 } from '../../data/clarification';
+import { useExperts } from '../../data/clarifications';
 import type { ConsultationRecord } from '../../data/clinical';
 import type { PatientCase } from '../../data/doctor';
 
 const STEPS = ['Case Details', 'Clinical Doubt', 'Review & Share'];
 
-/** Age is shared as a band, not a birthday — one less identifier. */
-export const AGE_BANDS = ['18–24 years', '25–34 years', '35–44 years', '45–54 years', '55–64 years', '65+ years'];
-const ageBand = (age: number) =>
-  age < 25 ? AGE_BANDS[0] : age < 35 ? AGE_BANDS[1] : age < 45 ? AGE_BANDS[2] : age < 55 ? AGE_BANDS[3] : age < 65 ? AGE_BANDS[4] : AGE_BANDS[5];
 const GENDERS = ['Female', 'Male'] as const;
+
+/** The backend stores an age in years (0–120) — not a band, and never a date of birth. */
+const ageLabelOf = (age: number | null) => (age === null ? 'Age not given' : `${age} years`);
+
+/** "35 years" → 35. An old band ("25–34 years") has no single age, so it reads as unknown. */
+const ageFromLabel = (label: string): number | null => {
+  const m = label.match(/^(\d{1,3}) years$/);
+  return m ? Number(m[1]) : null;
+};
 
 const draftFromCase = (c: PatientCase, r: ConsultationRecord): ClarificationDraft => ({
   caseId: '',
   appointmentId: c.appointmentId,
   patientName: c.name,
   patientId: c.patientId,
-  expertId: '',
-  expertName: '',
   consultationId: c.caseId,
-  title: r.notes.complaint.trim() || c.concern,
-  ageLabel: ageBand(c.age),
+  // prefilled from the notes, so cut to what the backend takes — it refuses a longer field outright
+  title: (r.notes.complaint.trim() || c.concern).slice(0, TITLE_MAX),
+  age: c.age > 0 ? c.age : null,
+  ageLabel: ageLabelOf(c.age > 0 ? c.age : null),
   gender: c.gender,
-  history: r.notes.history.trim() || c.concern,
-  provisionalDiagnosis: r.notes.diagnosis.trim(),
-  currentPlan: r.medicines.length ? r.medicines.map((m) => `${m.name} ${m.frequency.toLowerCase()}`).join(', ') : 'No medicines started',
+  history: (r.notes.history.trim() || c.concern).slice(0, HISTORY_MAX),
+  provisionalDiagnosis: r.notes.diagnosis.trim().slice(0, DIAGNOSIS_MAX),
+  currentPlan: (r.medicines.length ? r.medicines.map((m) => `${m.name} ${m.frequency.toLowerCase()}`).join(', ') : 'No medicines started').slice(0, PLAN_MAX),
   question: '',
   guidanceArea: GUIDANCE_AREAS[0],
   urgency: 'routine',
@@ -75,11 +81,9 @@ const draftFromClarification = (c: Clarification, pc: PatientCase | undefined): 
   appointmentId: c.appointmentId,
   patientName: pc?.name ?? '',
   patientId: pc?.patientId ?? '',
-  /* Routing, not shared clinical content: re-picked when editing. */
-  expertId: '',
-  expertName: '',
   consultationId: pc?.caseId ?? '',
   title: c.title,
+  age: ageFromLabel(c.shared.ageLabel),
   ageLabel: c.shared.ageLabel,
   gender: c.shared.gender,
   history: c.shared.history,
@@ -98,7 +102,11 @@ const draftFromClarification = (c: Clarification, pc: PatientCase | undefined): 
  * Identifiers are checked as the doctor types, and the review step shows
  * exactly what the expert will receive — built by `deIdentify`, so the preview
  * cannot drift from what is shared. Save Draft keeps the work in the
- * Clarifications list; Submit posts it to the expert.
+ * Clarifications list; Post sends it to the expert panel.
+ *
+ * The doctor does not choose the reviewer: posting puts the case in an
+ * administrator's queue and the administrator assigns one. Nothing here names
+ * an expert, because the backend never tells the author who it is.
  */
 export const CreateClarificationScreen = ({
   initialAppointmentId,
@@ -107,6 +115,7 @@ export const CreateClarificationScreen = ({
   onSubmit,
   onSaveDraft,
   onDirtyChange,
+  busy = false,
 }: {
   /** Raised from a consultation: the case is chosen already. */
   initialAppointmentId?: string;
@@ -117,6 +126,8 @@ export const CreateClarificationScreen = ({
   onSaveDraft: (draft: ClarificationDraft) => void;
   /** Reports unsaved work so the route can ask before it is dropped — on Back, swipe or Android back. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** A save or post is in flight — both actions wait for it. */
+  busy?: boolean;
 }) => {
   const targetId = existing?.appointmentId ?? initialAppointmentId;
   const held = useStore(selectCases).filter((c) => c.state !== 'noShow');
@@ -134,31 +145,30 @@ export const CreateClarificationScreen = ({
   }, []);
 
   const [step, setStep] = useState(0);
-  const [pickingExpert, setPickingExpert] = useState(false);
-
-  /** Picking the reviewer is the last act: confirm, then submit to them. */
-  const sendTo = (e: (typeof EXPERT_PANEL)[number]) => {
-    if (!draft) return;
-    setPickingExpert(false);
-    const addressed = { ...draft, expertId: e.id, expertName: e.name, speciality: e.speciality };
-    confirm({
-      title: `Submit to ${e.name}?`,
-      message:
-        'The de-identified case is shared with this reviewer. The patient does not see this discussion.',
-      confirmLabel: 'Submit',
-      onConfirm: () => onSubmit(addressed),
-    });
-  };
   const [draft, setDraft] = useState<ClarificationDraft | null>(start);
   const [confirmed, setConfirmed] = useState(false);
+
+  // Posting asks who should review it first: the picker below, then onSubmit.
   const [picking, setPicking] = useState(false);
+  const [expertId, setExpertId] = useState<string | null>(null);
+  const post = () => setPicking(true);
+  const send = () => {
+    if (!draft) return;
+    setPicking(false);
+    onSubmit(expertId ? { ...draft, expertDoctorId: expertId } : { ...draft, expertDoctorId: undefined });
+  };
 
   const set = <K extends keyof ClarificationDraft>(k: K, v: ClarificationDraft[K]) =>
     setDraft((d) => (d ? { ...d, [k]: v } : d));
 
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(start);
+  // every field the server scans — a field left out here is one it would refuse unannounced
   const flagged = useMemo(
-    () => !!draft && hasIdentifiers(`${draft.history} ${draft.question} ${draft.title} ${draft.provisionalDiagnosis}`),
+    () =>
+      !!draft &&
+      hasIdentifiers(
+        `${draft.history} ${draft.question} ${draft.title} ${draft.provisionalDiagnosis} ${draft.currentPlan} ${draft.guidanceArea}`
+      ),
     [draft]
   );
   const shared = draft ? deIdentify(draft) : null;
@@ -193,7 +203,9 @@ export const CreateClarificationScreen = ({
               step === 2 ? 'Check the details below before sharing with an expert.' : 'Prepare a de-identified case for expert guidance.'
             }
             right={
-              draft ? <HeaderTextAction testID="save-draft" label="Save Draft" onPress={() => onSaveDraft(draft)} /> : undefined
+              draft ? (
+                <HeaderTextAction testID="save-draft" label={busy ? 'Saving…' : 'Save Draft'} onPress={() => onSaveDraft(draft)} disabled={busy} />
+              ) : undefined
             }
           />
           <Stepper steps={STEPS} current={step} />
@@ -209,53 +221,16 @@ export const CreateClarificationScreen = ({
             ) : (
               <SolidButton
                 testID="submit"
-                label="Select Doctor"
+                label={busy ? 'Posting…' : 'Select doctor'}
                 // the identifier confirmation is a hard gate, not a nudge
-                disabled={!confirmed || flagged}
-                onPress={() => setPickingExpert(true)}
+                disabled={!confirmed || flagged || busy}
+                onPress={post}
               />
             )}
           </View>
         </View>
       }
     >
-      <BottomSheet
-        testID="expert-sheet"
-        visible={pickingExpert}
-        title="Select a doctor"
-        subtitle="The de-identified case goes to the reviewer you pick."
-        onClose={() => setPickingExpert(false)}
-      >
-        <View style={s.caseList}>
-          {EXPERT_PANEL.map((e) => (
-            <Pressable
-              key={e.id}
-              testID={`select-expert-${e.id}`}
-              disabled={!e.available}
-              onPress={() => sendTo(e)}
-              style={({ pressed }) => [s.caseOption, !e.available && s.expertOff, pressed && s.pressed]}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !e.available }}
-              accessibilityLabel={`${e.name}, ${e.speciality}`}
-            >
-              <View style={s.caseAvatar}>
-                <Icon name="user" size={17} color={colors.surfie} />
-              </View>
-              <View style={s.flex}>
-                <Text style={s.caseName}>{e.name}</Text>
-                <Text style={s.caseMeta}>
-                  {e.speciality} • {e.years} yrs
-                </Text>
-                <Text style={s.expertMeta}>
-                  {e.available ? e.respondsIn : 'Unavailable right now'}
-                </Text>
-              </View>
-              <Icon name="chevronRight" size={17} color={C.muted} />
-            </Pressable>
-          ))}
-        </View>
-      </BottomSheet>
-
       <View style={s.body}>
         {step === 0 && (
           <>
@@ -319,12 +294,23 @@ export const CreateClarificationScreen = ({
                 <Text style={s.privateNote}>Name and IDs above stay with you. Only the fields below are shared.</Text>
 
                 <SectionTitle>Case title</SectionTitle>
-                <Field testID="title" value={draft.title} onChangeText={(t) => set('title', t)} accessibilityLabel="Case title" />
+                <Field testID="title" value={draft.title} onChangeText={(t) => set('title', t)} max={TITLE_MAX} accessibilityLabel="Case title" />
 
                 <SectionTitle>Patient profile</SectionTitle>
                 <View style={s.twoCol}>
                   <View style={s.flex}>
-                    <SelectField testID="age" label="Age" value={draft.ageLabel} options={AGE_BANDS} onChange={(v) => set('ageLabel', v)} />
+                    <Label>Age (years)</Label>
+                    <Field
+                      testID="age"
+                      value={draft.age === null ? '' : String(draft.age)}
+                      onChangeText={(t) => {
+                        const digits = t.replace(/\D/g, '').slice(0, 3);
+                        const age = digits ? Math.min(120, Number(digits)) : null;
+                        setDraft((d) => (d ? { ...d, age, ageLabel: ageLabelOf(age) } : d));
+                      }}
+                      keyboardType="number-pad"
+                      accessibilityLabel="Age in years"
+                    />
                   </View>
                   <View style={s.flex}>
                     <SelectField
@@ -356,6 +342,7 @@ export const CreateClarificationScreen = ({
                   value={draft.provisionalDiagnosis}
                   onChangeText={(t) => set('provisionalDiagnosis', t)}
                   placeholder="e.g. Generalised anxiety disorder, provisional"
+                  max={DIAGNOSIS_MAX}
                   accessibilityLabel="Provisional diagnosis"
                 />
 
@@ -366,6 +353,7 @@ export const CreateClarificationScreen = ({
                   onChangeText={(t) => set('currentPlan', t)}
                   multiline
                   height={64}
+                  max={PLAN_MAX}
                   accessibilityLabel="Current plan"
                 />
               </>
@@ -412,59 +400,8 @@ export const CreateClarificationScreen = ({
 
             <SectionTitle>Urgency</SectionTitle>
             <Segmented<Urgency> options={URGENCIES} value={draft.urgency} onChange={(v) => set('urgency', v)} idPrefix="urgency" />
-
-            <SectionTitle>Supporting files</SectionTitle>
-            <Pressable
-              testID="upload"
-              onPress={() => setPicking(true)}
-              style={({ pressed }) => [s.upload, pressed && s.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Attach a supporting file"
-            >
-              <View style={s.uploadIcon}>
-                <Icon name="upload" size={16} color={colors.surfie} />
-              </View>
-              <View style={s.flex}>
-                <Text style={s.uploadTitle}>Attach a file</Text>
-                <Text style={s.uploadMeta}>PDF or image, up to 10 MB. Remove identifiers first.</Text>
-              </View>
-            </Pressable>
-            {draft.files.map((f) => (
-              <View key={f.id} style={s.fileChip}>
-                <Icon name="document" size={14} color={colors.surfie} />
-                <Text style={s.fileName} numberOfLines={1}>
-                  {f.name} · {f.size}
-                </Text>
-                <Pressable
-                  testID={`remove-${f.id}`}
-                  onPress={() =>
-                    confirm({
-                      title: 'Remove this file?',
-                      message: f.name,
-                      confirmLabel: 'Remove',
-                      destructive: true,
-                      onConfirm: () => set('files', draft.files.filter((x) => x.id !== f.id)),
-                    })
-                  }
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${f.name}`}
-                >
-                  <Icon name="trash" size={15} color={colors.danger} />
-                </Pressable>
-              </View>
-            ))}
-            <FilePickerSheet
-              visible={picking}
-              kind="document"
-              maxMb={10}
-              testID="clarification-file"
-              onClose={() => setPicking(false)}
-              onPick={(f: PickedFile) => {
-                setPicking(false);
-                set('files', [...draft.files, { id: `f-${Date.now().toString(36)}`, name: f.name, size: f.size }]);
-              }}
-            />
+            {/* ponytail: no supporting files — the backend has no route to attach one to a case.
+                A file picked here would never reach the expert. Add an upload when the API has one. */}
           </>
         )}
 
@@ -491,7 +428,7 @@ export const CreateClarificationScreen = ({
             <ReviewGroup title="Additional information" onEdit={() => setStep(1)}>
               <SummaryRow
                 label="Details"
-                value={`${URGENCIES.find((u) => u.key === draft.urgency)!.label} • ${draft.guidanceArea} • ${shared.attachments} attachment${shared.attachments === 1 ? '' : 's'}`}
+                value={`${URGENCIES.find((u) => u.key === draft.urgency)!.label} • ${draft.guidanceArea}`}
                 last
               />
             </ReviewGroup>
@@ -505,7 +442,80 @@ export const CreateClarificationScreen = ({
           </>
         )}
       </View>
+      <ExpertPicker
+        visible={picking}
+        selected={expertId}
+        onSelect={setExpertId}
+        onCancel={() => setPicking(false)}
+        onConfirm={send}
+      />
     </Screen>
+  );
+};
+
+/**
+ * Who should review it. Opened by Post: the doctor picks an expert, or leaves
+ * it to CoraCure's admin queue. The reviewer sees only the de-identified case.
+ */
+const ExpertPicker = ({
+  visible,
+  selected,
+  onSelect,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  selected: string | null;
+  onSelect: (id: string | null) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) => {
+  const experts = useExperts(visible);
+  const options = [
+    { id: null, fullName: 'Let CoraCure choose', specialty: 'An administrator assigns an available expert' },
+    ...(experts.data ?? []),
+  ];
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View style={s.scrim}>
+        <View style={s.sheet} testID="expert-picker">
+          <Text style={s.sheetTitle}>Choose an expert</Text>
+          <Text style={s.sheetSub}>They see only the de-identified case. The patient never sees this discussion.</Text>
+          <ScrollView style={s.sheetList}>
+            {experts.error ? (
+              <Pressable onPress={experts.retry} accessibilityRole="button">
+                <Text style={s.sheetNote}>
+                  Could not load experts ({experts.error.message}). Tap to retry, or let CoraCure choose.
+                </Text>
+              </Pressable>
+            ) : !experts.data ? (
+              <ActivityIndicator color={colors.surfie} style={s.sheetLoading} />
+            ) : null}
+            {options.map((o) => (
+              <Pressable
+                key={o.id ?? 'any'}
+                testID={`expert-${o.id ?? 'any'}`}
+                onPress={() => onSelect(o.id)}
+                style={[s.expertRow, selected === o.id && s.expertOn]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: selected === o.id }}
+              >
+                <View style={s.flex}>
+                  <Text style={s.caseName}>{o.fullName}</Text>
+                  {o.specialty ? <Text style={s.caseMeta}>{o.specialty}</Text> : null}
+                </View>
+                {selected === o.id && <Icon name="check" size={18} color={colors.surfie} />}
+              </Pressable>
+            ))}
+            {experts.data && experts.data.length === 0 && <Text style={s.sheetNote}>No experts are available right now.</Text>}
+          </ScrollView>
+          <View style={s.footRow}>
+            <GhostButton testID="expert-cancel" label="Cancel" onPress={onCancel} />
+            <SolidButton testID="expert-confirm" label="Post" onPress={onConfirm} />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 };
 
@@ -601,6 +611,25 @@ const s = StyleSheet.create({
   editBtn: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 4 },
   editLink: { ...typeStyles.buttonSmall, color: colors.surfie },
   groupBody: { backgroundColor: '#F2F5F4', borderRadius: 10, paddingHorizontal: 10 },
+
+  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: spacing.lg, maxHeight: '75%' },
+  sheetTitle: { ...typeStyles.cardTitle, color: C.ink },
+  sheetSub: { ...typeStyles.caption, color: C.muted, marginTop: 4, marginBottom: spacing.sm },
+  sheetList: { marginBottom: spacing.md },
+  sheetLoading: { marginVertical: spacing.md },
+  sheetNote: { ...typeStyles.caption, color: C.muted, marginVertical: spacing.sm },
+  expertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 10,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  expertOn: { borderColor: colors.surfie, backgroundColor: C.mint },
 
   confirmWrap: { marginTop: spacing.md, gap: 4 },
   audit: { ...typeStyles.helper, color: C.muted, marginLeft: 34 },

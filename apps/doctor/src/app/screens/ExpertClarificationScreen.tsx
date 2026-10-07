@@ -1,18 +1,19 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
 
+import { messageFor } from '@coracure/api/errors';
+
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, Button, StatusPill } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Tracker } from '../../components/compact';
-import { FilePickerSheet } from '../../components/upload';
 import { confirm } from '../../components/confirm';
 import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
 import { selectDoctor } from '../../state/selectors';
-import { closeClarification, replyToClarification } from '../../state/actions';
+import { closeCase, identifierProblem, replyToCase } from '../../data/clarifications';
 import {
   experts,
   LIST_STATUS_LABEL,
@@ -43,16 +44,27 @@ export const ExpertClarificationScreen = ({
   const c = useStore((st) => st.clarifications.find((x) => x.id === clarification.id)) ?? clarification;
   const doctor = useStore(selectDoctor);
   const [text, setText] = useState('');
-  const [picking, setPicking] = useState(false);
+  const [sending, setSending] = useState(false);
   const scroll = useRef<ScrollView>(null);
   const closed = c.status === 'closed';
+  // The backend takes a reply only once a reviewer is involved — a posted case
+  // still waiting for assignment has nobody to answer yet.
+  const canReply = c.status !== 'posted' && c.status !== 'draft' && !closed;
 
-  const send = () => {
+  const send = async () => {
     const body = text.trim();
-    if (!body) return;
-    replyToClarification(c.id, body);
-    setText('');
-    toast.show('Reply sent to the expert');
+    if (!body || sending) return;
+    setSending(true);
+    try {
+      await replyToCase(c, body);
+      setText('');
+      toast.show('Reply sent to the expert');
+    } catch (e) {
+      // the text stays in the box, so nothing typed is lost
+      toast.show(identifierProblem(e) ?? messageFor(e), 'error');
+    } finally {
+      setSending(false);
+    }
   };
 
   const close = () =>
@@ -60,14 +72,18 @@ export const ExpertClarificationScreen = ({
       title: 'Close this thread?',
       message: 'The discussion is kept for audit. Nothing is added to the patient record.',
       confirmLabel: 'Close thread',
-      onConfirm: () => {
-        closeClarification(c.id);
-        toast.show('Thread closed');
+      onConfirm: async () => {
+        try {
+          await closeCase(c);
+          toast.show('Thread closed');
+        } catch (e) {
+          toast.show(messageFor(e), 'error');
+        }
       },
     });
 
   const authorOf = (author: string) =>
-    author === 'me' ? { name: `${doctor.name} (you)`, initials: doctor.initials, role: 'Treating doctor' } : experts[author] ?? { name: 'Expert', initials: 'EX', role: 'Expert' };
+    author === 'me' ? { name: `${doctor.name} (you)`, initials: doctor.initials, role: 'Consulting professional' } : experts[author] ?? { name: 'Expert', initials: 'EX', role: 'Expert' };
 
   return (
     <Screen
@@ -82,18 +98,13 @@ export const ExpertClarificationScreen = ({
             <Icon name="lock" size={15} color={colors.inkMuted} />
             <Text style={s.closedText}>Thread closed · history kept for audit</Text>
           </View>
+        ) : !canReply ? (
+          <View testID="awaiting-assignment" style={s.closedFoot}>
+            <Icon name="clock" size={15} color={colors.inkMuted} />
+            <Text style={s.closedText}>Waiting for an administrator to assign a reviewer</Text>
+          </View>
         ) : (
           <View style={s.inputRow}>
-            <Pressable
-              testID="attach"
-              onPress={() => setPicking(true)}
-              hitSlop={6}
-              style={s.attachBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Attach a file"
-            >
-              <Icon name="clip" size={18} color={colors.inkMuted} />
-            </Pressable>
             <TextInput
               testID="reply-input"
               style={s.input}
@@ -109,8 +120,8 @@ export const ExpertClarificationScreen = ({
             <Pressable
               testID="send-reply"
               onPress={send}
-              style={[s.sendBtn, !text.trim() && s.sendBtnOff]}
-              disabled={!text.trim()}
+              style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnOff]}
+              disabled={!text.trim() || sending}
               accessibilityRole="button"
               accessibilityLabel="Send reply"
             >
@@ -199,7 +210,10 @@ export const ExpertClarificationScreen = ({
             {!!c.guidance && (
               <Button testID="mark-reviewed" label={c.outcome ? 'Update decision' : 'Record decision'} icon="checkCircle" onPress={onRecordDecision} size="sm" style={s.flex} />
             )}
-            <Button testID="close-thread" label="Close thread" icon="close" variant="secondary" size="sm" onPress={close} style={s.flex} />
+            {/* the backend closes only a case that has started — never a draft */}
+            {c.status !== 'draft' && (
+              <Button testID="close-thread" label="Close thread" icon="close" variant="secondary" size="sm" onPress={close} style={s.flex} />
+            )}
           </View>
         )}
         {!!c.outcome && (
@@ -212,19 +226,6 @@ export const ExpertClarificationScreen = ({
           </View>
         )}
       </ScrollView>
-
-      <FilePickerSheet
-        visible={picking}
-        kind="document"
-        maxMb={10}
-        testID="clarification-attach"
-        onClose={() => setPicking(false)}
-        onPick={(f) => {
-          setPicking(false);
-          replyToClarification(c.id, '', f.name);
-          toast.show(`${f.name} shared`);
-        }}
-      />
     </Screen>
   );
 };

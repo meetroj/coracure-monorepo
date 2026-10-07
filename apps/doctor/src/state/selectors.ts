@@ -4,6 +4,8 @@
  * memoised per state so all subscribers share one computation and one
  * reference until something changes.
  */
+import { doctorProfileApi } from '@coracure/api';
+
 import {
   appointments as fixtureAppointments,
   doctor as demoDoctor,
@@ -16,11 +18,9 @@ import {
   type PatientCase,
 } from '../data/doctor';
 import { emptyRecord, type ConsultationRecord, type ProfessionalType } from '../data/clinical';
-import { patientAlerts, sortedAlerts, type PatientAlert } from '../data/followup';
-import { notifications, type AppNotification } from '../data/messaging';
 import { totalExperienceYears, type UploadedFile } from '../data/registration';
-import { DEMO_NOW_MINUTES, TODAY, dayOffset, fmtDate, fmtDayMonth, fmtElapsed, minutesAgo } from '../data/calendar';
-import { memoByState, memoByStateAndKey, type AlertLive, type AppState } from './store';
+import { TODAY, dayOffset, fmtDate, fmtDayMonth, fmtElapsed, minutesAgo, nowMinutes, nowMs } from '../data/calendar';
+import { memoByState, memoByStateAndKey, type AppState } from './store';
 
 /* ------------------------------- the doctor ------------------------------- */
 
@@ -44,20 +44,75 @@ const initialsOf = (name: string) =>
 /** Degrees that are psychology, not medicine — no prescribing permission. */
 const PSYCHOLOGY_ONLY = /psycholog/i;
 
-const currentMonth = () => `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`;
-
 /**
  * The signed-in doctor. The demo account is Dr. Arjun Mehta; a doctor who
  * onboarded this session sees what they submitted — their name, photo,
  * languages, degrees and experience — so the app never shows one identity on
  * the dashboard and another in the form they just filled in.
  */
+const LANGUAGE_NAME: Record<string, string> = doctorProfileApi.LANGUAGE_NAMES;
+
+/**
+ * The signed-in doctor.
+ *
+ * *** THE BACKEND'S PROFILE WINS WHEN IT HAS LOADED. *** Name, registration
+ * number, fee, photo and — the one that matters most — whether they may
+ * prescribe come from `GET /me/doctor/profile`. The prescribing flag decides
+ * whether the medicines section exists at all, and the backend refuses
+ * medicines from a non-prescriber with `PRESCRIBING_NOT_PERMITTED`, so a local
+ * guess that disagreed would offer a form the server rejects on save.
+ *
+ * Until it loads, the local profile stands in: what the doctor typed at
+ * onboarding this session, or the demo doctor.
+ */
 export const selectDoctor = memoByState((s): DoctorProfile => {
+  const local = localDoctor(s);
+  const p = s.selfProfile;
+  if (!p) return local;
+  const raw = (p.fullName ?? '').trim();
+  const name = !raw ? local.name : /^dr\.?\s/i.test(raw) ? raw.replace(/^dr\.?\s*/i, 'Dr. ') : `Dr. ${raw}`;
+  // `canPrescribe` is a yes/no; which non-prescribing profession it is has no
+  // backend field, so the local guess is kept for the label when it already
+  // says non-prescriber.
+  const professionalType: ProfessionalType = p.canPrescribe
+    ? 'psychiatrist'
+    : local.professionalType === 'psychiatrist'
+      ? 'psychologist'
+      : local.professionalType;
+  return {
+    ...local,
+    name,
+    initials: initialsOf(raw) || local.initials,
+    professionalType,
+    // Empty, not guessed. The profile carries a `specialtyId`, and its NAME
+    // comes from the catalogue through `useSpecialtyName`. A label inferred
+    // from `canPrescribe` called every prescriber a Psychiatrist - a General
+    // Physician read "Psychiatrist" on the dashboard and correctly on Profile.
+    speciality: '',
+    qualification: p.qualification ?? local.qualification,
+    // Likewise no sub-specialties: the fixture's list must never stand in.
+    specialisations: [],
+    yearsExperience: p.yearsOfExperience ?? local.yearsExperience,
+    registrationNo: p.registrationNumber ?? 'Under review',
+    languages: p.languages?.length ? p.languages.map((l) => LANGUAGE_NAME[l] ?? l) : local.languages,
+    bio: p.bio ?? '',
+    consultationFee: p.consultationFeeInr ?? local.consultationFee,
+    consultationMinutes: p.consultationDurationMinutes ?? local.consultationMinutes,
+    bankVerified: p.bankVerified ?? local.bankVerified,
+    // A signed URL to the APPROVED photo, fresh on every read of the profile.
+    // Every avatar renders `photoFile`, so the real one goes there.
+    ...(p.photoUrl ? { photoFile: { name: 'profile-photo', kind: 'image' as const, size: '', uri: p.photoUrl } } : {}),
+    registrationVerified: p.verificationStatus === 'verified',
+  };
+});
+
+const localDoctor = (s: AppState): DoctorProfile => {
   const sub = s.submission;
   if (!sub) return { ...demoDoctor, registrationVerified: true };
   const raw = sub.basic.fullName.trim();
   const name = /^dr\.?\s/i.test(raw) ? raw.replace(/^dr\.?\s*/i, 'Dr. ') : `Dr. ${raw}`;
-  const degrees = sub.qualifications.map((q) => q.degree).filter(Boolean);
+  const q = sub.qualifications;
+  const degrees = [q.basicQualification, q.pgSpecialisation, q.superSpecialisation, q.fellowship].map((d) => d.trim()).filter(Boolean);
   const psychologist = degrees.length > 0 && degrees.every((d) => PSYCHOLOGY_ONLY.test(d) && !/medicine/i.test(d));
   const professionalType: ProfessionalType = psychologist ? 'psychologist' : 'psychiatrist';
   return {
@@ -66,16 +121,18 @@ export const selectDoctor = memoByState((s): DoctorProfile => {
     initials: initialsOf(raw) || demoDoctor.initials,
     professionalType,
     speciality: psychologist ? 'Clinical Psychologist' : 'Psychiatrist',
-    qualification: degrees.join(', ') || demoDoctor.qualification,
-    yearsExperience: totalExperienceYears(sub.experience, currentMonth()),
+    // names only, as a patient sees them: "MBBS · MD Dermatology · DM Endocrinology"
+    qualification: degrees.join(' · ') || demoDoctor.qualification,
+    yearsExperience: totalExperienceYears(sub.experience),
     languages: sub.basic.languages.length ? sub.basic.languages : demoDoctor.languages,
     registrationNo: 'Under review',
     specialisations: [],
     bio: '',
     photoFile: sub.basic.photo ?? undefined,
+    signatureUrl: sub.signature?.uri,
     registrationVerified: s.verification.status === 'approved',
   };
-});
+};
 
 /* ------------------------------ appointments ------------------------------ */
 
@@ -123,13 +180,18 @@ export const joinStateFor = (a: Appointment): JoinState => {
   return { kind: 'later', opensIn: until - JOIN_WINDOW_MIN };
 };
 
-/** The next appointment still to start today, on the demo clock. */
-export const selectNextAppointment = memoByState((s) => {
+/**
+ * The next appointment still to start today. Not memoised per state: it reads
+ * the clock, so it has to be current on every render, not only when the store
+ * changes. `useStore` compares the result shallowly, so this does not re-render.
+ */
+export const selectNextAppointment = (s: AppState) => {
+  const now = nowMinutes();
   const a = selectAppointments(s)
-    .filter((x) => x.dayOffset === 0 && x.state === 'confirmed' && x.minutes + 30 >= DEMO_NOW_MINUTES)
+    .filter((x) => x.dayOffset === 0 && x.state === 'confirmed' && x.minutes + 30 >= now)
     .sort((x, y) => x.minutes - y.minutes)[0];
   return a ? { appointment: a, inMinutes: minutesUntil(a) } : undefined;
-});
+};
 
 export const selectTodaySummary = memoByState((s) => {
   const today = selectAppointments(s).filter((a) => a.dayOffset === 0 && a.state !== 'cancelled');
@@ -155,30 +217,57 @@ export const selectRecord = (s: AppState, appointmentId: string): ConsultationRe
 const docsDone = (r: ConsultationRecord) =>
   (r.notesStatus === 'saved' ? 1 : 0) + (r.rxStatus === 'finalised' ? 1 : 0) + (r.summaryStatus === 'submitted' ? 1 : 0);
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The first unfinished step on this device: 0 notes, 1 prescription, 2 summary, 3 done. */
+const localStep = (r: ConsultationRecord) =>
+  r.notesStatus !== 'saved' ? 0 : r.rxStatus !== 'finalised' ? 1 : r.summaryStatus !== 'submitted' ? 2 : 3;
+
+/**
+ * The same step as the SERVER has it, from `GET /doctor/pending-documentation`
+ * — loaded in the same call as the appointments, so a real appointment never
+ * exists without it. Not in the list: written up. No `startedAt`: nothing
+ * saved yet. A missing prescription or advice: past the notes. Otherwise only
+ * the summary is left. Null for a demo fixture or anything not held yet.
+ */
+const serverStep = (s: AppState, a: Appointment): number | null => {
+  if (!UUID.test(a.id) || a.state !== 'completed') return null;
+  const p = s.pendingDocumentation.find((x) => x.consultationId === a.id);
+  if (!p) return 3;
+  if (!p.startedAt) return 0;
+  return p.outstanding.some((o) => o.code === 'PRESCRIPTION_OR_ADVICE_MISSING' || o.code === 'ADVICE_MISSING') ? 1 : 2;
+};
+
+/**
+ * How far a write-up has got: whichever of this device and the server is
+ * further along. The server is the truth for a consultation written up
+ * elsewhere or before this session; this device is ahead of it between a
+ * save and the next refresh of the pending list.
+ */
+export const writeUpStep = (s: AppState, a: Appointment) => Math.max(localStep(selectRecord(s, a.id)), serverStep(s, a) ?? 0);
+
+const STEP_TASK: (TaskCategory | null)[] = ['note', 'prescription', 'summary', null];
+
 /* ---------------------------------- alerts -------------------------------- */
 
-export type AlertView = PatientAlert & { live: AlertLive };
-
-export const selectAlerts = memoByState((s): AlertView[] =>
-  sortedAlerts(patientAlerts.map((a) => ({ ...a, live: s.alerts[a.id] ?? { status: a.status, read: false } })))
+/**
+ * The appointment a safety alert's consultation belongs to, when it is one of
+ * this doctor's loaded days.
+ *
+ * Matches `a.id` — the real consultation id — not `a.consultationId`, which
+ * is the human reference code ("CON-10482") shown on screen. A `SafetyAlert`
+ * carries the real id, so matching the reference code here would never hit.
+ */
+export const selectAppointmentByConsultation = memoByStateAndKey((s, consultationId): Appointment | undefined =>
+  selectAppointments(s).find((a) => a.id === consultationId)
 );
-
-export const selectAlert = memoByStateAndKey((s, alertId): AlertView | undefined =>
-  selectAlerts(s).find((a) => a.id === alertId)
-);
-
-export const isOpenAlert = (a: AlertView) => a.live.status === 'open' || a.live.status === 'acknowledged';
 
 export const selectAlertCounts = memoByState((s) => {
-  const list = selectAlerts(s).filter(isOpenAlert);
+  const list = s.openAlerts.filter((a) => a.state !== 'closed');
   return {
-    highPriority: list.filter((a) => a.category === 'redFlag').length,
-    other: list.filter((a) => a.category !== 'redFlag').length,
+    highPriority: list.filter((a) => a.alertType === 'red_flag').length,
+    other: list.filter((a) => a.alertType !== 'red_flag').length,
     open: list.length,
-    byCategory: list.reduce<Record<string, number>>((acc, a) => {
-      acc[a.category] = (acc[a.category] ?? 0) + 1;
-      return acc;
-    }, {}),
   };
 });
 
@@ -186,15 +275,15 @@ export const selectAlertCounts = memoByState((s) => {
 
 export const caseStateFor = (s: AppState, a: Appointment): CaseState => {
   if (a.state === 'noShow') return 'noShow';
-  const r = selectRecord(s, a.id);
-  const complete = r.notesStatus === 'saved' && r.rxStatus === 'finalised' && r.summaryStatus === 'submitted';
-  if (!complete) return 'pending';
-  const followUpOpen = selectAlerts(s).some((al) => al.appointmentId === a.id && isOpenAlert(al));
+  if (writeUpStep(s, a) < 3) return 'pending';
+  // `al.consultationId` is the real id; compare against `a.id`, not the human reference code.
+  const followUpOpen = s.openAlerts.some((al) => al.consultationId === a.id && al.state !== 'closed');
   return followUpOpen ? 'followUp' : 'complete';
 };
 
 const toCase = (s: AppState, a: Appointment): PatientCase => {
   const r = selectRecord(s, a.id);
+  const server = serverStep(s, a) ?? 0;
   return {
     id: `c-${a.id}`,
     appointmentId: a.id,
@@ -209,10 +298,10 @@ const toCase = (s: AppState, a: Appointment): PatientCase => {
     gender: a.gender,
     concern: a.concern,
     state: caseStateFor(s, a),
-    docsDone: a.state === 'noShow' ? 0 : docsDone(r),
+    docsDone: a.state === 'noShow' ? 0 : Math.max(docsDone(r), server),
     docsTotal: 3,
-    prescriptionFinalised: r.rxStatus === 'finalised',
-    summarySubmitted: r.summaryStatus === 'submitted',
+    prescriptionFinalised: r.rxStatus === 'finalised' || server >= 2,
+    summarySubmitted: r.summaryStatus === 'submitted' || server === 3,
   };
 };
 
@@ -262,7 +351,7 @@ export type ClinicalTask = {
   alertId?: string;
   caseId: string;
   specialty: string;
-  /** Minutes the task has been waiting, on the demo clock. */
+  /** Minutes the task has been waiting. */
   pendingMinutes: number;
   pendingFor: string;
   openedOn: string;
@@ -278,15 +367,8 @@ export const selectTasks = memoByState((s): ClinicalTask[] => {
   selectAppointments(s)
     .filter((a) => a.state === 'completed')
     .forEach((a) => {
-      const r = selectRecord(s, a.id);
-      const category: TaskCategory | null =
-        r.notesStatus !== 'saved'
-          ? 'note'
-          : r.rxStatus !== 'finalised'
-            ? 'prescription'
-            : r.summaryStatus !== 'submitted'
-              ? 'summary'
-              : null;
+      // the next step the server or this device still needs — whichever is further along
+      const category = STEP_TASK[writeUpStep(s, a)];
       if (!category) return;
       // the task opens when the consultation ends
       const pending = Math.max(1, minutesAgo(a.dayOffset, a.minutes + 30));
@@ -304,13 +386,14 @@ export const selectTasks = memoByState((s): ClinicalTask[] => {
         openedOn: fmtDayMonth(dayOffset(a.dayOffset)),
       });
     });
-  selectAlerts(s)
-    .filter((al) => !al.live.read && al.responses.length > 0)
+  s.openAlerts
+    .filter((al) => al.state !== 'closed')
     .forEach((al) => {
-      // The doctor's own list, not the fixture module: an alert is about a
-      // consultation they actually have.
-      const a = selectAppointments(s).find((x) => x.id === al.appointmentId);
+      // An alert is about a consultation the doctor actually has loaded.
+      const a = selectAppointmentByConsultation(s, al.consultationId);
       if (!a) return;
+      // the same clock as the write-up tasks above, so the two sort against each other
+      const pending = Math.max(0, Math.round((nowMs() - new Date(al.createdAt).getTime()) / 60000));
       tasks.push({
         id: `t-${al.id}`,
         category: 'followUp',
@@ -321,8 +404,8 @@ export const selectTasks = memoByState((s): ClinicalTask[] => {
         alertId: al.id,
         caseId: a.consultationId,
         specialty: 'Follow-up check-in',
-        pendingMinutes: al.receivedMinutesAgo,
-        pendingFor: fmtElapsed(al.receivedMinutesAgo),
+        pendingMinutes: pending,
+        pendingFor: fmtElapsed(pending),
         openedOn: 'Today',
       });
     });
@@ -355,16 +438,8 @@ export const selectLiveStatus = (s: AppState): LiveStatus => {
 
 /* ------------------------------ notifications ----------------------------- */
 
-/** An instant request only reaches a doctor who is Available Now. */
-export const selectNotifications = memoByState((s): (AppNotification & { read: boolean })[] =>
-  notifications
-    .filter((n) => n.kind !== 'instantRequest' || (selectLiveStatus(s) === 'available' && s.instant === 'pending'))
-    .map((n) => ({ ...n, read: !!s.notifRead[n.id] }))
-);
-
-export const selectUnreadNotificationCount = memoByState(
-  (s) => selectNotifications(s).filter((n) => !n.read).length
-);
+/** The real count from `GET /me/notifications/unread-count`, loaded by `useDoctorDay`. */
+export const selectUnreadNotificationCount = (s: AppState) => s.unreadCount;
 
 export const selectUnreadMessageCount = memoByState((s) => s.threads.reduce((sum, t) => sum + t.unread, 0));
 

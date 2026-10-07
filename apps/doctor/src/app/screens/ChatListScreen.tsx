@@ -76,7 +76,13 @@ export const ChatListScreen = ({
         })}
       </ScrollView>
 
-      {shown.length === 0 ? (
+      {threads.length === 0 ? (
+        <EmptyState
+          icon="message"
+          title="No messages yet"
+          body="Conversations with your patients appear here. Discussions with experts are in Clarifications."
+        />
+      ) : shown.length === 0 ? (
         <EmptyState icon="message" title="No conversations" body="Nothing matches this filter or search." />
       ) : (
         <View style={s.list}>

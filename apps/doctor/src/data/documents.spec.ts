@@ -7,6 +7,7 @@ import {
   patientRequestNotice,
   newRequest,
   visibleDocs,
+  docsForPatient,
   patientDocs,
   type FileRecord,
 } from './documents';
@@ -127,4 +128,11 @@ test('only files inside the assigned care relationship are visible', () => {
   const shown = visibleDocs(withForeign);
   expect(shown.every((d) => d.assigned)).toBe(true);
   expect(shown.find((d) => d.id === 'x1')).toBeUndefined();
+});
+
+test('a real patient never gets a demo fixture document — only what the server lists', () => {
+  const real = '9b2f1c3a-0000-4000-8000-000000000000';
+  const planted = [...patientDocs, { ...patientDocs[0], id: 'x', patientId: real }];
+  expect(docsForPatient(planted, real)).toEqual([]);
+  expect(docsForPatient(patientDocs, 'PT-10482').length).toBeGreaterThan(0);
 });

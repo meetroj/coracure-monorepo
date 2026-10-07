@@ -19,15 +19,26 @@ import { STATUS_LABEL } from '../../data/doctor';
  */
 export const InstantDeclinedScreen = ({
   expired = false,
+  rerouted = true,
   onReturn,
   onPause,
+  pausing = false,
   onBack,
 }: {
   /** The request timed out rather than being declined. */
   expired?: boolean;
+  /**
+   * `declineOffer` answers this directly — `rerouted: false` means no other
+   * provider could be offered it, so claiming "no further action is required"
+   * would be false reassurance. Defaults true: an expired or already-gone
+   * offer carries no such answer, and that was always this screen's assumption.
+   */
+  rerouted?: boolean;
   onReturn: () => void;
   /** Stops instant requests (status becomes Scheduled Only). Hidden once they are already off. */
   onPause?: () => void;
+  /** The pause is being saved; the control waits for the server. */
+  pausing?: boolean;
   onBack: () => void;
 }) => {
   const status = useStore(selectLiveStatus);
@@ -53,8 +64,16 @@ export const InstantDeclinedScreen = ({
         <View style={s.actions}>
           <Button testID="return" label="Return to dashboard" onPress={onReturn} />
           {available && !!onPause && (
-            <Pressable testID="pause" onPress={onPause} hitSlop={8} style={s.pauseBtn} accessibilityRole="button">
-              <Text style={s.pauseText}>Pause instant requests</Text>
+            <Pressable
+              testID="pause"
+              onPress={onPause}
+              disabled={pausing}
+              hitSlop={8}
+              style={s.pauseBtn}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: pausing, busy: pausing }}
+            >
+              <Text style={s.pauseText}>{pausing ? 'Pausing…' : 'Pause instant requests'}</Text>
             </Pressable>
           )}
           <Text style={s.footNote}>Patient details from this request are no longer accessible.</Text>
@@ -78,12 +97,16 @@ export const InstantDeclinedScreen = ({
         <View style={s.routingCard}>
           <Text style={s.routingLabel}>Routing status</Text>
           <View style={s.routingRow}>
-            <View style={s.routingIcon}>
-              <Icon name="checkCircle" size={22} color={colors.surfie} />
+            <View style={[s.routingIcon, !rerouted && s.routingIconWarn]}>
+              <Icon name={rerouted ? 'checkCircle' : 'alertCircle'} size={22} color={rerouted ? colors.surfie : colors.warn} />
             </View>
             <View style={s.flex}>
-              <Text style={s.routingTitle}>Automatically rerouted</Text>
-              <Text style={s.routingBody}>No further action is required.</Text>
+              <Text style={s.routingTitle} testID={rerouted ? undefined : 'not-rerouted'}>
+                {rerouted ? 'Automatically rerouted' : 'No other doctor is available right now'}
+              </Text>
+              <Text style={s.routingBody}>
+                {rerouted ? 'No further action is required.' : 'The patient will be told to try again shortly.'}
+              </Text>
             </View>
           </View>
         </View>
@@ -132,6 +155,7 @@ const s = StyleSheet.create({
   routingLabel: { ...typeStyles.caption, color: colors.inkMuted },
   routingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
   routingIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#D6F0E4', alignItems: 'center', justifyContent: 'center' },
+  routingIconWarn: { backgroundColor: colors.warnSoft },
   routingTitle: { ...typeStyles.cardTitle, color: colors.ink },
   routingBody: { ...typeStyles.body, color: colors.inkMuted },
 

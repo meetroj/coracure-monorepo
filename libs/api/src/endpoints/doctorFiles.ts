@@ -1,4 +1,6 @@
 import { api } from '../http';
+import { ClientCode, clientError } from '../errors';
+import { putToSignedUrl, type LocalFile } from '../upload';
 
 /**
  * A patient's documents, from the treating side (API_CONTRACT §7.5).
@@ -43,6 +45,66 @@ export type ReportRequest = {
   createdAt: string;
   /** What the patient sent back against it. */
   fulfilledBy: { id: string; fileName: string; createdAt: string }[];
+};
+
+/** What the object store will be told the file is — the same restriction the patient's own upload has. */
+export const UPLOAD_CONTENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/webp'] as const;
+export type UploadContentType = (typeof UPLOAD_CONTENT_TYPES)[number];
+
+/** A doctor's own upload for a patient — `medical_history`, `report` or `photo` only (API_CONTRACT §7.5, added 1 Oct 2026). */
+export type UploadableFileCategory = Extract<PatientFileCategory, 'medical_history' | 'report' | 'photo'>;
+
+export type UploadTicket = { storageKey: string; upload: { url: string; expiresInSeconds: number } };
+
+/** Step 1 of 3. Refused for a patient this doctor has never consulted. */
+const requestUploadUrl = (
+  patientId: string,
+  input: { category: UploadableFileCategory; fileName: string; contentType: UploadContentType },
+): Promise<UploadTicket> =>
+  api.post<UploadTicket>(`/doctor/patients/${patientId}/files/upload-url`, input);
+
+/**
+ * Step 3 of 3. Always anchored to a consultation this doctor treats — never
+ * held against the patient's general record, which stays theirs to add to.
+ */
+const confirmFileUpload = (
+  patientId: string,
+  input: { category: UploadableFileCategory; fileName: string; storageKey: string; consultationId: string },
+): Promise<PatientFile> => api.post<PatientFile>(`/doctor/patients/${patientId}/files`, input);
+
+/**
+ * All three steps. Mirrors `doctorProfileApi.uploadCredential` — same
+ * request → PUT → confirm handshake, same "don't confirm a failed PUT" rule.
+ */
+export const uploadPatientFile = async (
+  patientId: string,
+  input: { category: UploadableFileCategory; fileName: string; contentType: UploadContentType; consultationId: string },
+  body: Blob | ArrayBuffer | Uint8Array | LocalFile,
+): Promise<PatientFile> => {
+  // RequestFileUploadDto takes exactly these three; `consultationId` there is a 400.
+  const ticket = await requestUploadUrl(patientId, {
+    category: input.category,
+    fileName: input.fileName,
+    contentType: input.contentType,
+  });
+  const status = await putToSignedUrl(ticket.upload.url, input.contentType, body);
+
+  if (status < 200 || status >= 300) {
+    throw clientError(
+      ClientCode.MALFORMED_RESPONSE,
+      status === 403
+        ? 'That upload link has expired. Please choose the file again.'
+        : 'We could not upload that file. Please try again.',
+      status,
+    );
+  }
+
+  return confirmFileUpload(patientId, {
+    category: input.category,
+    fileName: input.fileName,
+    storageKey: ticket.storageKey,
+    consultationId: input.consultationId,
+  });
 };
 
 export const listPatientFiles = (

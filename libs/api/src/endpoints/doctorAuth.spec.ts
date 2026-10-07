@@ -70,15 +70,12 @@ describe('requesting a code', () => {
     expect(calls[0].auth).toBeNull();
   });
 
-  it('surfaces an unenrolled number as INVALID_CREDENTIALS, the same code as a wrong OTP', async () => {
-    replies = [fail(401, 'INVALID_CREDENTIALS', 'That number is not registered as a doctor.')];
+  it('surfaces a suspended account as ACCOUNT_NOT_ACTIVE', async () => {
+    replies = [fail(403, 'ACCOUNT_NOT_ACTIVE', 'This account is no longer active.')];
 
-    // One code for both cases is deliberate on the backend: a distinct "no such
-    // doctor" would let anyone probe who is on the platform. The client must
-    // not try to undo that by guessing from the message.
     await expect(requestOtp('+919999999999')).rejects.toMatchObject({
-      code: 'INVALID_CREDENTIALS',
-      statusCode: 401,
+      code: 'ACCOUNT_NOT_ACTIVE',
+      statusCode: 403,
     });
   });
 
@@ -163,12 +160,22 @@ describe('verifying a code', () => {
     ['pending', 'pending'],
     ['under_review', 'under_review'],
     ['verified', 'verified'],
+    // a rejected doctor signs in to read the reason and resubmit
+    ['rejected', 'rejected'],
   ])('reports verificationStatus %s, which is what the app routes on', async (status) => {
-    replies = [ok({ ...TOKENS, verificationStatus: status })];
+    replies = [ok({ ...TOKENS, verificationStatus: status, isNewAccount: false })];
 
     await expect(
       verifyOtp({ mobileNumber: '+919876543210', challengeId: 'ch-1', code: '000000' }),
-    ).resolves.toEqual({ verificationStatus: status });
+    ).resolves.toEqual({ verificationStatus: status, isNewAccount: false });
+  });
+
+  it('says when the verification created the account', async () => {
+    replies = [ok({ ...TOKENS, verificationStatus: 'pending', isNewAccount: true })];
+
+    await expect(
+      verifyOtp({ mobileNumber: '+919876543210', challengeId: 'ch-1', code: '000000' }),
+    ).resolves.toEqual({ verificationStatus: 'pending', isNewAccount: true });
   });
 
   it('leaves no session behind when the code is wrong', async () => {

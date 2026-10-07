@@ -1,17 +1,24 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+
+import { messageFor } from '@coracure/api/errors';
 
 import { colors, radius, spacing } from '../../theme/brand';
 import { typeStyles, fontWeight } from '../../theme/typography';
 import { Icon } from '../../components/Icon';
 import { Screen, StatusPill } from '../../components/ui';
 import { ScreenHeader, HeaderAction } from '../../components/ScreenHeader';
+import { ActionSheet } from '../../components/BottomSheet';
 import { NoteInput } from '../../components/clinical';
+import { FilePickerSheet, useUpload } from '../../components/upload';
+import { confirm } from '../../components/confirm';
+import { toast } from '../../components/Toast';
 import { useStore } from '../../state/store';
-import { JOIN_WINDOW_MIN, joinStateFor, selectRecord } from '../../state/selectors';
-import { setAllergies } from '../../state/actions';
+import { JOIN_WINDOW_MIN, joinStateFor, selectAppointments, selectRecord } from '../../state/selectors';
+import { useConsultationDetail } from '../../data/consultationDetail';
+import { patchAppointment, setAllergies } from '../../state/actions';
+import { cancelConsultation, markNoShow, patchFromConsultation } from '../../data/appointments';
 import {
-  detailFor,
   minutesUntil,
   modeLabel,
   previousConsultations,
@@ -20,6 +27,7 @@ import {
 } from '../../data/doctor';
 import { docsForPatient, visibleDocs, type PatientDoc } from '../../data/documents';
 import { minutesToClock } from '../../data/calendar';
+import { uploadDoctorFile, usePatientFiles } from '../../data/patientFiles';
 
 /**
  * Appointment Details — everything the doctor needs before (or after) the
@@ -84,7 +92,7 @@ export const AppointmentDetailsScreen = ({
   onBack: () => void;
   onJoin: (appointmentId: string) => void;
   /** Opens this patient's chat thread. */
-  onMessage: () => void;
+  onMessage?: () => void;
   onOpenDoc: (docId: string) => void;
   onViewAllDocs: () => void;
   /** Opens Request a Report for this consultation — the doctor asks, the patient supplies. */
@@ -93,13 +101,78 @@ export const AppointmentDetailsScreen = ({
   onOpenCase: (appointmentId: string) => void;
 }) => {
   const a = appointment;
-  const d = detailFor(a);
+  // `a.id` is the real consultation id: intake, consent and visit count come from the backend
+  const d = useConsultationDetail(a);
+  const allAppointments = useStore(selectAppointments);
   const record = useStore((st) => selectRecord(st, a.id));
-  const docs = visibleDocs(docsForPatient(a.patientId));
+  const allDocs = useStore((st) => st.documents);
+  // The real files (API_CONTRACT §7.5) merged with what the local fixture
+  // still seeds for the demo walkthrough — the same merge `PatientDocumentsScreen`
+  // uses, so a document uploaded here appears there too, and vice versa.
+  const { data: realFiles, retry: retryFiles } = usePatientFiles(a.patientId);
+  const localDocs = useMemo(() => docsForPatient(allDocs, a.patientId), [allDocs, a.patientId]);
+  const docs = useMemo(() => visibleDocs([...(realFiles ?? []), ...localDocs]), [realFiles, localDocs]);
   const shown = docs.slice(0, 4);
-  const past = previousConsultations(a).slice(0, 3);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const upload = useUpload({
+    maxMb: 10,
+    onDone: async (f) => {
+      setUploadError('');
+      setUploading(true);
+      try {
+        // `a.id` is the real consultation id; `.consultationId` is the human
+        // reference code shown on screen — the backend wants the former.
+        await uploadDoctorFile(a.patientId, a.id, f);
+        retryFiles();
+      } catch (e) {
+        setUploadError(messageFor(e));
+      } finally {
+        setUploading(false);
+      }
+    },
+  });
+  const past = previousConsultations(a, allAppointments).slice(0, 3);
   const join = joinStateFor(a);
   const state = STATE_LABEL[a.state];
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [working, setWorking] = useState(false);
+  // Open to a decision only while nothing has decided it already — the backend
+  // is the real authority on the exact cutoff; this just keeps a completed or
+  // already-cancelled card from offering an action that can only 409.
+  const decidable = a.state === 'confirmed' || a.state === 'upcoming';
+
+  const runAction = async (label: string, action: () => Promise<{ state: Appointment['state']; payment: Appointment['payment'] }>) => {
+    setWorking(true);
+    try {
+      const patch = await action();
+      patchAppointment(a.id, patch);
+      toast.show(label);
+    } catch (e) {
+      toast.show(messageFor(e), 'error');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const confirmNoShow = () =>
+    confirm({
+      title: 'Mark as no-show?',
+      message: `${a.name} did not join. This is recorded against the consultation.`,
+      confirmLabel: 'Mark no-show',
+      destructive: true,
+      onConfirm: () => runAction('Marked as no-show', () => markNoShow(a.id).then(patchFromConsultation)),
+    });
+
+  const confirmCancel = () =>
+    confirm({
+      title: 'Cancel this appointment?',
+      message: `${a.name} will be told the consultation is cancelled and refunded.`,
+      confirmLabel: 'Cancel appointment',
+      destructive: true,
+      onConfirm: () => runAction('Appointment cancelled', () => cancelConsultation(a.id).then(patchFromConsultation)),
+    });
 
   // a state that cannot be acted on carries no handler at all
   const cta: { label: string; sub: string; enabled: boolean; onPress?: () => void } = (() => {
@@ -143,7 +216,19 @@ export const AppointmentDetailsScreen = ({
       header={
         <ScreenHeader
           onBack={onBack}
-          right={<HeaderAction testID="message-patient" icon="message" label={`Message ${a.name}`} onPress={onMessage} />}
+          right={
+            <View style={s.headerActions}>
+              {onMessage && <HeaderAction testID="message-patient" icon="message" label={`Message ${a.name}`} onPress={onMessage} />}
+              {decidable && (
+                <HeaderAction
+                  testID="appointment-menu"
+                  icon="more"
+                  label="More actions"
+                  onPress={() => !working && setMenuOpen(true)}
+                />
+              )}
+            </View>
+          }
         />
       }
       footer={
@@ -198,7 +283,7 @@ export const AppointmentDetailsScreen = ({
             <Text style={s.idLabel}>Appointment ID</Text>
             {/* selectable: long-press copies it, without a clipboard dependency */}
             <Text testID="appointment-ref" style={s.idValue} numberOfLines={1} selectable>
-              {d.appointmentRef}
+              {a.consultationId}
             </Text>
           </View>
         </View>
@@ -235,9 +320,14 @@ export const AppointmentDetailsScreen = ({
         </View>
       </View>
 
-      {/* ------------------------------ intake summary --------------------------- */}
-      <Text style={[s.sectionTitle, s.sectionSolo]}>Intake Summary</Text>
+      {/* --------------------------- any previous history ------------------------- */}
+      <Text style={[s.sectionTitle, s.sectionSolo]}>Any Previous History</Text>
       <View style={[s.card, s.intakeGrid]}>
+        {d.intake.length === 0 && (
+          <Text testID="no-intake" style={s.quoteText}>
+            No intake answers were given at booking.
+          </Text>
+        )}
         {d.intake.map((row) => (
           <View key={row.key} style={s.intakeCell}>
             <View style={s.intakeCellHead}>
@@ -253,6 +343,12 @@ export const AppointmentDetailsScreen = ({
         ))}
       </View>
 
+      {/* ------------------------------ medication history ------------------------- */}
+      <Text style={[s.sectionTitle, s.sectionSolo]}>Medication History</Text>
+      <View style={[s.card, s.medicationCard]}>
+        <Text style={s.quoteText}>{d.medication}</Text>
+      </View>
+
       {/* ---------------------------- medical history ----------------------------- */}
       <Text style={[s.sectionTitle, s.sectionSolo]}>Medical History &amp; Allergies</Text>
       <View style={s.historyWrap}>
@@ -265,12 +361,12 @@ export const AppointmentDetailsScreen = ({
           minHeight={64}
           accessibilityLabel="Medical history and allergies"
         />
-        <Text style={s.historyHint}>Saved to this consultation and shown on the prescription.</Text>
+        <Text style={s.historyHint}>Kept on this device only — it is not saved to the patient's record.</Text>
       </View>
 
-      {/* ---------------------------- uploaded documents ------------------------- */}
+      {/* ------------------------------ medical reports --------------------------- */}
       <View style={s.sectionHead}>
-        <Text style={s.sectionTitle}>Uploaded Documents</Text>
+        <Text style={s.sectionTitle}>Medical Reports</Text>
         {docs.length > 0 && (
           <Pressable
             testID="view-all-docs"
@@ -306,7 +402,38 @@ export const AppointmentDetailsScreen = ({
             Ask the patient
           </Text>
         </Pressable>
+        <Pressable
+          testID="upload-document"
+          style={({ pressed }) => [s.doc, pressed && s.pressed, uploading && s.docDisabled]}
+          onPress={upload.select}
+          disabled={uploading}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: uploading }}
+          accessibilityLabel="Upload reports or clinical photos relevant to this consultation"
+        >
+          <View style={[s.docThumb, s.docThumbRequest]}>
+            <Icon name="upload" size={22} color={colors.surfie} />
+          </View>
+          <Text style={s.docTitle} numberOfLines={2}>
+            {uploading ? 'Uploading…' : 'Upload Documents'}
+          </Text>
+          <Text style={s.docMeta} numberOfLines={2}>
+            Reports or clinical photos
+          </Text>
+        </Pressable>
       </ScrollView>
+      <Text style={s.uploadHelper}>Upload reports or clinical photos relevant to this consultation.</Text>
+      {!!upload.error && <Text style={s.uploadError}>{upload.error}</Text>}
+      {!!uploadError && <Text style={s.uploadError}>{uploadError}</Text>}
+
+      <FilePickerSheet
+        visible={upload.status === 'selecting'}
+        kind="document"
+        maxMb={10}
+        onPick={upload.choose}
+        onClose={upload.closePicker}
+        testID="upload-document"
+      />
 
       {/* --------------------------------- consent ------------------------------- */}
       <Text style={[s.sectionTitle, s.sectionSolo]}>Consent</Text>
@@ -316,11 +443,22 @@ export const AppointmentDetailsScreen = ({
         </View>
         <View style={s.flex}>
           <Text style={s.consentText}>{CONSENT_LABEL[a.mode]}</Text>
-          <Text style={s.consentMeta}>
-            Accepted on {d.dateLabel}, {d.consent.time} · {d.consent.version}
+          <Text testID="consent-meta" style={s.consentMeta}>
+            {d.consent.status === 'onFile'
+              ? d.consent.version
+                ? `Accepted on ${d.dateLabel}, ${d.consent.time} · ${d.consent.version}`
+                : 'A current teleconsultation consent is on file'
+              : d.consent.status === 'missing'
+                ? 'No current teleconsultation consent on file'
+                : 'Checking consent…'}
           </Text>
         </View>
-        <StatusPill label="Accepted" tone="success" dot={false} />
+        <StatusPill
+          testID="consent-status"
+          label={d.consent.status === 'onFile' ? 'Accepted' : d.consent.status === 'missing' ? 'Not on file' : 'Checking'}
+          tone={d.consent.status === 'onFile' ? 'success' : d.consent.status === 'missing' ? 'warn' : 'neutral'}
+          dot={false}
+        />
       </View>
 
       {/* ---------------------------- past consultations ------------------------- */}
@@ -357,6 +495,16 @@ export const AppointmentDetailsScreen = ({
           ))}
         </View>
       )}
+
+      <ActionSheet
+        testID="appointment-actions"
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        actions={[
+          { key: 'no-show', label: 'Mark as no-show', icon: 'alertCircle', destructive: true, onPress: confirmNoShow },
+          { key: 'cancel', label: 'Cancel appointment', icon: 'close', destructive: true, onPress: confirmCancel },
+        ]}
+      />
     </Screen>
   );
 };
@@ -364,6 +512,7 @@ export const AppointmentDetailsScreen = ({
 const s = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   pressed: { opacity: 0.75 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
 
   patient: {
     marginHorizontal: spacing.lg,
@@ -458,6 +607,7 @@ const s = StyleSheet.create({
   quoteSource: { ...typeStyles.caption, color: colors.inkFaint, marginTop: 4 },
 
   intakeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, padding: spacing.md },
+  medicationCard: { padding: spacing.md },
   intakeCell: { flexBasis: '45%', flexGrow: 1, minWidth: 0, gap: 3 },
   intakeCellHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   intakeIcon: {
@@ -507,6 +657,9 @@ const s = StyleSheet.create({
   docKindTextPdf: { color: colors.danger },
   docTitle: { ...typeStyles.caption, fontWeight: fontWeight.semibold, color: colors.ink, marginTop: spacing.sm },
   docMeta: { ...typeStyles.caption, fontSize: 11, color: colors.inkFaint, marginTop: 1 },
+  docDisabled: { opacity: 0.6 },
+  uploadHelper: { ...typeStyles.caption, color: colors.inkMuted, marginHorizontal: spacing.lg, marginTop: spacing.sm },
+  uploadError: { ...typeStyles.caption, color: colors.danger, marginHorizontal: spacing.lg, marginTop: spacing.sm },
 
   consent: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
   consentShield: {

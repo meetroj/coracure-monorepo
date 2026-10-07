@@ -1,5 +1,7 @@
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react-native';
+import { doctorProfileApi } from '@coracure/api';
+import { ApiError } from '@coracure/api/errors';
+import { render, fireEvent, screen, waitFor, act } from '@testing-library/react-native';
 
 import {
   ConsultationFeeScreen,
@@ -13,24 +15,21 @@ import { getState, resetStore } from '../../../state/store';
 
 /* ------------------------------------ fee ------------------------------------ */
 
-test('a new fee is saved to the profile and reported as dirty until then', () => {
-  const onSaved = jest.fn();
-  const onDirtyChange = jest.fn();
-  render(<ConsultationFeeScreen onBack={jest.fn()} onSaved={onSaved} onDirtyChange={onDirtyChange} />);
-  expect(screen.getByTestId('save-fee')).toBeDisabled();
+// `PATCH /me/doctor/profile` whitelists bio/languages/duration/buffer only —
+// fee is the admin's (`PATCH /admin/doctors/:id`). A doctor-side save button
+// here would 400 on every press, so the screen shows the real fee and routes
+// a change through Request Changes instead of pretending to accept an edit.
+test('the fee is shown, not editable, and routes a change request elsewhere', () => {
+  resetStore({ profile: { fee: 899, changeRequests: [] } });
+  const onRequestChange = jest.fn();
+  render(<ConsultationFeeScreen onBack={jest.fn()} onRequestChange={onRequestChange} />);
 
-  fireEvent.press(screen.getByTestId('fee-899'));
-  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-  fireEvent.press(screen.getByTestId('save-fee'));
-  expect(getState().profile.fee).toBe(899);
-  expect(onSaved).toHaveBeenCalled();
-});
+  expect(screen.getByTestId('fee-value')).toHaveTextContent('899');
+  expect(screen.queryByTestId('fee-input')).toBeNull();
+  expect(screen.queryByTestId('save-fee')).toBeNull();
 
-test('a zero fee is refused with a reason', () => {
-  render(<ConsultationFeeScreen onBack={jest.fn()} onSaved={jest.fn()} />);
-  fireEvent.changeText(screen.getByTestId('fee-input'), '0');
-  expect(screen.getByText('The fee must be more than ₹0.')).toBeTruthy();
-  expect(screen.getByTestId('save-fee')).toBeDisabled();
+  fireEvent.press(screen.getByTestId('request-fee-change'));
+  expect(onRequestChange).toHaveBeenCalled();
 });
 
 test('changing the fee never rewrites money already earned', () => {
@@ -42,21 +41,41 @@ test('changing the fee never rewrites money already earned', () => {
 
 /* ---------------------------------- duration ---------------------------------- */
 
-test('the duration is one setting, shared with Availability', () => {
+test('the duration is one setting, shared with Availability, saved through the real profile PATCH', async () => {
+  jest.spyOn(doctorProfileApi, 'updateProfile').mockResolvedValue({ consultationDurationMinutes: 45 } as never);
   const onSaved = jest.fn();
   render(<ConsultationDurationScreen onBack={jest.fn()} onSaved={onSaved} />);
   fireEvent.press(screen.getByTestId('duration-45'));
   fireEvent.press(screen.getByTestId('save-duration'));
-  expect(getState().availability.durationMin).toBe(45);
+
+  await waitFor(() => expect(doctorProfileApi.updateProfile).toHaveBeenCalledWith({ consultationDurationMinutes: 45 }));
+  await waitFor(() => expect(getState().availability.durationMin).toBe(45));
   expect(onSaved).toHaveBeenCalled();
+});
+
+test('a refused duration change leaves the setting as it was', async () => {
+  jest.spyOn(doctorProfileApi, 'updateProfile').mockRejectedValue(
+    new ApiError({ statusCode: 400, code: 'VALIDATION_FAILED', message: 'Duration must be between 5 and 180 minutes.' })
+  );
+  const before = getState().availability.durationMin;
+  const onSaved = jest.fn();
+  render(<ConsultationDurationScreen onBack={jest.fn()} onSaved={onSaved} />);
+  fireEvent.press(screen.getByTestId('duration-45'));
+  fireEvent.press(screen.getByTestId('save-duration'));
+
+  await waitFor(() => expect(doctorProfileApi.updateProfile).toHaveBeenCalled());
+  expect(getState().availability.durationMin).toBe(before);
+  expect(onSaved).not.toHaveBeenCalled();
 });
 
 /* ------------------------------ bank and changes ------------------------------ */
 
-test('bank details are read-only, and a change is requested instead', () => {
+test('bank details show only what the backend knows — verified or not — and never an invented account', () => {
   const onRequestChange = jest.fn();
   render(<BankDetailsScreen onBack={jest.fn()} onRequestChange={onRequestChange} />);
-  expect(screen.getByText('•••• •••• 4417')).toBeTruthy();
+  expect(screen.getByTestId('bank-state')).toBeTruthy();
+  expect(screen.queryByText(/HDFC|4417/)).toBeNull();
+  expect(screen.getByText(/managed by the Coracure team/)).toBeTruthy();
   fireEvent.press(screen.getByTestId('change-bank'));
   expect(onRequestChange).toHaveBeenCalled();
 });
@@ -64,7 +83,9 @@ test('bank details are read-only, and a change is requested instead', () => {
 test('a change request arrives with the right detail picked, needs a description, and is kept', () => {
   const onSent = jest.fn();
   render(<RequestChangesScreen initialField="Bank account" onBack={jest.fn()} onSent={onSent} />);
-  expect(screen.getByTestId('field-6')).toBeChecked();
+  // bio and languages are not on the list — the doctor edits those directly
+  expect(screen.queryByText('About / bio')).toBeNull();
+  expect(screen.getByTestId('field-4')).toBeChecked();
   fireEvent.press(screen.getByTestId('submit-request'));
   expect(screen.getByText('Describe the change (at least 10 characters).')).toBeTruthy();
   expect(onSent).not.toHaveBeenCalled();
@@ -98,4 +119,34 @@ test('verified details are locked, and the fee has its own edit', () => {
   expect(onEditFee).toHaveBeenCalled();
   fireEvent.press(screen.getByTestId('request-change'));
   expect(onRequestChange).toHaveBeenCalled();
+});
+
+test('bio and languages are edited directly, through the real profile PATCH, once per press', async () => {
+  let resolve: (v: unknown) => void = () => {};
+  jest.spyOn(doctorProfileApi, 'updateProfile').mockImplementation(() => new Promise((r) => (resolve = r)) as never);
+  render(<DoctorProfileDetailsScreen onBack={jest.fn()} onEditFee={jest.fn()} onRequestChange={jest.fn()} />);
+
+  fireEvent.press(screen.getByTestId('edit-about'));
+  fireEvent.changeText(screen.getByTestId('bio-input'), '  Adult psychiatry, ten years.  ');
+  fireEvent.press(screen.getByTestId('language-Hindi'));
+  fireEvent.press(screen.getByTestId('about-save'));
+  fireEvent.press(screen.getByTestId('about-save'));
+
+  // Only the two whitelisted keys, trimmed — and one request for two taps.
+  expect(doctorProfileApi.updateProfile).toHaveBeenCalledTimes(1);
+  expect(doctorProfileApi.updateProfile).toHaveBeenCalledWith({ bio: 'Adult psychiatry, ten years.', languages: ['en'] });
+  await act(async () => resolve({ bio: 'Adult psychiatry, ten years.', languages: ['en'] }));
+  expect(screen.queryByTestId('about-editor')).toBeNull();
+});
+
+test('a refused bio save keeps the editor open with the reason', async () => {
+  jest.spyOn(doctorProfileApi, 'updateProfile').mockRejectedValue(
+    new ApiError({ statusCode: 400, code: 'VALIDATION_FAILED', message: 'bio must be shorter than or equal to 4000 characters' })
+  );
+  render(<DoctorProfileDetailsScreen onBack={jest.fn()} onEditFee={jest.fn()} onRequestChange={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('edit-about'));
+  fireEvent.press(screen.getByTestId('about-save'));
+
+  await waitFor(() => expect(screen.getByTestId('about-error')).toBeTruthy());
+  expect(screen.getByTestId('about-editor')).toBeTruthy();
 });

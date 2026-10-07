@@ -1,6 +1,7 @@
 import React from 'react';
+import { doctorClarificationApi, doctorConsultationsApi, doctorProfileApi } from '@coracure/api';
 import { confirm, confirmDiscard } from '../components/confirm';
-import { render, fireEvent, screen } from '@testing-library/react-native';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { renderShell, tap, on, pressBack, topmost } from '../test/app';
 import { getState } from '../state/store';
@@ -51,7 +52,31 @@ test('Refer during a live consultation opens on this patient, and Back returns t
   expectSameCall(call);
 });
 
-test('a referral sent mid-call lands on its thread, and Back still leads to the call', () => {
+test('a referral sent mid-call lands on its thread, and Back still leads to the call', async () => {
+  const posted = {
+    id: 'c1c1c1c1-0000-4000-8000-000000000000',
+    title: 'Anxiety, restlessness and difficulty sleeping',
+    topic: 'Treatment plan review',
+    patientAge: 32,
+    patientGender: 'male' as const,
+    briefHistory: 'Anxiety, restlessness and difficulty sleeping',
+    diagnosis: 'Provisional: generalised anxiety disorder',
+    currentPlan: 'No medicines started',
+    specificDoubt: 'Is a short course of a sleep aid reasonable alongside the SSRI?',
+    urgency: 'routine' as const,
+    status: 'draft' as const,
+    assignedAt: null,
+    messages: [],
+    attachmentIds: [],
+    createdAt: new Date().toISOString(),
+    sourceConsultationId: null,
+    expertDoctorId: null,
+    postedAt: null,
+    closedAt: null,
+  };
+  jest.spyOn(doctorClarificationApi, 'createCase').mockResolvedValue(posted);
+  jest.spyOn(doctorClarificationApi, 'postCase').mockResolvedValue({ ...posted, status: 'posted', postedAt: new Date().toISOString() });
+
   const call = joinCall();
   tap('action-note');
   tap('refer-clarification');
@@ -61,10 +86,16 @@ test('a referral sent mid-call lands on its thread, and Back still leads to the 
   fireEvent.changeText(topmost('question'), 'Is a short course of a sleep aid reasonable alongside the SSRI?');
   tap('continue');
   tap('confirm');
+  // posting asks who reviews it; leaving it to CoraCure goes to the admin's queue
+  jest.spyOn(doctorClarificationApi, 'listExperts').mockResolvedValue([{ id: 'e1e1e1e1-0000-4000-8000-000000000000', fullName: 'Dr Vikram Sethi', specialty: 'Psychiatry' }]);
   tap('submit');
+  tap('expert-confirm');
 
-  expect(topmost('clarification-thread')).toBeTruthy();
-  expect(getState().records.a1.clarificationId).toBeTruthy();
+  await waitFor(() => expect(topmost('clarification-thread')).toBeTruthy());
+  expect(doctorClarificationApi.postCase).toHaveBeenCalledWith(posted.id, undefined);
+  // Refer from this consultation now reopens this case rather than starting another
+  expect(getState().records.a1.clarificationId).toBe(posted.id);
+  expect(topmost('awaiting-assignment')).toBeTruthy();
   pressBack();
   pressBack();
   expectSameCall(call);
@@ -118,11 +149,12 @@ test('Profile and Availability offer exactly the same consultation lengths', () 
   expect(screen.getAllByTestId(/^setting-option-\d+$/).map((n) => Number(n.props.testID.slice('setting-option-'.length)))).toEqual(minutes);
 });
 
-test('a length chosen in Profile is the one Availability shows', () => {
+test('a length chosen in Profile is the one Availability shows', async () => {
+  jest.spyOn(doctorProfileApi, 'updateProfile').mockResolvedValue({ consultationDurationMinutes: 20 } as never);
   render(<ConsultationDurationScreen onBack={jest.fn()} onSaved={jest.fn()} />);
   fireEvent.press(screen.getByTestId('duration-20'));
   fireEvent.press(screen.getByTestId('save-duration'));
-  expect(getState().availability.durationMin).toBe(20);
+  await waitFor(() => expect(getState().availability.durationMin).toBe(20));
   screen.unmount();
 
   render(<AvailabilityScreen />);
@@ -137,10 +169,31 @@ test('today’s hours follow time off, then a date exception, then the weekly sc
 
 /* ------------------------------ unsaved work ------------------------------ */
 
-test('a half-written alert review asks before it is dropped', () => {
+test('a half-written closing note asks before it is dropped', async () => {
+  jest.spyOn(doctorConsultationsApi, 'listSafetyAlerts').mockResolvedValue([
+    {
+      id: 'al1',
+      alertType: 'red_flag',
+      consultationId: 'a1', // the appointment's real id, not its human reference code
+      patientId: 'PT-10482',
+      patientInitials: 'RS',
+      patientName: 'Rahul Sharma',
+      patientAge: 32,
+      patientGender: 'male',
+      checkinResponseId: null,
+      reason: 'Reported thoughts of self-harm',
+      state: 'acknowledged',
+      acknowledgedAt: new Date().toISOString(),
+      acknowledgedBy: { type: 'doctor', id: 'd1' },
+      closedAt: null,
+      closingNote: null,
+      createdAt: new Date().toISOString(),
+    },
+  ]);
   renderShell();
-  fireEvent.press(screen.getByTestId('nav-notifications'));
-  tap('notif-n1');
+  fireEvent.press(screen.getByTestId('open-alerts'));
+  await waitFor(() => screen.getByTestId('open-al1'));
+  tap('open-al1');
   fireEvent.changeText(topmost('note'), 'Called the patient; safety plan agreed.');
   pressBack();
   expect(confirmDiscard).toHaveBeenCalled();

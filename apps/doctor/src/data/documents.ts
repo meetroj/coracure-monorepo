@@ -55,10 +55,14 @@ export const patientDocs: PatientDoc[] = [
   { id: 'd10', patientId: 'PT-10548', appointmentId: 'a14', title: 'Mood Journal', kind: 'journal', fileType: 'JPG', size: '1.1 MB', pages: 1, uploadedBy: 'patient', uploadedAt: fmtDate(dayOffset(-8)), source: 'bookingAttachment', assigned: true, summary: 'Photo of a handwritten mood journal.' },
 ];
 
-export const docsForPatient = (patientId: string | undefined) =>
-  patientDocs.filter((d) => d.patientId === patientId);
+// Local copy, not `clinicalRecord`'s: importing that here would cycle through the store, which seeds from this file.
+const REAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const docById = (id: string | undefined) => patientDocs.find((d) => d.id === id);
+/** The local fixture documents for a demo patient. A real (UUID) patient has only what the server lists. */
+export const docsForPatient = (docs: PatientDoc[], patientId: string | undefined) =>
+  patientId && REAL_ID.test(patientId) ? [] : docs.filter((d) => d.patientId === patientId);
+
+export const docById = (docs: PatientDoc[], id: string | undefined) => docs.find((d) => d.id === id);
 
 export const DOC_FILTERS: { key: 'all' | DocKind | 'requested'; label: string }[] = [
   { key: 'all', label: 'All' },

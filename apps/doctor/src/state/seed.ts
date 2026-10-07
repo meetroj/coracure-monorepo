@@ -56,10 +56,8 @@ const notes = (
   complaint: string,
   history: string,
   observations: string,
-  diagnosis: string,
-  advice: string,
-  followUp: string
-): Record<NoteKey, string> => ({ complaint, history, observations, diagnosis, advice, followUp });
+  diagnosis: string
+): Record<NoteKey, string> => ({ complaint, history, observations, diagnosis });
 
 const MSE = 'Alert, oriented and cooperative. Speech normal in rate and volume. No perceptual disturbances elicited.';
 
@@ -77,9 +75,7 @@ const seeds: Record<string, Seed> = {
       'Anxiety, restlessness and difficulty sleeping.',
       'Two weeks of worry, racing thoughts at night and poor sleep, affecting concentration at work.',
       `${MSE} Appears tense; reports racing thoughts at night.`,
-      'Provisional diagnosis: Generalised anxiety disorder.',
-      'Started a low-dose SSRI with a short course of night sedation. Sleep-routine and breathing guidance given.',
-      'Daily check-ins on the Depression & Anxiety pathway for 14 days; review in two weeks or earlier if worse.'
+      'Provisional diagnosis: Generalised anxiety disorder.'
     ),
     risk: risk('moderate'),
     meds: [ESCITALOPRAM_5, CLONAZEPAM],
@@ -94,9 +90,7 @@ const seeds: Record<string, Seed> = {
       'Panic episodes and poor sleep.',
       'Panic episodes for two months, now waking at night with panic attacks.',
       `${MSE} Anxious affect.`,
-      'Provisional diagnosis: Panic disorder.',
-      'SSRI started; psychoeducation on panic cycle and grounding technique.',
-      '14-day check-in pathway; review in two weeks.'
+      'Provisional diagnosis: Panic disorder.'
     ),
     risk: risk('low'),
     meds: [ESCITALOPRAM_10, PROPRANOLOL],
@@ -111,9 +105,7 @@ const seeds: Record<string, Seed> = {
       'Low mood and fatigue.',
       'Six weeks of low mood, fatigue and reduced interest; partial response to sertraline 50 mg.',
       `${MSE} Mood subjectively low, affect restricted.`,
-      'Provisional diagnosis: Moderate depressive episode.',
-      'Continue SSRI; activity scheduling and sleep routine discussed.',
-      '14-day check-in pathway; review in two weeks.'
+      'Provisional diagnosis: Moderate depressive episode.'
     ),
     risk: risk('low'),
     meds: [SERTRALINE_50],
@@ -128,9 +120,7 @@ const seeds: Record<string, Seed> = {
       'Low mood and poor motivation.',
       'Four weeks of low mood and poor motivation after a stressful period at home.',
       `${MSE} Mood low, reactive affect.`,
-      'Provisional diagnosis: Moderate depressive episode.',
-      'SSRI dose increased; daily routine and social contact discussed.',
-      '14-day check-in pathway; review in two weeks.'
+      'Provisional diagnosis: Moderate depressive episode.'
     ),
     risk: risk('moderate'),
     meds: [SERTRALINE_50],
@@ -145,9 +135,7 @@ const seeds: Record<string, Seed> = {
       'Worsening anxiety and low mood.',
       'Three weeks of anxiety and low mood with poor sleep.',
       `${MSE} Anxious and low in mood.`,
-      'Provisional diagnosis: Mixed anxiety and depressive disorder.',
-      'SSRI started; sleep routine and breathing practice advised.',
-      '14-day check-in pathway; review in two weeks.'
+      'Provisional diagnosis: Mixed anxiety and depressive disorder.'
     ),
     risk: risk('moderate'),
     meds: [SERTRALINE_50],
@@ -158,8 +146,6 @@ const seeds: Record<string, Seed> = {
     notes: notes(
       'Persistent low mood.',
       'Low mood most days for two months.',
-      '',
-      '',
       '',
       ''
     ),
@@ -173,9 +159,7 @@ const seeds: Record<string, Seed> = {
       'Sleep difficulty and low energy.',
       'Difficulty falling asleep for a month, low energy in the day.',
       MSE,
-      'Provisional diagnosis: Insomnia disorder.',
-      'Sleep-hygiene plan and sleep diary.',
-      'Seven-day sleep pathway; review when it ends.'
+      'Provisional diagnosis: Insomnia disorder.'
     ),
     risk: risk('low'),
     meds: [MIRTAZAPINE],
@@ -187,67 +171,67 @@ const seeds: Record<string, Seed> = {
   /* consultations still being written up */
   a17: {
     stage: 'summaryPending',
-    notes: notes('Irritability and poor sleep.', 'Irritability at home and work with broken sleep for a month.', MSE, 'Provisional diagnosis: Adjustment disorder.', 'Sleep routine and stress-management guidance.', 'Review in two weeks.'),
+    notes: notes('Irritability and poor sleep.', 'Irritability at home and work with broken sleep for a month.', MSE, 'Provisional diagnosis: Adjustment disorder.'),
     risk: risk('low'),
     meds: [MIRTAZAPINE],
   },
   a18: {
     stage: 'rxDraft',
-    notes: notes('Anxiety with physical tension.', 'Episodes of anxiety with muscle tension and restlessness for three weeks.', MSE, 'Provisional diagnosis: Generalised anxiety disorder.', 'Breathing practice; limit caffeine.', 'Review in two weeks.'),
+    notes: notes('Anxiety with physical tension.', 'Episodes of anxiety with muscle tension and restlessness for three weeks.', MSE, 'Provisional diagnosis: Generalised anxiety disorder.'),
     risk: risk('low'),
     meds: [ESCITALOPRAM_5],
   },
   a20: {
     stage: 'notesDraft',
-    notes: notes('Alcohol use — cutting down.', 'Drinking daily for two years, wants to cut down.', '', '', '', ''),
+    notes: notes('Alcohol use — cutting down.', 'Drinking daily for two years, wants to cut down.', '', ''),
     risk: risk(null, 'notAsked'),
     meds: [],
   },
   a21: {
     stage: 'summaryPending',
-    notes: notes('Panic symptoms while commuting.', 'Panic attacks on the train for six weeks.', MSE, 'Provisional diagnosis: Panic disorder.', 'Graded exposure plan; grounding technique.', 'Review in two weeks.'),
+    notes: notes('Panic symptoms while commuting.', 'Panic attacks on the train for six weeks.', MSE, 'Provisional diagnosis: Panic disorder.'),
     risk: risk('low'),
     meds: [ESCITALOPRAM_5],
   },
   a22: {
     stage: 'rxDraft',
-    notes: notes('Low mood after job loss.', 'Low mood and withdrawal since losing his job a month ago.', MSE, 'Provisional diagnosis: Moderate depressive episode.', 'Activity scheduling; job-search support resources.', 'Review in two weeks.'),
+    notes: notes('Low mood after job loss.', 'Low mood and withdrawal since losing his job a month ago.', MSE, 'Provisional diagnosis: Moderate depressive episode.'),
     risk: risk('moderate'),
     meds: [SERTRALINE_50],
   },
   a23: {
     stage: 'summaryPending',
-    notes: notes('Exam-related anxiety.', 'Anxiety and poor sleep ahead of final exams.', MSE, 'Provisional diagnosis: Adjustment disorder with anxiety.', 'Study schedule, sleep routine and breathing practice.', 'Review after exams.'),
+    notes: notes('Exam-related anxiety.', 'Anxiety and poor sleep ahead of final exams.', MSE, 'Provisional diagnosis: Adjustment disorder with anxiety.'),
     risk: risk('low'),
     meds: [],
   },
   a24: {
     stage: 'notesDraft',
-    notes: notes('Anxiety with stress at work.', '', '', '', '', ''),
+    notes: notes('Anxiety with stress at work.', '', '', ''),
     risk: risk(null, 'notAsked'),
     meds: [],
   },
   a25: {
     stage: 'rxDraft',
-    notes: notes('Low mood and early waking.', 'Low mood with early-morning waking for five weeks.', MSE, 'Provisional diagnosis: Moderate depressive episode.', 'Sleep routine; daily activity plan.', 'Review in two weeks.'),
+    notes: notes('Low mood and early waking.', 'Low mood with early-morning waking for five weeks.', MSE, 'Provisional diagnosis: Moderate depressive episode.'),
     risk: risk('moderate'),
     meds: [MIRTAZAPINE],
   },
   a26: {
     stage: 'summaryPending',
-    notes: notes('Alcohol use — relapse prevention.', 'Three months abstinent; cravings at weekends.', MSE, 'Provisional diagnosis: Alcohol use disorder, early remission.', 'Relapse-prevention plan; support group details shared.', 'Review in four weeks.'),
+    notes: notes('Alcohol use — relapse prevention.', 'Three months abstinent; cravings at weekends.', MSE, 'Provisional diagnosis: Alcohol use disorder, early remission.'),
     risk: risk('low'),
     meds: [NALTREXONE],
   },
   a27: {
     stage: 'summaryPending',
-    notes: notes('Poor sleep and worry.', 'Worry about family health with poor sleep for a month.', MSE, 'Provisional diagnosis: Generalised anxiety disorder.', 'Worry-time technique; sleep routine.', 'Review in two weeks.'),
+    notes: notes('Poor sleep and worry.', 'Worry about family health with poor sleep for a month.', MSE, 'Provisional diagnosis: Generalised anxiety disorder.'),
     risk: risk('low'),
     meds: [],
   },
   a9: {
     stage: 'summaryPending',
-    notes: notes('Sleep and mood review.', 'Follow-up review; sleep improved, mood stable.', MSE, 'Recurrent depressive disorder, currently improving.', 'Continue current plan.', 'Review in four weeks.'),
+    notes: notes('Sleep and mood review.', 'Follow-up review; sleep improved, mood stable.', MSE, 'Recurrent depressive disorder, currently improving.'),
     risk: risk('low'),
     meds: [SERTRALINE_100],
   },
@@ -255,7 +239,7 @@ const seeds: Record<string, Seed> = {
   /* today's consultations so far */
   a3: {
     stage: 'notesDraft',
-    notes: notes('Low mood and loss of interest.', 'Low mood for two months with loss of interest in hobbies.', '', '', '', ''),
+    notes: notes('Low mood and loss of interest.', 'Low mood for two months with loss of interest in hobbies.', '', ''),
     risk: risk(null, 'notAsked'),
     meds: [],
   },
@@ -265,9 +249,7 @@ const seeds: Record<string, Seed> = {
       'Medication side effects and daytime drowsiness.',
       'Drowsiness since the sertraline dose increased last week.',
       `${MSE} Mildly sedated.`,
-      'Adverse effect of sertraline under review; depressive episode improving.',
-      'Reduce dose and take at night; review drowsiness in one week.',
-      'Review in one week.'
+      'Adverse effect of sertraline under review; depressive episode improving.'
     ),
     risk: risk('low'),
     meds: [SERTRALINE_50],

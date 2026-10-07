@@ -1,6 +1,5 @@
 import { appointments, appointmentById } from './doctor';
 import { patients, patientById } from './patients';
-import { patientAlerts } from './followup';
 import { threads, notifications, type AppNotification } from './messaging';
 import { clarifications } from './clarification';
 import { patientDocs } from './documents';
@@ -25,11 +24,6 @@ test('one name per patient, and every appointment agrees with its patient', () =
     expect(p).toBeDefined();
     expect([a.name, a.age, a.gender]).toEqual([p!.name, p!.age, p!.gender]);
   });
-});
-
-test('every follow-up alert belongs to the patient of its consultation', () => {
-  expect(patientAlerts.length).toBeGreaterThan(0);
-  patientAlerts.forEach((al) => expect([al.id, patientOfAppointment(al.appointmentId)]).toEqual([al.id, al.patientId]));
 });
 
 test('every patient chat thread is that patient’s, under their own name', () => {
@@ -70,11 +64,11 @@ const targetPatient = (n: AppNotification): string | undefined => {
       expect([n.id, doc?.patientId]).toEqual([n.id, t.patientId]);
       return t.patientId;
     }
-    case 'alertDetail': {
-      const al = patientAlerts.find((x) => x.id === t.alertId);
-      expect([n.id, !!al]).toEqual([n.id, true]);
-      return al?.patientId;
-    }
+    case 'alertDetail':
+      // Safety alerts are real-wired now (see data/safetyAlerts.ts) — the
+      // local fixture id space no longer exists, so this one demo link is
+      // pinned by hand instead of looked up.
+      return t.alertId === 'al1' ? 'PT-10482' : undefined;
     case 'apptDetails':
       return patientOfAppointment(t.appointmentId);
     case 'expertResponse': {

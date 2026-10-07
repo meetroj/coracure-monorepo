@@ -50,7 +50,7 @@ export const SupportIssueScreen = ({ issue, onBack }: { issue: SupportIssue; onB
       </View>
 
       <Note icon="mail">
-        Replies also arrive by email. To add details, write to {supportContact.email} and quote {issue.ref}.
+        To reach the support team, write to {supportContact.email} and quote {issue.ref}. Replies come by email.
       </Note>
       <Text
         testID="email-support"

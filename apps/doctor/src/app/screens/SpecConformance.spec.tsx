@@ -9,7 +9,6 @@ import ClinicalTemplatesScreen from './ClinicalTemplatesScreen';
 import CaseSummaryScreen from './CaseSummaryScreen';
 import ConsultationRoomScreen from './ConsultationRoomScreen';
 import { appointments, appointmentById, nextAppointmentFor, detailFor, doctor } from '../../data/doctor';
-import { patientAlerts } from '../../data/followup';
 import { templateCounts, clinicalTemplates } from '../../data/clinical';
 import { getState } from '../../state/store';
 import { selectCases } from '../../state/selectors';
@@ -32,14 +31,12 @@ test('Rahul Sharma is 32, male, PT-10482 / CON-10482 in every fixture', () => {
   expect(d.patientId).toBe('PT-10482');
   expect(d.consultationId).toBe('CON-10482');
 
-  // the same person wherever he appears: cases, the next-appointment card and
-  // follow-up alerts resolve him by ID instead of carrying their own copy (N03)
+  // the same person wherever he appears: cases and the next-appointment card
+  // resolve him by ID instead of carrying their own copy (N03)
   const hisCases = selectCases(getState()).filter((c) => c.patientId === 'PT-10482');
   expect(hisCases.length).toBeGreaterThan(0);
   hisCases.forEach((c) => expect([c.name, c.age, c.gender]).toEqual(['Rahul Sharma', 32, 'Male']));
   expect(nextAppointmentFor()!.id).toBe('a1');
-  const alert = patientAlerts.find((a) => a.patientId === 'PT-10482')!;
-  expect(appointmentById(alert.appointmentId)).toEqual(expect.objectContaining({ name: 'Rahul Sharma', age: 32 }));
 });
 
 test('no cardiology content survives anywhere in the fixtures', () => {
@@ -92,14 +89,12 @@ test('a consultation not yet held opens with empty, required fields and no inven
   const { getAllByText, getByPlaceholderText } = render(
     <ClinicalNotesScreen appointment={appt} onBack={noop} onViewProfile={noop} />
   );
-  expect(getAllByText('Required')).toHaveLength(7);
+  expect(getAllByText('Required')).toHaveLength(5);
   [
     'What the patient came with, in clinical terms.',
     'Onset, duration and course so far.',
     'Mental state and presentation during the consultation.',
     'State clearly whether provisional or confirmed.',
-    'What you advised, and why.',
-    'When to review, and what would bring it forward.',
   ].forEach((p) => expect(getByPlaceholderText(p).props.value).toBe(''));
 });
 
@@ -146,7 +141,7 @@ test('prescription shows the specified header and patient block', () => {
   // by explicit design request: the title drops "& Advice", the patient strip
   // no longer prints the professional type, and the "Report Requested for Next
   // Visit" section was removed along with the follow-up section.
-  expect(getByText('E-Prescription')).toBeTruthy();
+  expect(getByText('Prescription')).toBeTruthy();
   expect(getByText('Save Draft')).toBeTruthy();
   expect(getByText('Load from Template')).toBeTruthy();
   expect(getByText('Consultation ID: CON-10482')).toBeTruthy();
@@ -198,15 +193,15 @@ test('case summary shows the specified header, patient block and helper text', (
   // diagnosis and risk come from the notes, which are not written yet
   expect(getByText('Not recorded in notes')).toBeTruthy();
   expect(getByText('Not assessed')).toBeTruthy();
-  expect(getByPlaceholderText('Write your case summary here…')).toBeTruthy();
+  expect(getByPlaceholderText('Save clinical notes to draft the summary automatically, or write it here…')).toBeTruthy();
   expect(getByText(/0\s*\/\s*1000/)).toBeTruthy();
   expect(getByText('Submit Summary & Complete')).toBeTruthy();
 });
 
-test('the four checklist rows are exactly those specified', () => {
+test('the four checklist rows are those specified; the follow-up plan is optional, since the server only accepts it after the summary', () => {
   const { getByText } = render(<CaseSummaryScreen appointment={appt} onBack={noop} />);
 
-  ['Clinical notes completed', 'Prescription or advice finalised', 'Follow-up plan assigned', 'Case summary'].forEach(
+  ['Clinical notes completed', 'Prescription finalised', 'Follow-up plan (optional)', 'Case summary'].forEach(
     (l) => expect(getByText(l)).toBeTruthy()
   );
 });

@@ -12,7 +12,6 @@ import { FilePickerSheet, photoPreview, useUpload, type PickedFile } from '../..
 import {
   TextField,
   DateField,
-  monthMask,
   SelectField,
   MultiSelectField,
   UploadField,
@@ -23,15 +22,13 @@ import {
 } from '../../../components/form';
 import { messageFor } from '@coracure/api/errors';
 
-import { TODAY } from '../../../data/calendar';
 import { submitRegistration, type SubmissionOutcome } from '../../../data/onboarding';
+import { useSpecialties } from '../../../data/profile';
 import {
   GENDERS,
   ID_TYPES,
   OTHER_ID,
   CONSULT_LANGUAGES,
-  QUALIFICATION_OPTIONS,
-  POSITION_OPTIONS,
   UPLOAD_HINT,
   STEPS,
   emptyDraft,
@@ -40,11 +37,10 @@ import {
   totalExperienceYears,
   validateBasic,
   validateIdentity,
-  validateQualification,
+  validateQualifications,
   validateExperience,
   type Experience,
   type FieldErrors,
-  type Qualification,
   type RegistrationDraft,
   type StepKey,
 } from '../../../data/registration';
@@ -73,8 +69,6 @@ const formatMobile = (m: string) => {
   const d = m.replace(/\D/g, '').slice(-10);
   return d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : m;
 };
-
-const monthNow = () => `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`;
 
 type Step = StepKey | 'review';
 
@@ -258,8 +252,26 @@ const PhotoField = ({ file, onChange, error }: { file: PickedFile | null; onChan
                 ? `${file.name} · ${file.size}`
                 : `JPG or PNG · Max ${PHOTO_MAX_MB} MB`}
           </Text>
-          {/* No separate Remove: the photo is required anyway, so Change is the
-              only action that leads anywhere useful. */}
+          {!!file && !uploading && (
+            <Pressable
+              testID="photo-remove"
+              onPress={() =>
+                confirm({
+                  title: 'Remove your photo?',
+                  message: 'You will need to add a new one before continuing.',
+                  confirmLabel: 'Remove',
+                  destructive: true,
+                  onConfirm: () => onChange(null),
+                })
+              }
+              hitSlop={6}
+              style={s.photoRemove}
+              accessibilityRole="button"
+              accessibilityLabel="Remove profile photo"
+            >
+              <Text style={s.photoRemoveText}>Remove</Text>
+            </Pressable>
+          )}
         </View>
 
         {uploading ? (
@@ -310,7 +322,6 @@ export const OnboardingFlow = ({
   flagged = [],
   onSubmitted,
   onExit,
-  now = monthNow(),
 }: {
   /** The number the doctor signed in with — shown verified, never asked again. */
   mobile: string;
@@ -323,8 +334,6 @@ export const OnboardingFlow = ({
   onSubmitted: (draft: RegistrationDraft, outcome: SubmissionOutcome) => void;
   /** Leaves the flow (sign-in, or back to Account Status when resubmitting). */
   onExit: () => void;
-  /** Current month as `YYYY-MM`; injected so totals do not drift with the clock. */
-  now?: string;
 }) => {
   // created once; a later prop change must not reset the doctor's work
   const [start] = useState<RegistrationDraft>(() => initialDraft ?? emptyDraft(formatMobile(mobile), email));
@@ -332,7 +341,6 @@ export const OnboardingFlow = ({
   const [step, setStep] = useState<Step>(mode === 'resubmit' ? 'review' : 'basic');
   /** Set when a step was opened from Review: its button returns there. */
   const [fromReview, setFromReview] = useState(mode === 'resubmit');
-  const [editingQual, setEditingQual] = useState<{ entry: Qualification; original?: Qualification } | null>(null);
   const [editingExp, setEditingExp] = useState<{ entry: Experience; original?: Experience } | null>(null);
   /** Fields left at least once, or every field after a failed continue. */
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -342,11 +350,18 @@ export const OnboardingFlow = ({
   /** Flagged sections the doctor has opened since arriving. */
   const [revisited, setRevisited] = useState<StepKey[]>([]);
 
-  const years = useMemo(() => totalExperienceYears(draft.experience, now), [draft.experience, now]);
+  // The specialty is chosen from the backend's catalogue, never typed. A hook, so it is declared here
+  // with the others: the steps below are conditional returns from this one component.
+  const specialties = useSpecialties();
+  const specialtyName = (id: string) => specialties.data?.find((x) => x.id === id)?.name ?? '';
+
+  const years = useMemo(() => totalExperienceYears(draft.experience), [draft.experience]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(start);
 
   const setBasic = (p: Partial<RegistrationDraft['basic']>) => setDraft((d) => ({ ...d, basic: { ...d.basic, ...p } }));
   const setIdentity = (p: Partial<RegistrationDraft['identity']>) => setDraft((d) => ({ ...d, identity: { ...d.identity, ...p } }));
+  const setQuals = (p: Partial<RegistrationDraft['qualifications']>) =>
+    setDraft((d) => ({ ...d, qualifications: { ...d.qualifications, ...p } }));
   const touch = (field: string) => () => setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
   const shown = (errors: FieldErrors, field: string) => (showAll || touched[field] ? errors[field] : undefined);
 
@@ -368,16 +383,6 @@ export const OnboardingFlow = ({
     });
   };
 
-  const closeQual = () => {
-    const changed = editingQual && JSON.stringify(editingQual.entry) !== JSON.stringify(editingQual.original ?? blankQual(editingQual.entry.id));
-    const close = () => {
-      setEditingQual(null);
-      setTouched({});
-      setShowAll(false);
-    };
-    if (changed) confirmDiscard(close, 'this qualification');
-    else close();
-  };
   const closeExp = () => {
     const changed = editingExp && JSON.stringify(editingExp.entry) !== JSON.stringify(editingExp.original ?? blankExp(editingExp.entry.id));
     const close = () => {
@@ -390,9 +395,8 @@ export const OnboardingFlow = ({
   };
 
   const back = () => {
-    if (editingQual) return closeQual();
     if (editingExp) return closeExp();
-    if (step === 'review') return mode === 'resubmit' ? exit() : goto('experience');
+    if (step === 'review') return mode === 'resubmit' ? exit() : goto('signature');
     if (fromReview) return goto('review');
     const i = STEPS.findIndex((x) => x.key === step);
     if (i > 0) return goto(STEPS[i - 1].key);
@@ -592,6 +596,16 @@ export const OnboardingFlow = ({
           onChange={(document) => setIdentity({ document })}
           error={shown(e, 'document')}
         />
+        <TextField
+          testID="abhaId"
+          label="ABHA ID / ABHA Address"
+          value={idp.abhaId}
+          onChangeText={(v) => setIdentity({ abhaId: v })}
+          placeholder="e.g. 91-1234-5678-9012 or name@abdm"
+          autoCapitalize="none"
+          maxLength={60}
+          helper="Optional"
+        />
 
         <PrivacyNote icon="shieldCheck">Your identity document is used only for verification and is never shown to patients.</PrivacyNote>
       </Layout>
@@ -600,148 +614,114 @@ export const OnboardingFlow = ({
 
   /* --------------------------- 3. qualifications -------------------------- */
   if (step === 'qualifications') {
-    if (editingQual) {
-      const q = editingQual.entry;
-      const e = validateQualification(q);
-      const set = (p: Partial<Qualification>) => setEditingQual({ ...editingQual, entry: { ...q, ...p } });
-      return (
-        <Layout
-          key={`qual-${q.id}`}
-          testID="qualification-editor"
-          stepIndex={2}
-          title={editingQual.original ? 'Edit Qualification' : 'Add Qualification'}
-          subtitle="Each qualification needs its own degree certificate."
-          onBack={closeQual}
-          backLabel="Cancel"
-          primaryLabel="Save Qualification"
-          secondary={<CancelButton onPress={closeQual} />}
-          onPrimary={() => {
-            if (Object.keys(e).length) {
-              setShowAll(true);
-              return;
-            }
-            setDraft((d) => ({
-              ...d,
-              qualifications: editingQual.original ? d.qualifications.map((x) => (x.id === q.id ? q : x)) : [...d.qualifications, q],
-            }));
-            setEditingQual(null);
-            setTouched({});
-            setShowAll(false);
-          }}
-        >
-          <SelectField
-            testID="degree"
-            label="Qualification / Degree"
-            required
-            searchable
-            value={q.degree}
-            options={QUALIFICATION_OPTIONS}
-            onChange={(v) => set({ degree: v })}
-            placeholder="e.g. MBBS"
-            error={shown(e, 'degree')}
-          />
-          <TextField
-            testID="specialty"
-            label="Specialty / Subject"
-            value={q.specialty ?? ''}
-            onChangeText={(v) => set({ specialty: v })}
-            placeholder="Where applicable"
-            helper="Optional"
-          />
-          <TextField
-            testID="institution"
-            label="Institution / College"
-            required
-            value={q.institution}
-            onChangeText={(v) => set({ institution: v })}
-            onBlur={touch('institution')}
-            placeholder="e.g. AIIMS New Delhi"
-            autoCapitalize="words"
-            error={shown(e, 'institution')}
-          />
-          <TextField
-            testID="university"
-            label="University"
-            required
-            value={q.university}
-            onChangeText={(v) => set({ university: v })}
-            onBlur={touch('university')}
-            placeholder="Awarding university"
-            autoCapitalize="words"
-            error={shown(e, 'university')}
-          />
-          <TextField
-            testID="year"
-            label="Year of Passing"
-            required
-            value={q.year}
-            onChangeText={(v) => set({ year: v.replace(/\D/g, '').slice(0, 4) })}
-            onBlur={touch('year')}
-            placeholder="YYYY"
-            keyboardType="number-pad"
-            maxLength={4}
-            error={shown(e, 'year')}
-          />
-          <UploadField
-            testID="certificate"
-            label="Degree Certificate"
-            required
-            hint={UPLOAD_HINT}
-            file={q.certificate}
-            onChange={(certificate) => set({ certificate })}
-            error={shown(e, 'certificate')}
-          />
-          <PrivacyNote>
-            Patients see the degree name only. Institution, university, year of passing and the certificate itself are used for
-            verification and stay private.
-          </PrivacyNote>
-        </Layout>
-      );
-    }
-
-    const hasAny = draft.qualifications.length > 0;
+    const q = draft.qualifications;
+    const e = validateQualifications(q);
     return (
       <Layout
         key="qualifications"
         testID="onboarding-qualifications"
         stepIndex={2}
         title="Professional Qualifications"
-        subtitle="Add your medical qualifications, starting with your basic qualification."
+        subtitle="Your specialty, registration number and basic qualification are required. Add the others where they apply."
         onBack={back}
         backLabel={fromReview ? 'Back to review' : 'Back to proof of identity'}
         primaryLabel={continueLabel}
         onPrimary={() => advance('qualifications', 'experience')}
       >
-        {draft.qualifications.map((q) => (
-          <EntryCard
-            key={q.id}
-            testID={`qual-${q.id}`}
-            title={q.degree}
-            meta={`${q.institution} · ${q.year}`}
-            proofLabel={q.certificate ? `Certificate · ${q.certificate.name}` : 'Certificate missing'}
-            onEdit={() => setEditingQual({ entry: q, original: q })}
-            onRemove={() =>
-              confirm({
-                title: `Remove ${q.degree}?`,
-                message: 'Its certificate is removed with it.',
-                confirmLabel: 'Remove',
-                destructive: true,
-                onConfirm: () => setDraft((d) => ({ ...d, qualifications: d.qualifications.filter((x) => x.id !== q.id) })),
-              })
-            }
-          />
-        ))}
-        <AddButton
-          testID="add-qualification"
-          label={hasAny ? 'Add Another Qualification' : 'Add Qualification'}
-          invalid={showAll && !hasAny}
-          onPress={() => {
-            setTouched({});
-            setShowAll(false);
-            setEditingQual({ entry: blankQual(newId('q')) });
+        <SelectField
+          testID="specialty"
+          label="Specialty"
+          required
+          searchable
+          value={specialtyName(q.specialtyId)}
+          options={(specialties.data ?? []).map((x) => x.name)}
+          onChange={(name) => {
+            const chosen = specialties.data?.find((x) => x.name === name);
+            if (chosen) setQuals({ specialtyId: chosen.id });
           }}
+          placeholder={specialties.error ? 'Could not load specialties' : specialties.data ? 'Select your specialty' : 'Loading specialties…'}
+          helper="Chosen from the specialties Coracure offers. Our team confirms it against your registration."
+          error={specialties.error ? undefined : shown(e, 'specialtyId')}
         />
-        {showAll && !hasAny && <Err>Add at least one qualification to continue.</Err>}
+        {specialties.error && (
+          <Pressable testID="specialty-retry" onPress={specialties.retry} accessibilityRole="button" style={s.retry}>
+            <Text style={s.retryText}>{messageFor(specialties.error, 'Could not load specialties.')} Tap to try again.</Text>
+          </Pressable>
+        )}
+        <TextField
+          testID="registrationNumber"
+          label="Registration Number"
+          required
+          value={q.registrationNumber}
+          onChangeText={(v) => setQuals({ registrationNumber: v })}
+          onBlur={touch('registrationNumber')}
+          placeholder="Medical council or professional registration number"
+          autoCapitalize="characters"
+          maxLength={80}
+          helper="As on your registration certificate. Our team verifies it."
+          error={shown(e, 'registrationNumber')}
+        />
+        <TextField
+          testID="basicQualification"
+          label="Basic Qualification"
+          required
+          value={q.basicQualification}
+          onChangeText={(v) => setQuals({ basicQualification: v })}
+          onBlur={touch('basicQualification')}
+          placeholder="e.g. MBBS / BDS / B.Sc. Veterinary / BPT / M.Phil Clinical Psychology"
+          autoCapitalize="characters"
+          maxLength={120}
+          error={shown(e, 'basicQualification')}
+        />
+        <TextField
+          testID="pgSpecialisation"
+          label="PG Specialisation"
+          value={q.pgSpecialisation}
+          onChangeText={(v) => setQuals({ pgSpecialisation: v })}
+          placeholder="e.g. MD Dermatology / MPT Orthopaedics / M.Phil Clinical Psychology"
+          maxLength={120}
+          helper="Optional"
+        />
+        <TextField
+          testID="superSpecialisation"
+          label="Super Specialisation"
+          value={q.superSpecialisation}
+          onChangeText={(v) => setQuals({ superSpecialisation: v })}
+          placeholder="e.g. DM Endocrinology"
+          maxLength={120}
+          helper="Optional"
+        />
+        <TextField
+          testID="fellowship"
+          label="Fellowship"
+          value={q.fellowship}
+          onChangeText={(v) => setQuals({ fellowship: v })}
+          placeholder="e.g. Fellowship in Diabetology"
+          maxLength={120}
+          helper="Optional"
+        />
+        <UploadField
+          testID="degreeCertificate"
+          label="Upload Degree Certificate"
+          required
+          hint={UPLOAD_HINT}
+          file={q.degreeCertificate}
+          onChange={(degreeCertificate) => setQuals({ degreeCertificate })}
+          error={shown(e, 'degreeCertificate')}
+        />
+        <UploadField
+          testID="registrationCertificate"
+          label="Upload Registration Certificate"
+          required
+          hint={UPLOAD_HINT}
+          file={q.registrationCertificate}
+          onChange={(registrationCertificate) => setQuals({ registrationCertificate })}
+          error={shown(e, 'registrationCertificate')}
+        />
+        <PrivacyNote>
+          Patients see only the qualification names, e.g. MBBS · MD Dermatology. Both certificates are used for verification and stay
+          private.
+        </PrivacyNote>
       </Layout>
     );
   }
@@ -758,7 +738,7 @@ export const OnboardingFlow = ({
           testID="experience-editor"
           stepIndex={3}
           title={editingExp.original ? 'Edit Experience' : 'Add Experience'}
-          subtitle="Employment proof is required for each role."
+          subtitle="An experience certificate is required for each role."
           onBack={closeExp}
           backLabel="Cancel"
           primaryLabel="Save Experience"
@@ -777,71 +757,52 @@ export const OnboardingFlow = ({
             setShowAll(false);
           }}
         >
-          <SelectField
-            testID="position"
-            label="Position / Designation"
+          <TextField
+            testID="designation"
+            label="Designation"
             required
-            searchable
-            value={x.position}
-            options={POSITION_OPTIONS}
-            onChange={(v) => set({ position: v })}
-            placeholder="e.g. Consultant Psychiatrist"
-            error={shown(e, 'position')}
+            value={x.designation}
+            onChangeText={(v) => set({ designation: v })}
+            onBlur={touch('designation')}
+            placeholder="e.g. Consultant / Senior Resident / Physiotherapist"
+            autoCapitalize="words"
+            maxLength={80}
+            error={shown(e, 'designation')}
           />
           <TextField
             testID="workplace"
-            label="Institution / Hospital / Clinic"
+            label="Name of Institute"
             required
             value={x.institution}
             onChangeText={(v) => set({ institution: v })}
             onBlur={touch('institution')}
-            placeholder="Where you worked"
+            placeholder="Hospital, clinic or institute"
             autoCapitalize="words"
             error={shown(e, 'institution')}
           />
           <TextField
-            testID="start"
-            label="Start Month"
+            testID="years"
+            label="Years of Experience"
             required
-            value={x.start}
-            onChangeText={(v) => set({ start: monthMask(v) })}
-            onBlur={touch('start')}
-            placeholder="YYYY / MM"
-            keyboardType="number-pad"
-            maxLength={9}
-            error={shown(e, 'start')}
+            value={x.years}
+            onChangeText={(v) => set({ years: v.replace(/[^\d.]/g, '').slice(0, 4) })}
+            onBlur={touch('years')}
+            placeholder="e.g. 5"
+            keyboardType="decimal-pad"
+            maxLength={4}
+            error={shown(e, 'years')}
           />
-          <CheckField testID="current" checked={x.current} onToggle={() => set({ current: !x.current, end: x.current ? '' : null })}>
-            I currently work here
-          </CheckField>
-          {!x.current && (
-            <View style={s.endWrap}>
-              <TextField
-                testID="end"
-                label="End Month"
-                required
-                value={x.end ?? ''}
-                onChangeText={(v) => set({ end: monthMask(v) })}
-                onBlur={touch('end')}
-                placeholder="YYYY / MM"
-                keyboardType="number-pad"
-                maxLength={9}
-                error={shown(e, 'end')}
-              />
-            </View>
-          )}
           <UploadField
-            testID="proof"
-            label="Experience / Employment Proof"
+            testID="experienceCertificate"
+            label="Upload Experience Certificate"
             required
-            hint="Experience certificate, appointment letter or employment certificate"
-            file={x.proof}
-            onChange={(proof) => set({ proof })}
-            error={shown(e, 'proof')}
+            hint={UPLOAD_HINT}
+            file={x.certificate}
+            onChange={(certificate) => set({ certificate })}
+            error={shown(e, 'certificate')}
           />
           <PrivacyNote>
-            Patients see only your total verified years of experience. Positions, institutions, employment dates and certificates
-            stay private.
+            Patients see only your total years of experience. Designations, institutes and certificates stay private.
           </PrivacyNote>
         </Layout>
       );
@@ -854,11 +815,11 @@ export const OnboardingFlow = ({
         testID="onboarding-experience"
         stepIndex={3}
         title="Experience Details"
-        subtitle="Add your current and previous roles. Your total is calculated automatically."
+        subtitle="Add each role with the years you spent there. Your total is added up automatically."
         onBack={back}
         backLabel={fromReview ? 'Back to review' : 'Back to qualifications'}
-        primaryLabel={fromReview ? continueLabel : 'Save & Review'}
-        onPrimary={() => advance('experience', 'review')}
+        primaryLabel={continueLabel}
+        onPrimary={() => advance('experience', 'signature')}
       >
         {hasAny && (
           <View testID="total-experience" style={s.totalCard}>
@@ -869,7 +830,7 @@ export const OnboardingFlow = ({
               <Text style={s.totalValue}>
                 {years} {years === 1 ? 'Year' : 'Years'}
               </Text>
-              <Text style={s.totalLabel}>Total experience · overlapping roles counted once</Text>
+              <Text style={s.totalLabel}>Total experience · the only figure patients see</Text>
             </View>
           </View>
         )}
@@ -878,14 +839,14 @@ export const OnboardingFlow = ({
           <EntryCard
             key={x.id}
             testID={`exp-${x.id}`}
-            title={x.position}
-            meta={`${x.institution} · ${x.start} – ${x.current ? 'Present' : x.end}`}
-            proofLabel={x.proof ? `Proof · ${x.proof.name}` : 'Proof missing'}
+            title={x.designation}
+            meta={`${x.institution} · ${x.years} ${Number(x.years) === 1 ? 'year' : 'years'}`}
+            proofLabel={x.certificate ? `Certificate · ${x.certificate.name}` : 'Certificate missing'}
             onEdit={() => setEditingExp({ entry: x, original: x })}
             onRemove={() =>
               confirm({
-                title: `Remove ${x.position}?`,
-                message: 'Its employment proof is removed with it.',
+                title: `Remove ${x.designation}?`,
+                message: 'Its experience certificate is removed with it.',
                 confirmLabel: 'Remove',
                 destructive: true,
                 onConfirm: () => setDraft((d) => ({ ...d, experience: d.experience.filter((y) => y.id !== x.id) })),
@@ -908,7 +869,48 @@ export const OnboardingFlow = ({
     );
   }
 
-  /* ------------------------------- 5. review ------------------------------ */
+  /* ------------------------------ 5. signature ---------------------------- */
+  if (step === 'signature') {
+    const sig = draft.signature;
+    const preview = photoPreview(sig);
+    return (
+      <Layout
+        key="signature"
+        testID="onboarding-signature"
+        stepIndex={4}
+        title="Digital Signature"
+        subtitle="Placed automatically on the prescriptions you issue. You can add or change it later."
+        onBack={back}
+        backLabel={fromReview ? 'Back to review' : 'Back to experience'}
+        primaryLabel={fromReview ? continueLabel : 'Save & Review'}
+        onPrimary={() => advance('signature', 'review')}
+      >
+        {preview && (
+          <View testID="signature-preview" style={s.signaturePreview}>
+            <Image source={preview} style={s.signatureImage} resizeMode="contain" accessibilityLabel="Your signature" />
+          </View>
+        )}
+        <UploadField
+          testID="signature"
+          label="Upload Signature for Prescription"
+          hint="JPG or PNG · a transparent PNG works best"
+          maxMb={2}
+          file={sig}
+          onChange={(f) => {
+            // the picker also passes HEIC/WebP; a prescription needs a format every PDF renderer reads
+            if (f && !/^image\/(jpeg|png)$/.test(f.contentType ?? '')) {
+              toast.show('Choose a JPG or PNG signature.', 'error');
+              return;
+            }
+            setDraft((d) => ({ ...d, signature: f }));
+          }}
+        />
+        <PrivacyNote icon="lock">Your signature is private. It is never shown to patients except printed on a prescription you issue.</PrivacyNote>
+      </Layout>
+    );
+  }
+
+  /* ------------------------------- 6. review ------------------------------ */
   const idLabel = draft.identity.idType === OTHER_ID ? draft.identity.idTypeName || OTHER_ID : draft.identity.idType;
   const rows: { key: StepKey; label: string; value: string }[] = [
     {
@@ -924,12 +926,21 @@ export const OnboardingFlow = ({
     {
       key: 'qualifications',
       label: 'Professional Qualifications',
-      value: draft.qualifications.length ? draft.qualifications.map((q) => q.degree).join(', ') : 'None added',
+      value:
+        [specialtyName(draft.qualifications.specialtyId), draft.qualifications.basicQualification, draft.qualifications.pgSpecialisation, draft.qualifications.superSpecialisation, draft.qualifications.fellowship]
+          .map((d) => d.trim())
+          .filter(Boolean)
+          .join(' · ') || 'None added',
     },
     {
       key: 'experience',
       label: 'Experience Details',
       value: draft.experience.length ? `${years} ${years === 1 ? 'year' : 'years'} · ${draft.experience.length} ${draft.experience.length === 1 ? 'role' : 'roles'}` : 'None added',
+    },
+    {
+      key: 'signature',
+      label: 'Digital Signature',
+      value: draft.signature ? draft.signature.name : 'Optional · not uploaded',
     },
   ];
   const incomplete = STEPS.filter((st) => !isStepComplete(draft, st.key));
@@ -990,7 +1001,7 @@ export const OnboardingFlow = ({
       title={mode === 'resubmit' ? 'Update & Resubmit' : 'Review Your Details'}
       subtitle={mode === 'resubmit' ? 'Correct the sections flagged by the verification team, then resubmit.' : 'Check everything before submitting. You can edit any section.'}
       onBack={back}
-      backLabel={mode === 'resubmit' ? 'Close' : 'Back to experience'}
+      backLabel={mode === 'resubmit' ? 'Close' : 'Back to signature'}
       primaryLabel={
         sending
           ? sending.total
@@ -1010,7 +1021,8 @@ export const OnboardingFlow = ({
         {rows.map((r, i) => {
           const done = isStepComplete(draft, r.key);
           const flag = flagged.find((f) => f.step === r.key && !revisited.includes(r.key));
-          const ok = done && !flag;
+          // The signature is optional, so its step counts as done; the tick still waits for an upload.
+          const ok = done && !flag && (r.key !== 'signature' || !!draft.signature);
           return (
             <View key={r.key} testID={`review-${r.key}`} style={[s.reviewRow, i < rows.length - 1 && s.reviewBorder]}>
               <Icon name={ok ? 'checkCircle' : 'alertCircle'} size={18} color={ok ? colors.surfie : colors.warn} filled={ok} />
@@ -1065,12 +1077,13 @@ export const OnboardingFlow = ({
   );
 };
 
-const blankQual = (id: string): Qualification => ({ id, degree: '', institution: '', university: '', year: '', certificate: null });
-const blankExp = (id: string): Experience => ({ id, position: '', institution: '', start: '', end: null, current: false, proof: null });
+const blankExp = (id: string): Experience => ({ id, designation: '', institution: '', years: '', certificate: null });
 
 const s = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   pressed: { opacity: 0.8 },
+  retry: { minHeight: 44, justifyContent: 'center', marginTop: -spacing.sm, marginBottom: spacing.md },
+  retryText: { ...typeStyles.caption, color: colors.danger },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
 
   stepWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
@@ -1162,7 +1175,17 @@ const s = StyleSheet.create({
   addBtnInvalid: { borderColor: colors.danger },
   addBtnText: { ...typeStyles.buttonSmall, color: colors.surfie },
 
-  endWrap: { marginTop: spacing.lg },
+  signaturePreview: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 120,
+    marginBottom: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surface.line,
+    backgroundColor: colors.white,
+  },
+  signatureImage: { width: '80%', height: 96 },
 
   totalCard: {
     flexDirection: 'row',

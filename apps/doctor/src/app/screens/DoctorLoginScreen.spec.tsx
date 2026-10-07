@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { doctorAuthApi } from '@coracure/api';
+import { doctorAuthApi, doctorLegalApi } from '@coracure/api';
 import { ApiError } from '@coracure/api/errors';
 
 import { DoctorLoginScreen } from './DoctorLoginScreen';
@@ -29,7 +29,7 @@ beforeEach(() => {
   requestOtp = jest.spyOn(doctorAuthApi, 'requestOtp').mockResolvedValue({ challengeId: 'ch-1' });
   verifyOtp = jest
     .spyOn(doctorAuthApi, 'verifyOtp')
-    .mockResolvedValue({ verificationStatus: 'verified' });
+    .mockResolvedValue({ verificationStatus: 'verified', isNewAccount: false });
   onAuthenticated = jest.fn();
 });
 
@@ -90,7 +90,7 @@ test('verifies with the challenge id from the send, and reports the verification
 });
 
 test('hands an unverified doctor through with their real status, not as verified', async () => {
-  verifyOtp.mockResolvedValue({ verificationStatus: 'under_review' });
+  verifyOtp.mockResolvedValue({ verificationStatus: 'under_review', isNewAccount: false });
   mount();
   await enterNumber();
   await enterCode();
@@ -135,15 +135,21 @@ test('changing the number drops the old challenge instead of verifying against i
 
 /* -------------------------------- refusals -------------------------------- */
 
-test('an unenrolled number keeps the doctor on the number step with the reason shown', async () => {
-  requestOtp.mockRejectedValue(
-    serverError('INVALID_CREDENTIALS', 'That number is not registered as a doctor.'),
-  );
+test('a number nobody has used gets a code like any other - there is no "not registered" dead end', async () => {
   mount();
   await enterNumber('9000000000');
 
-  expect(screen.getByTestId('auth-error')).toHaveTextContent(/not registered as a doctor/i);
-  // No code step: six more digits cannot fix an account that does not exist.
+  expect(requestOtp).toHaveBeenCalledWith('+919000000000');
+  expect(screen.getByTestId('otp-0')).toBeTruthy();
+  expect(screen.queryByTestId('auth-error')).toBeNull();
+});
+
+test('a suspended account keeps the doctor on the number step with the reason shown', async () => {
+  requestOtp.mockRejectedValue(serverError('ACCOUNT_NOT_ACTIVE', 'This account is no longer active. Please contact the Coracure team.', 403));
+  mount();
+  await enterNumber('9000000000');
+
+  expect(screen.getByTestId('auth-error')).toHaveTextContent(/no longer active/i);
   expect(screen.queryByTestId('otp-0')).toBeNull();
 });
 
@@ -253,4 +259,26 @@ test('a reply landing after the screen is gone signs nobody in', async () => {
   });
 
   expect(onAuthenticated).not.toHaveBeenCalled();
+});
+
+/* ------------------------------ privacy policy ---------------------------- */
+
+test('the privacy sheet shows the published policy', async () => {
+  const get = jest.spyOn(doctorLegalApi, 'getDocument').mockResolvedValue({ body: 'We keep your records in India.' } as never);
+  mount();
+  fireEvent.press(screen.getByTestId('privacy-link'));
+  await settle();
+
+  expect(get).toHaveBeenCalledWith('privacy_policy');
+  expect(screen.getByTestId('privacy-body')).toHaveTextContent('We keep your records in India.');
+});
+
+test('a policy that cannot be read still leaves the way to ask for it', async () => {
+  jest.spyOn(doctorLegalApi, 'getDocument').mockRejectedValue(new Error('offline'));
+  mount();
+  fireEvent.press(screen.getByTestId('privacy-link'));
+  await settle();
+
+  expect(screen.queryByTestId('privacy-body')).toBeNull();
+  expect(screen.getByText(/contact CoraCure support/)).toBeTruthy();
 });

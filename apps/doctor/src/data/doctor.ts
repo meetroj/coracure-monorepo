@@ -2,11 +2,11 @@
  * Doctor-app domain types and development fixtures.
  *
  * Role scope: a doctor sees only their own cases and assigned patients.
- * There is no patient discovery and no doctor self-registration — doctors are
- * created and approved by an administrator.
+ * There is no patient discovery. Doctors register themselves and an
+ * administrator approves or rejects them.
  *
- * The fixtures describe one coherent day on the demo clock (11:45 AM, see
- * `calendar.ts`): consultations before it are done, the next one starts at
+ * The fixtures describe one coherent day as seen at 11:45 AM (the time specs
+ * pin, see `calendar.ts`): consultations before it are done, the next one starts at
  * noon, and every count on screen is derived from these records rather than
  * authored beside them.
  */
@@ -15,7 +15,6 @@ import type { ImageSourcePropType } from 'react-native';
 import type { ProfessionalType } from './clinical';
 import { patientById } from './patients';
 import {
-  DEMO_NOW_MINUTES,
   TODAY,
   clockToMinutes,
   dayOffset,
@@ -23,7 +22,9 @@ import {
   fmtDayMonth,
   fmtMonthYear,
   fmtWeekday,
+  minutesAgo,
   minutesToClock,
+  nowMinutes,
   relativeDay,
   toISODate,
 } from './calendar';
@@ -210,19 +211,19 @@ export const heldAppointments = () =>
     .filter((a) => a.state === 'completed' || a.state === 'noShow')
     .sort((x, y) => y.dayOffset - x.dayOffset || y.minutes - x.minutes);
 
-/** The next appointment still to start today, on the demo clock. */
+/** The next appointment still to start today. */
 export const nextAppointmentFor = (list: Appointment[] = appointments): Appointment | undefined =>
   list
-    .filter((a) => a.dayOffset === 0 && a.state === 'confirmed' && a.minutes >= DEMO_NOW_MINUTES)
+    .filter((a) => a.dayOffset === 0 && a.state === 'confirmed' && a.minutes >= nowMinutes())
     .sort((x, y) => x.minutes - y.minutes)[0];
 
-/** Minutes from the demo clock to the appointment; negative once it has started. */
-export const minutesUntil = (a: Appointment) =>
-  a.dayOffset * 24 * 60 + (a.minutes - DEMO_NOW_MINUTES);
+/** Minutes from now to the appointment; negative once it has started. */
+export const minutesUntil = (a: Appointment) => -minutesAgo(a.dayOffset, a.minutes);
 
 /** A patient's earlier consultations, most recent first. */
-export const previousConsultations = (a: Appointment) =>
-  appointments
+/** Earlier completed consultations with the same patient — from `all`, the real list when the caller has it. */
+export const previousConsultations = (a: Appointment, all: Appointment[] = appointments) =>
+  all
     .filter(
       (x) =>
         x.patientId === a.patientId &&
@@ -245,8 +246,6 @@ export type AppointmentDetail = {
   patientId: string;
   /** Clinical record identifier. Everything in Module 9 links to this. */
   consultationId: string;
-  /** The booking reference shown on the appointment. */
-  appointmentRef: string;
   dateLabel: string;
   /** Patient-reported, in their words. Never a diagnosis. */
   concern: string;
@@ -255,9 +254,15 @@ export type AppointmentDetail = {
   severity: string;
   totalConsultations: number;
   intake: IntakeRow[];
-  consent: { version: string; time: string };
+  /** Current or previous medication, as the patient reported it. */
+  medication: string;
+  /**
+   * The backend knows only whether a current teleconsultation consent is on
+   * file — no version or time. `unknown` while the consultation has not loaded.
+   */
+  consent: { status: 'onFile' | 'missing' | 'unknown'; version?: string; time?: string };
   past?: { appointmentId: string; dateLabel: string; time: string; title: string; note: string };
-  payment: { state: string; txnId: string; method: string };
+  payment: { state: string; method: string };
 };
 
 /** Patient-reported intake, authored where the booking form captured more detail. */
@@ -302,13 +307,11 @@ export const detailFor = (a: Appointment): AppointmentDetail => {
   const seed = intakeById[a.id] ?? {};
   const previous = previousConsultations(a);
   const last = previous[0];
-  const stamp = toISODate(dayOffset(a.dayOffset)).slice(2).replace(/-/g, '');
   const totalConsultations =
     appointments.filter((x) => x.patientId === a.patientId && x.state !== 'cancelled').length;
   return {
     patientId: a.patientId,
     consultationId: a.consultationId,
-    appointmentRef: `APT-${stamp}-${String(a.minutes).padStart(4, '0')}`,
     dateLabel: a.dateLabel,
     concern: a.concern,
     concernDetail: seed.concernDetail ?? a.concern,
@@ -318,11 +321,11 @@ export const detailFor = (a: Appointment): AppointmentDetail => {
     intake: [
       { key: 'dur', icon: 'calendar', label: 'Duration', value: seed.duration ?? 'Not recorded' },
       { key: 'sev', icon: 'heart', label: 'Severity', value: seed.severity ?? 'Not recorded' },
-      { key: 'med', icon: 'prescription', label: 'Medication', value: seed.medication ?? 'None reported' },
       { key: 'alg', icon: 'alertTriangle', label: 'Allergies', value: seed.allergies ?? 'None known' },
       { key: 'oth', icon: 'document', label: 'Other', value: seed.other ?? a.concern },
     ],
-    consent: { version: 'v2.1', time: minutesToClock(Math.max(0, a.minutes - 40)) },
+    medication: seed.medication ?? 'None reported',
+    consent: { status: 'onFile', version: 'v2.1', time: minutesToClock(Math.max(0, a.minutes - 40)) },
     past: last
       ? {
           appointmentId: last.id,
@@ -334,7 +337,6 @@ export const detailFor = (a: Appointment): AppointmentDetail => {
       : undefined,
     payment: {
       state: a.payment === 'paid' ? 'Paid' : a.payment === 'refunded' ? 'Refunded' : 'Not paid',
-      txnId: `CC${stamp}${a.id.slice(1).padStart(4, '0')}`,
       method: 'Online',
     },
   };
@@ -417,6 +419,8 @@ export type Doctor = {
   documentsApproved: boolean;
   /** Shown on the profile's About card. */
   bio: string;
+  /** The approved signature placed on generated prescriptions. Absent until uploaded. */
+  signatureUrl?: string;
 };
 
 /** The signed-in doctor. Every "me" reference in the fixtures resolves here. */
@@ -599,105 +603,6 @@ export const payoutHistory: PayoutRecord[] = Array.from({ length: 8 }, (_, i) =>
 
 /** Manual payouts carry a state rather than a guaranteed date. */
 export const payoutNote = 'Payouts are processed manually by CoraCure on the 5th of each month.';
-
-/* -------------------------------- feedback -------------------------------- */
-
-/** The closed set of positive attributes a patient may tag a consultation with. */
-export const REVIEW_TAGS = [
-  'Clear explanations',
-  'Listens carefully',
-  'Helpful guidance',
-  'On time',
-] as const;
-export type ReviewTag = (typeof REVIEW_TAGS)[number];
-
-/**
- * A review as the doctor sees it. Patient identity is deliberately reduced to
- * "Verified patient" or initials — the doctor never sees who wrote which
- * review, only that the consultation behind it actually happened.
- */
-export type Review = {
-  id: string;
-  /** Initials when the patient allowed them; otherwise the anonymous label. */
-  initials?: string;
-  label: string;
-  stars: number;
-  dateLabel: string;
-  /** Consultation mode or type the review is attached to. */
-  mode: string;
-  /** Empty when the patient rated without writing anything. */
-  body: string;
-  tags: ReviewTag[];
-  /**
-   * Surfaces the "Report concern" action. Reserved for reviews a doctor may
-   * reasonably contest — a low rating on its own is not grounds for a report.
-   */
-  reportable?: boolean;
-};
-
-export const feedback = {
-  rating: 4.8,
-  reviews: 126,
-  /** Share of reviews at each star level; ordered 5 → 1. */
-  distribution: [
-    { stars: 5, percent: 82 },
-    { stars: 4, percent: 13 },
-    { stars: 3, percent: 4 },
-    { stars: 2, percent: 1 },
-    { stars: 1, percent: 0 },
-  ],
-};
-
-export const reviews: Review[] = [
-  {
-    id: 'r1',
-    label: 'Verified patient',
-    stars: 5,
-    dateLabel: fmtDate(dayOffset(-1)),
-    mode: 'Video consultation',
-    body: 'The doctor listened patiently and explained the treatment plan in a very clear way.',
-    tags: ['Clear explanations', 'Listens carefully'],
-  },
-  {
-    id: 'r2',
-    initials: 'RS',
-    label: 'Patient R.S.',
-    stars: 5,
-    dateLabel: fmtDate(dayOffset(-3)),
-    mode: 'Follow-up',
-    body: 'The follow-up was reassuring and all my questions were answered without rushing.',
-    tags: ['Helpful guidance', 'On time'],
-  },
-  {
-    id: 'r3',
-    label: 'Verified patient',
-    stars: 4,
-    dateLabel: fmtDate(dayOffset(-6)),
-    mode: 'Audio consultation',
-    body: 'Good consultation and practical advice. The call started a few minutes late.',
-    tags: ['Helpful guidance'],
-  },
-  {
-    id: 'r4',
-    initials: 'AP',
-    label: 'Patient A.P.',
-    stars: 5,
-    dateLabel: fmtDate(dayOffset(-9)),
-    mode: 'Video consultation',
-    body: 'Very professional and calm. I felt comfortable discussing my concerns.',
-    tags: ['Listens carefully'],
-  },
-  {
-    id: 'r5',
-    label: 'Verified patient',
-    stars: 3,
-    dateLabel: fmtDate(dayOffset(-13)),
-    mode: 'Video consultation',
-    body: 'Consultation was helpful, but I would have liked more time for questions.',
-    tags: [],
-    reportable: true,
-  },
-];
 
 /* ------------------------------- schedule --------------------------------- */
 

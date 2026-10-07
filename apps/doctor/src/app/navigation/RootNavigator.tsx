@@ -5,6 +5,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import { colors } from '../../theme/brand';
 import { useStore } from '../../state/store';
+import { useSelfProfile } from '../../data/profile';
+import { useUnreadNotificationCount } from '../../data/notifications';
+import { useChatThreads } from '../../data/chat';
+import { gated } from '../../components/VerifiedGate';
 import { TabBar } from './TabBar';
 import * as R from './routes';
 import type { DashboardStackParams, RootParams, TabParams } from './types';
@@ -12,6 +16,12 @@ import type { DashboardStackParams, RootParams, TabParams } from './types';
 const Root = createNativeStackNavigator<RootParams, undefined>();
 const Tabs = createBottomTabNavigator<TabParams, undefined>();
 const Dash = createNativeStackNavigator<DashboardStackParams, undefined>();
+
+/* the tabs that call clinical endpoints, which the server refuses until the doctor is verified; the Dashboard keeps its place as home */
+const Dashboard = gated(R.DashboardRoute, 'dashboard');
+const Appointments = gated(R.AppointmentsRoute);
+const Cases = gated(R.CasesRoute);
+const Clarifications = gated(R.ClarificationsRoute);
 
 /** The app's own surfaces, so no default navigator colour flashes during a transition. */
 const theme: Theme = {
@@ -29,7 +39,7 @@ const theme: Theme = {
 /** Dashboard keeps its worklists (tasks, alerts) under the tab bar. */
 const DashboardStack = () => (
   <Dash.Navigator id={undefined} screenOptions={{ headerShown: false }}>
-    <Dash.Screen name="Dashboard" component={R.DashboardRoute} />
+    <Dash.Screen name="Dashboard" component={Dashboard} />
     <Dash.Screen name="PendingTasks" component={R.PendingTasksRoute} />
     <Dash.Screen name="FollowUpAlerts" component={R.FollowUpAlertsRoute} />
   </Dash.Navigator>
@@ -42,6 +52,13 @@ const DashboardStack = () => (
  */
 const TabNavigator = () => {
   const settled = useStore((s) => s.verification.acknowledged);
+  // Who the signed-in doctor is, from the backend — loaded once for the whole
+  // signed-in session, since every tab names them.
+  useSelfProfile();
+  // the bell's badge on every tab, not only after the dashboard loads the day
+  useUnreadNotificationCount();
+  // and the Messages badge beside it; chat is a verified doctor's
+  useChatThreads(useStore((s) => s.verification.status === 'approved'));
   return (
     <Tabs.Navigator
       id={undefined}
@@ -50,9 +67,9 @@ const TabNavigator = () => {
       screenOptions={{ headerShown: false }}
     >
       <Tabs.Screen name="DashboardTab" component={DashboardStack} />
-      <Tabs.Screen name="AppointmentsTab" component={R.AppointmentsRoute} />
-      <Tabs.Screen name="CasesTab" component={R.CasesRoute} />
-      <Tabs.Screen name="ClarificationsTab" component={R.ClarificationsRoute} />
+      <Tabs.Screen name="AppointmentsTab" component={Appointments} />
+      <Tabs.Screen name="CasesTab" component={Cases} />
+      <Tabs.Screen name="ClarificationsTab" component={Clarifications} />
       <Tabs.Screen name="ProfileTab" component={R.ProfileRoute} />
     </Tabs.Navigator>
   );
@@ -102,6 +119,8 @@ export const RootNavigator = () => (
       <Root.Screen name="CreateClarification" component={R.CreateClarificationRoute} />
       <Root.Screen name="Clarification" component={R.ClarificationRoute} />
       <Root.Screen name="ExpertResponse" component={R.ExpertResponseRoute} />
+      <Root.Screen name="ExpertInbox" component={R.ExpertInboxRoute} />
+      <Root.Screen name="ExpertReview" component={R.ExpertReviewRoute} />
 
       <Root.Screen name="InstantRequest" component={R.InstantRequestRoute} />
       <Root.Screen name="InstantAccepted" component={R.InstantAcceptedRoute} />

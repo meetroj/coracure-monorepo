@@ -118,6 +118,7 @@ export const Field = ({
   max,
   accessibilityLabel,
   editable = true,
+  keyboardType,
 }: {
   value: string;
   onChangeText: (t: string) => void;
@@ -128,10 +129,12 @@ export const Field = ({
   max?: number;
   accessibilityLabel?: string;
   editable?: boolean;
+  keyboardType?: 'default' | 'number-pad';
 }) => (
   <View style={[s.field, multiline && { minHeight: height ?? 88, paddingVertical: 10 }, !editable && s.fieldReadOnly]}>
     <TextInput
       testID={testID}
+      keyboardType={keyboardType}
       style={[multiline ? s.inputMulti : s.input]}
       value={value}
       onChangeText={(t) => onChangeText(max ? t.slice(0, max) : t)}

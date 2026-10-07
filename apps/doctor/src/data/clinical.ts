@@ -27,8 +27,10 @@ export const PROFESSIONAL_LABEL: Record<ProfessionalType, string> = {
 };
 
 /** The document a professional produces at the end of a consultation. */
-export const outputLabel = (t: ProfessionalType) =>
-  canPrescribe(t) ? 'Prescription' : 'Advice & Therapy Plan';
+export const outputLabel = (t: ProfessionalType) => (canPrescribe(t) ? 'Prescription' : 'Care Plan');
+
+/** The notes screen's own name — Clinical Notes & Diagnosis for a doctor, Assessment & Care Plan otherwise. */
+export const notesLabel = (t: ProfessionalType) => (canPrescribe(t) ? 'Clinical Notes & Diagnosis' : 'Assessment & Care Plan');
 
 /* -------------------------------- risk ------------------------------------ */
 
@@ -57,7 +59,7 @@ export const emptyRisk: RiskAssessment = { category: null, selfHarm: 'notAsked',
 
 /* --------------------------- clinical notes (01) -------------------------- */
 
-export type NoteKey = 'complaint' | 'history' | 'observations' | 'diagnosis' | 'advice' | 'followUp';
+export type NoteKey = 'complaint' | 'history' | 'observations' | 'diagnosis';
 
 export type NoteField = {
   key: NoteKey;
@@ -69,27 +71,35 @@ export type NoteField = {
 
 export const NOTE_MAX = 1000;
 
-export const NOTE_FIELDS: NoteField[] = [
-  { key: 'complaint', label: 'Chief Complaint', required: true, max: NOTE_MAX, placeholder: 'What the patient came with, in clinical terms.' },
-  { key: 'history', label: 'Brief Clinical History', required: true, max: NOTE_MAX, placeholder: 'Onset, duration and course so far.' },
-  { key: 'observations', label: 'Observations', required: true, max: NOTE_MAX, placeholder: 'Mental state and presentation during the consultation.' },
-  { key: 'diagnosis', label: 'Diagnosis', required: true, max: NOTE_MAX, placeholder: 'State clearly whether provisional or confirmed.' },
-  { key: 'advice', label: 'Advice or Treatment Plan', required: true, max: NOTE_MAX, placeholder: 'What you advised, and why.' },
-  { key: 'followUp', label: 'Follow-up Plan', required: true, max: NOTE_MAX, placeholder: 'When to review, and what would bring it forward.' },
-];
+/**
+ * Doctors document Clinical Notes & Diagnosis; everyone else documents an
+ * Assessment & Care Plan instead — same four fields, profession-neutral
+ * language, and no diagnosis field at all for a non-prescriber.
+ */
+export const noteFieldsFor = (t: ProfessionalType): NoteField[] =>
+  canPrescribe(t)
+    ? [
+        { key: 'complaint', label: 'Chief Complaint', required: true, max: NOTE_MAX, placeholder: 'What the patient came with, in clinical terms.' },
+        { key: 'history', label: 'Brief Clinical History', required: true, max: NOTE_MAX, placeholder: 'Onset, duration and course so far.' },
+        { key: 'observations', label: 'Observations', required: true, max: NOTE_MAX, placeholder: 'Mental state and presentation during the consultation.' },
+        { key: 'diagnosis', label: 'Provisional Diagnosis', required: true, max: NOTE_MAX, placeholder: 'State clearly whether provisional or confirmed.' },
+      ]
+    : [
+        { key: 'complaint', label: 'Presenting Concern', required: true, max: NOTE_MAX, placeholder: 'Why the patient is here, in their own words.' },
+        { key: 'history', label: 'Relevant History', required: true, max: NOTE_MAX, placeholder: 'Background, previous therapy or treatment, functional or lifestyle history.' },
+        { key: 'observations', label: 'Assessment / Observations', required: true, max: NOTE_MAX, placeholder: 'Your findings and observations during the consultation.' },
+      ];
 
 export const emptyNotes = (): Record<NoteKey, string> => ({
   complaint: '',
   history: '',
   observations: '',
   diagnosis: '',
-  advice: '',
-  followUp: '',
 });
 
 /** Required note fields still empty, in form order. */
-export const missingNoteFields = (notes: Record<NoteKey, string>, risk: RiskAssessment) => {
-  const missing = NOTE_FIELDS.filter((f) => f.required && !notes[f.key].trim()).map((f) => f.label);
+export const missingNoteFields = (notes: Record<NoteKey, string>, risk: RiskAssessment, t: ProfessionalType) => {
+  const missing = noteFieldsFor(t).filter((f) => f.required && !notes[f.key].trim()).map((f) => f.label);
   if (!risk.category) missing.push('Risk category');
   return missing;
 };
@@ -387,6 +397,14 @@ export type ConsultationRecord = {
   recommendations: { ids: string[]; note: string };
   /** The clarification raised from this consultation, when there is one. */
   clarificationId?: string;
+  /** How long the call ran, kept once it ends. */
+  durationSeconds?: number;
+  /**
+   * The server copy was laid over this record, or this record was saved to the
+   * server, this session. From then on the local record is the newer one and
+   * is never hydrated over again (`useClinicalRecordSync`).
+   */
+  synced?: boolean;
 };
 
 export const emptyRecord = (appointmentId: string): ConsultationRecord => ({
@@ -414,8 +432,17 @@ export type CompletionState = {
   summarySubmitted: boolean;
 };
 
-export const CASE_SUMMARY_MIN = 60;
+/**
+ * The backend's rule, checked when the record is finalised: 3–5 non-blank
+ * lines. Counted in LINES, not characters — a long single paragraph is refused
+ * as too short. The 1000-character cap is the written spec's, inside the
+ * backend's own 2000.
+ */
+export const CASE_SUMMARY_MIN_LINES = 3;
+export const CASE_SUMMARY_MAX_LINES = 5;
 export const CASE_SUMMARY_MAX = 1000;
+
+export const summaryLineCount = (s: string) => s.split(/\r?\n/).filter((l) => l.trim()).length;
 
 export const completionOf = (r: ConsultationRecord): CompletionState => ({
   notesFinalised: r.notesStatus === 'saved',
@@ -432,7 +459,8 @@ export const missingForCompletion = (c: CompletionState, t: ProfessionalType): s
   const missing: string[] = [];
   if (!c.notesFinalised) missing.push('Clinical notes');
   if (!c.outputFinalised) missing.push(canPrescribe(t) ? 'Prescription or advice' : 'Advice or therapy plan');
-  if (!c.followUpAssigned) missing.push('Follow-up plan');
+  // Not the follow-up plan: the backend refuses to start one (NOT_YET_DOCUMENTED)
+  // until the record is finalised, and only this submit finalises it.
   if (!c.summarySubmitted) missing.push('Case summary');
   return missing;
 };
@@ -453,9 +481,35 @@ export type RecordStage = 'notStarted' | 'inProgress' | 'readyToSubmit' | 'compl
 export const recordStage = (r: ConsultationRecord, t: ProfessionalType): RecordStage => {
   const c = completionOf(r);
   if (isClinicallyComplete(c, t)) return 'completed';
-  if (c.notesFinalised && c.outputFinalised && c.followUpAssigned) return 'readyToSubmit';
+  if (c.notesFinalised && c.outputFinalised) return 'readyToSubmit';
   if (r.notesStatus === 'empty' && r.medicines.length === 0 && !r.summary.trim()) return 'notStarted';
   return 'inProgress';
+};
+
+/**
+ * The case summary, generated from the consultation itself — the doctor never
+ * starts from a blank page. Diagnosis and medicines are folded in only for a
+ * prescriber; a non-doctor's summary comes from the assessment and care plan.
+ *
+ * One line per part, never more than five: presentation, observations,
+ * diagnosis, plan, risk. The backend refuses a summary outside 3–5 lines, so
+ * the draft is shaped to that rule rather than run together as one paragraph.
+ */
+export const generateCaseSummary = (r: ConsultationRecord, t: ProfessionalType): string => {
+  const prescriber = canPrescribe(t);
+  const bare = (s: string) => s.trim().replace(/[.\s]+$/, '');
+  const sentence = (parts: string[]) => parts.filter(Boolean).map((p) => `${p}.`).join(' ');
+  const lines = [
+    sentence([r.notes.complaint.trim() && bare(r.notes.complaint), r.notes.history.trim() && bare(r.notes.history)]),
+    sentence([r.notes.observations.trim() && bare(r.notes.observations)]),
+    prescriber && r.notes.diagnosis.trim() ? sentence([`Diagnosis: ${bare(r.notes.diagnosis)}`]) : '',
+    sentence([
+      prescriber && r.medicines.length > 0 ? `Started on ${r.medicines.map((m) => m.name).join(', ')}` : '',
+      r.advice.length > 0 ? `${prescriber ? 'Advised' : 'Recommended'}: ${r.advice.map(bare).join('; ')}` : '',
+    ]),
+    r.risk.category ? sentence([`Risk assessed as ${RISK_LABEL[r.risk.category].toLowerCase()}`]) : '',
+  ];
+  return lines.filter(Boolean).join('\n');
 };
 
 export const STAGE_LABEL: Record<RecordStage, string> = {

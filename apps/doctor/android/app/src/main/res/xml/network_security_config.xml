@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The live backend presents a self-signed certificate valid only for its IP address, which no
+  phone trusts by default. This trusts exactly that one certificate for exactly that address and
+  nothing else: every other host keeps the normal system trust, and cleartext stays blocked.
+
+  TEMPORARY. Replace with a certificate from a trusted authority for api.coracure.in, point the
+  app back at the domain, and delete this file and res/raw/coracure_selfsigned.pem. The certificate
+  expires on 2027-09-09 — after that the app cannot reach the server until it is rebuilt with the
+  new one.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">3.111.230.242</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/coracure_selfsigned" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

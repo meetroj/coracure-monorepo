@@ -1,10 +1,9 @@
 /**
- * The demo calendar.
+ * The calendar.
  *
- * Dates follow the device, so "today" in the app is always today. The time of
- * day is pinned to a demo clock instead: the schedule, countdowns and "x ago"
- * labels are authored against it, so they agree with each other whenever the
- * app is opened.
+ * Dates and the time of day both follow the device. Specs pin each through a
+ * test seam below so the fixtures' schedule, countdowns and "x ago" labels are
+ * reproducible on any day and at any hour they run.
  */
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -22,8 +21,23 @@ export const TODAY = pinned
     })()
   : startOfDay(new Date());
 
-/** Minutes past midnight on the demo clock (11:45 AM). */
-export const DEMO_NOW_MINUTES = 11 * 60 + 45;
+/**
+ * Test seam: minutes past midnight that pin the time of day, read on every
+ * call. Never set in the app.
+ */
+const pinnedMinutes = () => (globalThis as { __CORACURE_NOW_MINUTES__?: number }).__CORACURE_NOW_MINUTES__;
+
+/** Now, in epoch milliseconds: the device clock, or the pinned day and time under test. */
+export const nowMs = () => {
+  const m = pinnedMinutes();
+  return m === undefined ? Date.now() : new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate(), 0, m).getTime();
+};
+
+/** Minutes past midnight, now. */
+export const nowMinutes = () => {
+  const d = new Date(nowMs());
+  return d.getHours() * 60 + d.getMinutes();
+};
 
 export const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const MONTHS_LONG = [
@@ -108,9 +122,11 @@ export const fmtElapsed = (mins: number) => {
   return rest ? `${days}d ${rest}h` : `${days}d`;
 };
 
-/** Minutes between a demo-clock moment and now. Positive when in the past. */
+/** Minutes between a moment (days from today, minutes past midnight) and now. Positive when in the past. */
 export const minutesAgo = (dayOffsetFromToday: number, minutesPastMidnight: number) =>
-  -dayOffsetFromToday * 24 * 60 + (DEMO_NOW_MINUTES - minutesPastMidnight);
+  Math.round(
+    (nowMs() - new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + dayOffsetFromToday, 0, minutesPastMidnight).getTime()) / 60000
+  );
 
 /** "10 minutes ago", "3 hours ago", "Yesterday", "4 days ago". */
 export const fmtAgo = (mins: number) => {

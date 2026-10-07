@@ -6,6 +6,7 @@ import { typeStyles } from '../theme/typography';
 import { Icon } from './Icon';
 import { Screen, Button } from './ui';
 import { ScreenHeader } from './ScreenHeader';
+import { SkeletonRowList } from './skeletons';
 
 /**
  * What a route shows when the record it was opened for does not exist — a
@@ -34,6 +35,13 @@ export const NotFound = ({
       </Text>
       <Button testID="not-found-back" label="Go back" icon="arrowLeft" variant="secondary" onPress={onBack} style={s.btn} />
     </View>
+  </Screen>
+);
+
+/** The record is still loading — a route opened cold, e.g. from a notification. */
+export const RouteLoading = ({ onBack }: { onBack: () => void }) => (
+  <Screen testID="route-loading" header={<ScreenHeader onBack={onBack} />}>
+    <SkeletonRowList rows={3} avatar="none" />
   </Screen>
 );
 

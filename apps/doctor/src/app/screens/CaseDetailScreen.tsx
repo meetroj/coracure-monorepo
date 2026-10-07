@@ -7,10 +7,14 @@ import { Icon, type IconName } from '../../components/Icon';
 import { Screen, StatusPill } from '../../components/ui';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { useStore } from '../../state/store';
-import { selectAlerts, selectDoctor, selectRecord } from '../../state/selectors';
-import { careResources, pathwayByKey, reviewDateFor, ALERT_CATEGORY } from '../../data/followup';
-import { STAGE_LABEL, recordStage } from '../../data/clinical';
+import { selectDoctor, selectRecord } from '../../state/selectors';
+import { useCareHubItems } from '../../data/followup';
+import { useClinicalRecordSync, UUID } from '../../data/clinicalRecord';
+import { serverCallSeconds, useCallSession } from '../../data/callSession';
+import { useAuthorClarifications } from '../../data/clarifications';
+import { useFollowupPlan } from '../../data/followupPlan';
 import { LIST_STATUS_LABEL } from '../../data/clarification';
+import { notesLabel, outputLabel } from '../../data/clinical';
 import { isClinicallyComplete, modeLabel, type Appointment, type PatientCase } from '../../data/doctor';
 
 /**
@@ -117,13 +121,12 @@ export const CaseDetailScreen = ({
   onOpenNotes,
   onOpenPrescription,
   onOpenSummary,
-  onOpenAlert,
-  onAssignPlan,
   onOpenClarification,
   onNewClarification,
   onOpenRecommended,
   onOpenDocuments,
   onOpenAppointment,
+  onAssignPlan,
 }: {
   patientCase: PatientCase;
   appointment: Appointment;
@@ -131,31 +134,42 @@ export const CaseDetailScreen = ({
   onOpenNotes: () => void;
   onOpenPrescription: () => void;
   onOpenSummary: () => void;
-  onOpenAlert: (alertId: string) => void;
-  onAssignPlan: () => void;
   onOpenClarification: (clarificationId: string) => void;
   onNewClarification: () => void;
   onOpenRecommended: () => void;
   onOpenDocuments: () => void;
   onOpenAppointment: () => void;
+  /** Assign or change the follow-up plan — only possible once the record is finalised. */
+  onAssignPlan?: () => void;
 }) => {
   const c = patientCase;
   const a = appointment;
   const doctor = useStore(selectDoctor);
+  // the server's write-up and clarification, so the rows below are not blank until another tab loads them
+  useClinicalRecordSync(a.id);
+  useAuthorClarifications();
   const record = useStore((st) => selectRecord(st, a.id));
-  const alerts = useStore(selectAlerts).filter((al) => al.appointmentId === a.id);
+  // the server's measure of the call (both parties connected); the stopwatch is the fallback
+  const callSeconds = serverCallSeconds(useCallSession(a.id).data) ?? record.durationSeconds;
   const clarification = useStore((st) =>
     record.clarificationId ? st.clarifications.find((x) => x.id === record.clarificationId) : undefined
   );
   const state = STATE_META[c.state];
   const complete = isClinicallyComplete(c);
   const noShow = c.state === 'noShow';
-  const stage = recordStage(record, doctor.professionalType);
+  const finalised = record.summaryStatus === 'submitted';
+  const serverPlan = useFollowupPlan(a.id, UUID.test(a.id) && finalised).data;
+  const planLine =
+    serverPlan?.status === 'active' && serverPlan.pathway
+      ? `${serverPlan.pathway.name} · ${serverPlan.durationDays ?? '?'} days`
+      : record.plan
+        ? `${record.plan.pathway} · ${record.plan.duration} days`
+        : undefined;
 
-  const recommendedTitles = careResources.filter((r) => record.recommendations.ids.includes(r.id)).map((r) => r.title);
-  const plan = record.plan ? pathwayByKey(record.plan.pathway) : undefined;
-  const latestAlert = alerts[0];
-  const lastUpdated = record.summarySubmittedAt ?? record.rxFinalisedAt ?? record.rxSavedAt ?? record.notesSavedAt;
+  const recommendedIds = record.recommendations.ids;
+  // titles come from the library; the count stands on its own if that read fails
+  const library = useCareHubItems(recommendedIds.length > 0);
+  const recommendedTitles = (library.data ?? []).filter((r) => recommendedIds.includes(r.id)).map((r) => r.title);
 
   return (
     <Screen
@@ -204,27 +218,26 @@ export const CaseDetailScreen = ({
               {modeLabel[a.mode]}
             </Text>
           </View>
+          {callSeconds !== undefined && (
+            <>
+              <View style={s.footRule} />
+              <View style={s.footItem}>
+                <Icon name="clock" size={14} color={colors.surfie} />
+                <Text testID="case-duration" style={s.footText} numberOfLines={1}>
+                  {Math.floor(callSeconds / 60)}:{String(callSeconds % 60).padStart(2, '0')}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </Pressable>
-
-      {/* ---------------------------------- record -------------------------------- */}
-      <RecordRow
-        testID="row-audit"
-        icon="shieldCheck"
-        title="Record"
-        lines={[
-          `Treating doctor: ${doctor.name}`,
-          noShow ? 'Patient did not join the consultation.' : `Status: ${STAGE_LABEL[stage]}`,
-          lastUpdated ? `Last updated ${lastUpdated}` : undefined,
-        ]}
-      />
 
       {!noShow && (
         <>
           <RecordRow
             testID="row-notes"
             icon="stethoscope"
-            title="Clinical Notes & Diagnosis"
+            title={notesLabel(doctor.professionalType)}
             lines={[
               record.notes.complaint ? record.notes.complaint : 'Not yet written.',
               record.notes.diagnosis ? `Diagnosis: ${record.notes.diagnosis}` : undefined,
@@ -236,7 +249,11 @@ export const CaseDetailScreen = ({
           <RecordRow
             testID="row-prescription"
             icon="prescription"
-            title={record.rxStatus === 'finalised' ? 'Prescription Issued' : 'Prescription'}
+            title={
+              record.rxStatus === 'finalised'
+                ? `${outputLabel(doctor.professionalType)} Issued`
+                : outputLabel(doctor.professionalType)
+            }
             lines={[
               record.rxStatus === 'finalised'
                 ? `${record.medicines.length} medicine${record.medicines.length === 1 ? '' : 's'} · finalised ${record.rxFinalisedAt ?? ''}`
@@ -255,38 +272,6 @@ export const CaseDetailScreen = ({
             lines={[record.summaryStatus === 'submitted' ? record.summary : record.summary ? 'Draft in progress.' : 'Not yet submitted.']}
             onPress={onOpenSummary}
           />
-
-          {plan && record.plan ? (
-            <RecordRow
-              testID="row-checkins"
-              icon="heart"
-              title="Follow-up Plan"
-              lines={[
-                `${plan.label} · ${record.plan.duration} days`,
-                `Review ${reviewDateFor(record.plan.start, record.plan.duration)}`,
-                latestAlert ? `Latest alert: ${ALERT_CATEGORY[latestAlert.category].label} — ${latestAlert.trigger}` : 'No alerts from check-ins.',
-              ]}
-              trailing={
-                latestAlert ? (
-                  <StatusPill
-                    label={latestAlert.live.status === 'open' ? 'Open alert' : 'Reviewed'}
-                    tone={latestAlert.live.status === 'open' ? (latestAlert.category === 'redFlag' ? 'danger' : 'warn') : 'success'}
-                    dot={false}
-                  />
-                ) : undefined
-              }
-              onPress={latestAlert ? () => onOpenAlert(latestAlert.id) : complete ? undefined : onAssignPlan}
-            />
-          ) : (
-            <RecordRow
-              testID="row-checkins"
-              icon="heart"
-              title="Follow-up Plan"
-              lines={['No plan assigned.']}
-              onPress={complete ? undefined : onAssignPlan}
-              actionLabel={complete ? undefined : 'Assign'}
-            />
-          )}
 
           {clarification ? (
             <RecordRow
@@ -311,21 +296,30 @@ export const CaseDetailScreen = ({
           )}
 
           <RecordRow
+            testID="row-followup"
+            icon="calendar"
+            title="Follow-up Plan"
+            lines={[planLine ?? (finalised ? 'No follow-up plan yet.' : 'Available once the case summary is submitted.')]}
+            onPress={finalised ? onAssignPlan : undefined}
+            actionLabel={planLine ? undefined : 'Assign plan'}
+          />
+
+          <RecordRow
             testID="row-recommended"
             icon="sparkle"
             title="Recommended Resources"
             lines={[
-              recommendedTitles.length
-                ? `${recommendedTitles.length} recommended from the Care Hub`
+              recommendedIds.length
+                ? `${recommendedIds.length} recommended from the Care Hub`
                 : 'Nothing recommended yet.',
             ]}
             chips={recommendedTitles}
-            onPress={complete && recommendedTitles.length === 0 ? undefined : onOpenRecommended}
+            onPress={complete && recommendedIds.length === 0 ? undefined : onOpenRecommended}
           />
         </>
       )}
 
-      <RecordRow testID="row-documents" icon="folder" title="Patient Documents" lines={['Reports and files shared by the patient.']} onPress={onOpenDocuments} />
+      <RecordRow testID="row-documents" icon="folder" title="Patient Reports & Documents" lines={['Reports and files shared by the patient.']} onPress={onOpenDocuments} />
 
       <View style={s.footer}>
         <Icon name="lock" size={13} color={colors.surfie} />
