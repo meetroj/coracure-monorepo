@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "build": "node api.js && nx build admin",
+    "build": "nx build admin",
     "doctor:start": "nx start doctor",
     "doctor:ports": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3000 tcp:3000 || echo No Android device found - skipped adb reverse",
     "doctor:android": "npm run doctor:ports && nx run-android doctor",
