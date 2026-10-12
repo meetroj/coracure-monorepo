@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { LIVE } from '../../api/live';
 import {
   catalogue,
   type AllocationPolicy,
@@ -20,11 +21,14 @@ import {
   Notice,
   PageHeader,
   SelectField,
+  CardSkeleton,
   StatusBadge,
   Table,
+  TableSkeleton,
   Tabs,
   TextField,
   may,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -79,6 +83,10 @@ function Specialties({ level }: { level: AdminLevel }) {
   const create = useMutation(catalogue.createSpecialty);
   const [name, setName] = useState('');
   const [providerType, setProviderType] = useState('doctor');
+  // Live only: the backend needs what the patient pays, and a category.
+  const [fee, setFee] = useState('');
+  const [category, setCategory] = useState<'medical' | 'super_specialty' | 'paramedical' | 'veterinary'>('medical');
+  const [parentId, setParentId] = useState('');
 
   const canWrite = may(level, ['content', 'clinical_governance']);
 
@@ -102,6 +110,17 @@ function Specialties({ level }: { level: AdminLevel }) {
           />
         ),
     },
+    ...(LIVE
+      ? [
+          { key: 'category', header: 'Category', render: (s: Specialty) => s.category?.replace('_', '-') ?? '-' },
+          {
+            key: 'fee',
+            header: 'Patient fee',
+            align: 'end' as const,
+            render: (s: Specialty) => (s.consultationFeeInr != null ? `₹${s.consultationFeeInr.toLocaleString('en-IN')}` : '-'),
+          },
+        ]
+      : []),
     {
       key: 'active',
       header: 'Status',
@@ -122,6 +141,12 @@ function Specialties({ level }: { level: AdminLevel }) {
         <Async
           state={state}
           resource="specialties"
+          skeleton={
+            <TableSkeleton
+              columns={skeletonColumns(columns, { name: 'name', form: 'text', prescribe: 'status', active: 'status' })}
+              rows={5}
+            />
+          }
           empty={<EmptyState icon="catalogue" title="No specialties yet" />}
         >
           {(rows) => (
@@ -149,6 +174,40 @@ function Specialties({ level }: { level: AdminLevel }) {
                 { value: 'non_doctor', label: 'Non-doctor healthcare provider' },
               ]}
             />
+            {LIVE && (
+              <>
+                <SelectField
+                  label="Category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as typeof category)}
+                  options={[
+                    { value: 'medical', label: 'Medical' },
+                    { value: 'super_specialty', label: 'Super-specialty' },
+                    { value: 'paramedical', label: 'Paramedical' },
+                    { value: 'veterinary', label: 'Veterinary' },
+                  ]}
+                />
+                {category === 'super_specialty' && (
+                  <SelectField
+                    label="Sits under"
+                    value={parentId}
+                    onChange={(e) => setParentId(e.target.value)}
+                    options={[
+                      { value: '', label: 'Choose a medical specialty' },
+                      ...(state.data ?? []).filter((s) => s.category === 'medical' && s.isActive !== false).map((s) => ({ value: s.id, label: s.name })),
+                    ]}
+                  />
+                )}
+                <TextField
+                  label="Patient fee (₹)"
+                  required
+                  inputMode="numeric"
+                  value={fee}
+                  hint="What a patient pays, quoted before a provider is assigned."
+                  onChange={(e) => setFee(e.target.value)}
+                />
+              </>
+            )}
           </div>
           <div className="formActions">
             <Button
@@ -157,9 +216,20 @@ function Specialties({ level }: { level: AdminLevel }) {
               disabled={!name.trim()}
               onClick={async () => {
                 try {
-                  await create.mutate({ name: name.trim(), providerType });
+                  await create.mutate({
+                    name: name.trim(),
+                    providerType,
+                    ...(LIVE
+                      ? {
+                          consultationFeeInr: fee.trim() === '' ? undefined : Number(fee),
+                          category,
+                          parentSpecialtyId: parentId || undefined,
+                        }
+                      : {}),
+                  });
                   toast.success('Specialty added.');
                   setName('');
+                  setFee('');
                   state.reload();
                 } catch (e) {
                   toast.fromError(e);
@@ -183,6 +253,9 @@ function Concerns({ level }: { level: AdminLevel }) {
   const state = useResource<Concern[]>(fetcher, []);
   const create = useMutation(catalogue.createConcern);
   const [name, setName] = useState('');
+  const [specialtyId, setSpecialtyId] = useState('');
+  const specialtyFetcher = useCallback(() => catalogue.specialties(), []);
+  const specialties = useResource<Specialty[]>(specialtyFetcher, [], LIVE);
 
   const canWrite = may(level, ['content', 'clinical_governance']);
 
@@ -208,6 +281,9 @@ function Concerns({ level }: { level: AdminLevel }) {
         <Async
           state={state}
           resource="concerns"
+          skeleton={
+            <TableSkeleton columns={skeletonColumns(columns, { name: 'name', phrases: 'text', weight: 'amount' })} rows={5} />
+          }
           empty={<EmptyState icon="search" title="No concerns configured" />}
         >
           {(rows) => (
@@ -219,6 +295,18 @@ function Concerns({ level }: { level: AdminLevel }) {
       {canWrite && (
         <Card title="Add a concern">
           <TextField label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
+          {LIVE && (
+            <SelectField
+              label="Points to"
+              value={specialtyId}
+              hint="The specialty a patient who describes this is shown."
+              onChange={(e) => setSpecialtyId(e.target.value)}
+              options={[
+                { value: '', label: 'Choose a specialty' },
+                ...(specialties.data ?? []).filter((s) => s.isActive !== false).map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
+          )}
           <div className="formActions">
             <Button
               variant="primary"
@@ -226,7 +314,7 @@ function Concerns({ level }: { level: AdminLevel }) {
               disabled={!name.trim()}
               onClick={async () => {
                 try {
-                  await create.mutate({ name: name.trim() });
+                  await create.mutate({ name: name.trim(), ...(LIVE ? { specialtyId: specialtyId || undefined } : {}) });
                   toast.success('Concern added.');
                   setName('');
                   state.reload();
@@ -275,6 +363,7 @@ function Regions({ level }: { level: AdminLevel }) {
         <Async
           state={state}
           resource="regions"
+          skeleton={<TableSkeleton columns={skeletonColumns(columns, { name: 'name', active: 'status' })} rows={5} />}
           empty={<EmptyState icon="catalogue" title="No regions configured" />}
         >
           {(rows) => (
@@ -323,7 +412,7 @@ function Policy({ level }: { level: AdminLevel }) {
   const canWrite = may(level, ['operations']);
 
   return (
-    <Async state={state} resource="the allocation policy" skeletonRows={2}>
+    <Async state={state} resource="the allocation policy" skeleton={<CardSkeleton title="Allocation policy" lines={3} />}>
       {(policy) => (
         <Card title="Allocation policy">
           <Notice tone="warning">

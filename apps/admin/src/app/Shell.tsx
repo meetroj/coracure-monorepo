@@ -5,9 +5,10 @@ import { getSession, signOut, type Session } from '../api/http';
 import { inbox } from '../api/admin';
 import { useResource } from '../lib/useResource';
 import logo from '../assets/brand/coracure-wide-twotone.svg';
+import { LIVE } from '../api/live';
 import { switchLevel } from '../mock/auth';
-import { GROUPS, LEVELS, LEVEL_LABEL, SECTIONS, sectionsFor, type AdminLevel } from '../nav';
-import { Button, ConfirmDialog, Icon, SelectField } from '../ui';
+import { GROUPS, LEVELS, LEVEL_LABEL, SECTIONS, SUB_GROUPS, sectionsFor, type AdminLevel, type Group, type Section } from '../nav';
+import { Button, ConfirmDialog, Icon, SelectField, type IconName } from '../ui';
 import { NotificationBell } from './NotificationBell';
 
 /**
@@ -29,6 +30,7 @@ export function Shell({
   const location = useLocation();
   // Below 860px the sidebar is an off-canvas drawer; this is its open state.
   const [navOpen, setNavOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   // Picking a page (or the browser Back button) closes the drawer; so does ESC.
   useEffect(() => setNavOpen(false), [location.pathname]);
@@ -61,29 +63,15 @@ export function Shell({
           <Icon name="close" size={20} />
         </button>
 
-        <nav className="sidebar__nav" aria-label="Sections">
-          {GROUPS.map((group) => {
-            const inGroup = visible.filter((s) => s.group === group);
-            if (inGroup.length === 0) return null;
-            // Settings sits alone at the foot: a rule above it says "system", no label needed.
-            const isSystem = group === 'System';
-            return (
-              <div
-                className={`sidebar__group ${isSystem ? 'sidebar__group--system' : ''}`.trim()}
-                key={group}
-                {...(isSystem ? { role: 'group', 'aria-label': group } : {})}
-              >
-                {!isSystem && <h2>{group}</h2>}
-                {inGroup.map((section) => (
-                  <NavLink key={section.path} to={`/${section.path}`} className="sidebar__link">
-                    <Icon name={section.icon} size={18} />
-                    <span>{section.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+        <SideNav visible={visible} pathname={location.pathname} />
+
+        <div className="sidebar__foot">
+          <button type="button" className="sidebar__logout" onClick={() => setSigningOut(true)}>
+            <Icon name="signOut" size={18} />
+            <span>Log out</span>
+          </button>
+        </div>
+        <SignOutDialog open={signingOut} onClose={() => setSigningOut(false)} />
       </aside>
 
       <div className="main">
@@ -94,10 +82,109 @@ export function Shell({
           onMenu={() => setNavOpen(true)}
         />
         <main className="content">
-          <Outlet />
+          {/* Keyed by the path, so every page change fades in rather than snapping. */}
+          <div key={location.pathname} className="fadeIn">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
+  );
+}
+
+/** Sections whose second URL segment is a tab, not a detail record. */
+const TAB_HUBS = new Set(['admin-settings', 'app-settings', 'website-settings', 'master-data']);
+
+/* -------------------------------- sidebar --------------------------------- */
+
+const GROUP_ICON: Record<Group, IconName> = {
+  Dashboard: 'dashboard',
+  'Healthcare Providers': 'providers',
+  Patients: 'users',
+  Services: 'consultations',
+  Analytics: 'chart',
+  Finances: 'payments',
+  Support: 'note',
+  Admin: 'settings',
+};
+
+const isOn = (pathname: string, s: Section) =>
+  pathname === `/${s.path}` || pathname.startsWith(`/${s.path}/`);
+
+/**
+ * The §2 sidebar: Dashboard is a plain link; every other group, Patients
+ * included, is a collapsible section. The group holding the current page is
+ * always open; the rest stay closed until clicked.
+ */
+function SideNav({ visible, pathname }: { visible: Section[]; pathname: string }) {
+  const activeGroup = visible.find((s) => isOn(pathname, s))?.group;
+  const [open, setOpen] = useState<Set<Group>>(() => new Set(activeGroup ? [activeGroup] : []));
+
+  // Landing on a page in a closed group (a card, a link, Back) opens it.
+  useEffect(() => {
+    if (activeGroup) setOpen((prev) => (prev.has(activeGroup) ? prev : new Set(prev).add(activeGroup)));
+  }, [activeGroup]);
+
+  const toggle = (g: Group) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(g)) next.delete(g);
+      else next.add(g);
+      return next;
+    });
+
+  const link = (s: Section, nested = false) => (
+    <NavLink
+      key={s.path}
+      to={`/${s.path}`}
+      className={`sidebar__link ${nested ? 'sidebar__link--nested' : ''}`.trim()}
+    >
+      <Icon name={s.icon} size={18} />
+      <span>{s.label}</span>
+    </NavLink>
+  );
+
+  return (
+    <nav className="sidebar__nav" aria-label="Sections">
+      {GROUPS.map((group) => {
+        const items = visible.filter((s) => s.group === group);
+        if (items.length === 0) return null;
+        if (items.length === 1 && group === 'Dashboard') {
+          return (
+            <div className="sidebar__group" key={group}>
+              {link(items[0])}
+            </div>
+          );
+        }
+        const isOpen = open.has(group);
+        return (
+          <div className="sidebar__group" key={group}>
+            <button
+              type="button"
+              className="sidebar__toggle"
+              aria-expanded={isOpen}
+              onClick={() => toggle(group)}
+            >
+              <Icon name={GROUP_ICON[group]} size={18} />
+              <span>{group}</span>
+              <Icon name="chevronDown" size={14} className="sidebar__chev" />
+            </button>
+            {isOpen &&
+              (group === 'Services'
+                ? SUB_GROUPS.map((sub) => {
+                    const rows = items.filter((s) => s.sub === sub);
+                    return rows.length === 0 ? null : (
+                      <div key={sub} className="sidebar__sub">
+                        <h3>{sub}</h3>
+                        {rows.map((s) => link(s, true))}
+                      </div>
+                    );
+                  })
+                : items.map((s) => link(s)))}
+          </div>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -117,7 +204,7 @@ function Header({
   const navigate = useNavigate();
   const parts = useLocation().pathname.split('/').filter(Boolean);
   // A detail page (/doctors/:id, /consultations/:id, ...) gets Back, here beside the section name.
-  const isDetail = parts.length >= 2 && parts[0] !== 'settings';
+  const isDetail = parts.length >= 2 && !TAB_HUBS.has(parts[0]);
   const goBack = () => {
     const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
     // Back keeps the list's filters; a deep link with no history falls back to the list itself.
@@ -137,11 +224,44 @@ function Header({
       )}
       <h1 className="header__title">{title}</h1>
 
+      {/* A list screen portals its search box in here (see ListScreen). */}
+      <div id="header-search" className="header__search" />
+
       <div className="header__right">
         <NotificationBell />
         <AccountMenu session={session} onLevelChange={onLevelChange} />
       </div>
     </header>
+  );
+}
+
+/** Shared by the sidebar's Log out button and the account menu. */
+function SignOutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <ConfirmDialog
+      open={open}
+      busy={busy}
+      onClose={onClose}
+      title="Sign out of every device?"
+      variant="primary"
+      confirmLabel="Sign out everywhere"
+      consequence={
+        <>
+          Signing out revokes this account&apos;s token entirely, so{' '}
+          <strong>every browser and device signed in as you is signed out</strong>. The backend has
+          no way to end one session and keep the others.
+        </>
+      }
+      onConfirm={async () => {
+        setBusy(true);
+        // `signOut` clears local state even if the call fails, so this always
+        // ends at the sign-in screen rather than a half-signed-out panel.
+        await signOut();
+        setBusy(false);
+        onClose();
+      }}
+    />
   );
 }
 
@@ -156,7 +276,6 @@ function AccountMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
   // A dropdown that does not close on outside click or ESC is a trap.
@@ -208,6 +327,7 @@ function AccountMenu({
             actions can be reviewed without six accounts, and it goes when the
             backend is wired in.
           */}
+          {!LIVE && (
           <SelectField
             label="View as (demo only)"
             value={session.level}
@@ -219,6 +339,7 @@ function AccountMenu({
               onLevelChange();
             }}
           />
+          )}
 
           <Button
             variant="ghost"
@@ -233,29 +354,7 @@ function AccountMenu({
         </div>
       )}
 
-      <ConfirmDialog
-        open={confirming}
-        busy={busy}
-        onClose={() => setConfirming(false)}
-        title="Sign out of every device?"
-        variant="primary"
-        confirmLabel="Sign out everywhere"
-        consequence={
-          <>
-            Signing out revokes this account&apos;s token entirely, so{' '}
-            <strong>every browser and device signed in as you is signed out</strong>. The backend
-            has no way to end one session and keep the others.
-          </>
-        }
-        onConfirm={async () => {
-          setBusy(true);
-          // `signOut` clears local state even if the call fails, so this always
-          // ends at the sign-in screen rather than a half-signed-out panel.
-          await signOut();
-          setBusy(false);
-          setConfirming(false);
-        }}
-      />
+      <SignOutDialog open={confirming} onClose={() => setConfirming(false)} />
     </div>
   );
 }

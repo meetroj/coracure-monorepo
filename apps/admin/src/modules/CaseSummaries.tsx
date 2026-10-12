@@ -12,8 +12,11 @@ import {
   PageHeader,
   SearchField,
   SelectField,
+  SkeletonBlock,
   StatusBadge,
   Table,
+  TableSkeleton,
+  skeletonColumns,
   type BadgeTone,
 } from '../ui';
 
@@ -188,6 +191,15 @@ export function CaseSummaries(_props: { level: AdminLevel }) {
       <Async
         state={state}
         resource="case summaries"
+        skeleton={
+          <>
+            <SkeletonBlock w={140} h={16} />
+            <TableSkeleton
+              columns={skeletonColumns(columns, { ref: 'stack', doctor: 'name', consulted: 'date', generated: 'date', status: 'status' })}
+              chevron
+            />
+          </>
+        }
         empty={
           <EmptyState
             icon="clipboard"
@@ -218,7 +230,7 @@ export function CaseSummaries(_props: { level: AdminLevel }) {
                 columns={columns}
                 rows={visible}
                 rowKey={(r) => r.id}
-                onRowClick={(r) => navigate(`/case-summaries/${r.id}`)}
+                onRowClick={(r) => navigate(`/case-records/summary/${r.id}`)}
               />
             </>
           )

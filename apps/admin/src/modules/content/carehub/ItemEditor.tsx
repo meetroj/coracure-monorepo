@@ -17,7 +17,9 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   ConfirmDialog,
+  FormSkeleton,
   Notice,
   PageHeader,
   SelectField,
@@ -59,7 +61,35 @@ export function ItemEditor({
 
   if (isNew) return <EditorForm item={null} level={level} onClose={onClose} />;
   return (
-    <Async state={state} resource="this item">
+    <Async
+      state={state}
+      resource="this item"
+      // The title and the way back are static, so they are real and usable while the form loads.
+      skeleton={
+        <>
+          <PageHeader
+            title="Edit Care Hub item"
+            actions={
+              <Button variant="ghost" icon="arrowLeft" onClick={onClose}>
+                Back to library
+              </Button>
+            }
+          />
+          <div className="chEditor">
+            <div className="chEditor__form">
+              <CardSkeleton title="Basics">
+                <FormSkeleton fields={4} />
+              </CardSkeleton>
+              <CardSkeleton title="Cover image" lines={2} />
+              <CardSkeleton title="Content" lines={5} />
+            </div>
+            <aside className="chEditor__preview">
+              <CardSkeleton lines={4} />
+            </aside>
+          </div>
+        </>
+      }
+    >
       {(item) => <EditorForm item={item} level={level} onClose={onClose} />}
     </Async>
   );

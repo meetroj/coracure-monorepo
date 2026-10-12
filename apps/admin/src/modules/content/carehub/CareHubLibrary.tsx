@@ -11,12 +11,14 @@ import type { AdminLevel } from '../../../nav';
 import {
   Async,
   Button,
+  CardGridSkeleton,
   Column,
   EmptyState,
   SearchField,
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
   may,
 } from '../../../ui';
 import { ItemActions } from './ItemActions';
@@ -99,6 +101,23 @@ export function CareHubLibrary({
       <Async
         state={state}
         resource="Care Hub items"
+        // The toolbar above stays real; the skeleton follows the view the admin chose.
+        skeleton={
+          view === 'table' ? (
+            <TableSkeleton
+              columns={[
+                { kind: 'thumb', header: 'Thumbnail', width: '96px' },
+                { kind: 'stack', header: 'Item' },
+                { kind: 'status', header: 'Status' },
+                { kind: 'date', header: 'Updated' },
+                { kind: 'button', header: '', align: 'end', width: '300px' },
+              ]}
+              rows={6}
+            />
+          ) : (
+            <CardGridSkeleton count={6} />
+          )
+        }
         empty={
           <EmptyState
             icon="content"

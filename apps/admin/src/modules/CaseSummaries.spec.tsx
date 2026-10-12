@@ -24,7 +24,7 @@ const renderPage = (url = '/case-summaries') =>
       <ToastProvider>
         <Routes>
           <Route path="/case-summaries" element={<CaseSummaries level="super_admin" />} />
-          <Route path="/case-summaries/:summaryId" element={<CaseSummaryDetail level="super_admin" />} />
+          <Route path="/case-records/summary/:summaryId" element={<CaseSummaryDetail level="super_admin" />} />
         </Routes>
         <Search />
       </ToastProvider>
@@ -88,7 +88,7 @@ describe('CaseSummaries', () => {
 
   it('shows the follow-up plan and check-ins on a case summary', async () => {
     const { caseSummaries } = await import('../mock/caseSummaries');
-    renderPage(`/case-summaries/${caseSummaries[0].id}?tab=followup`);
+    renderPage(`/case-records/summary/${caseSummaries[0].id}?tab=followup`);
     expect(await screen.findByText('Plan schedule', {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.getAllByText('Pathway').length).toBeGreaterThan(0);
     expect(screen.getByText('Review date')).toBeTruthy();
@@ -99,13 +99,13 @@ describe('CaseSummaries', () => {
   it('says plainly when no follow-up plan was assigned', async () => {
     const { caseSummaries } = await import('../mock/caseSummaries');
     // every third case (index 2, 5, ...) has none
-    renderPage(`/case-summaries/${caseSummaries[2].id}?tab=followup`);
+    renderPage(`/case-records/summary/${caseSummaries[2].id}?tab=followup`);
     expect(await screen.findByText('No follow-up plan was assigned for this case.', {}, { timeout: 4000 })).toBeTruthy();
   });
 
   it('shows the complaint, medical history and uploaded documents on Details', async () => {
     const { caseSummaries } = await import('../mock/caseSummaries');
-    renderPage(`/case-summaries/${caseSummaries[0].id}`);
+    renderPage(`/case-records/summary/${caseSummaries[0].id}`);
     expect(await screen.findByText("Patient's complaint", {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.getByText('Medical history')).toBeTruthy();
     expect(screen.getByText('Uploaded by the patient')).toBeTruthy();
@@ -113,7 +113,7 @@ describe('CaseSummaries', () => {
 
   it('lists what the doctor recommended from the Care Hub', async () => {
     const { caseSummaries } = await import('../mock/caseSummaries');
-    renderPage(`/case-summaries/${caseSummaries[0].id}?tab=recommendation`);
+    renderPage(`/case-records/summary/${caseSummaries[0].id}?tab=recommendation`);
     expect(await screen.findByText('Recommended tools', {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.getByText('Recommended modules')).toBeTruthy();
     expect(screen.getByText('Note to patient')).toBeTruthy();

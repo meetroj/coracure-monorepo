@@ -1,21 +1,27 @@
 import { useCallback, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { consultations, payments, type Bill, type Consultation } from '../../api/admin';
-import type { ChatMessage } from '../../mock/consultationChat';
 import { summaries } from '../../api/caseSummaries';
 import { useResource } from '../../lib/useResource';
 import { useToast } from '../../lib/toast';
 import type { AdminLevel } from '../../nav';
 import { CaseSummaryDetail } from '../CaseSummaryDetail';
+import { ChatWindow } from './ChatWindow';
+import { appointmentStatus, durationMinutes } from '../../mock/ops/appointment';
+import { LIVE } from '../../api/live';
 import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   DefinitionList,
+  DefinitionListSkeleton,
   Modal,
   Notice,
   PageHeader,
+  PageHeaderSkeleton,
+  SkeletonBlock,
   StatusBadge,
   humanise,
   may,
@@ -31,6 +37,7 @@ export function ConsultationDetail({ level }: { level: AdminLevel }) {
   const fetcher = useCallback(() => consultations.get(consultationId), [consultationId]);
   const state = useResource<Consultation>(fetcher, [consultationId]);
   const toast = useToast();
+  const navigate = useNavigate();
   // The summary opens in a window on this page; nobody is sent to the Case summaries list.
   const [summaryId, setSummaryId] = useState<string | null>(null);
 
@@ -43,12 +50,12 @@ export function ConsultationDetail({ level }: { level: AdminLevel }) {
   };
 
   return (
-    <Async state={state} resource="this consultation">
+    <Async state={state} resource="this consultation" skeleton={<OverviewSkeleton billing={may(level, ['finance', 'operations'])} />}>
       {(c) => (
         <>
           <PageHeader
-            title={c.referenceCode ?? `Consultation ${c.id}`}
-            description={<StatusBadge status={c.status} />}
+            title={c.referenceCode ?? `Appointment ${c.id}`}
+            description={<StatusBadge status={c.displayStatus ?? appointmentStatus(c.status, c.id)} />}
             actions={
               <>
                 {may(level, ['operations', 'clinical_governance']) && (
@@ -56,9 +63,17 @@ export function ConsultationDetail({ level }: { level: AdminLevel }) {
                     Chat
                   </Button>
                 )}
-                <Button variant="secondary" icon="clipboard" onClick={openSummary}>
-                  Case summary
-                </Button>
+                {may(level, ['operations', 'clinical_governance']) && (
+                  <Button variant="secondary" icon="note" onClick={() => navigate(`/case-records/${c.id}`)}>
+                    Case record
+                  </Button>
+                )}
+                {/* The summary is the provider's own text, shown on the case record itself in a live build. */}
+                {!LIVE && (
+                  <Button variant="secondary" icon="clipboard" onClick={openSummary}>
+                    Case summary
+                  </Button>
+                )}
               </>
             }
           />
@@ -95,6 +110,41 @@ export function ConsultationDetail({ level }: { level: AdminLevel }) {
   );
 }
 
+/** The page as it will stand: header, the four key facts, two cards, billing (only for the levels that see it). */
+function OverviewSkeleton({ billing }: { billing: boolean }) {
+  return (
+    <>
+      <PageHeaderSkeleton actions={0} />
+      <div className="stack" aria-hidden="true">
+        <section className="card keyFacts">
+          <div className="keyFacts__grid">
+            {[0, 1, 2, 3].map((i) => (
+              <div className="keyFact" key={i}>
+                <SkeletonBlock w="46%" h={12} />
+                <SkeletonBlock w="70%" h={24} />
+                <SkeletonBlock w="40%" h={10} />
+              </div>
+            ))}
+          </div>
+        </section>
+        <div className="twoCol">
+          <CardSkeleton title="Consultation">
+            <DefinitionListSkeleton items={9} />
+          </CardSkeleton>
+          <CardSkeleton title="Schedule">
+            <DefinitionListSkeleton items={3} />
+          </CardSkeleton>
+        </div>
+        {billing && (
+          <CardSkeleton title="Billing">
+            <DefinitionListSkeleton items={7} />
+          </CardSkeleton>
+        )}
+      </div>
+    </>
+  );
+}
+
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : null);
 
 const inr = (n?: number | null) =>
@@ -123,7 +173,7 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
             <span className="keyFact__hint">Open patient details</span>
           </div>
           <div className="keyFact">
-            <span className="keyFact__label">Doctor</span>
+            <span className="keyFact__label">Consulting Professional</span>
             <span className="keyFact__value">
               {c.doctorId ? (
                 <Link to={`/providers/${c.doctorId}`}>{c.doctorName ?? c.doctorId}</Link>
@@ -131,7 +181,7 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
                 (c.doctorName ?? '-')
               )}
             </span>
-            <span className="keyFact__hint">Open doctor details</span>
+            <span className="keyFact__hint">Open provider details</span>
           </div>
           <div className="keyFact">
             <span className="keyFact__label">Starts at</span>
@@ -162,6 +212,15 @@ function Overview({ c, level }: { c: Consultation; level: AdminLevel }) {
             items={[
               { label: 'Consultation ID', value: <code>{c.id}</code> },
               { label: 'Reference', value: c.referenceCode },
+              { label: 'Appointment status', value: <StatusBadge status={c.displayStatus ?? appointmentStatus(c.status, c.id)} /> },
+              {
+                label: 'Consultation duration',
+                value: (() => {
+                  // Live: what the backend recorded. The fixtures derive one from the id.
+                  const m = LIVE ? c.actualDurationMinutes : durationMinutes(c.status, c.id);
+                  return m ? `${m} minutes` : 'Recorded when the consultation ends';
+                })(),
+              },
               { label: 'Mode', value: c.mode ? humanise(c.mode) : null },
               { label: 'Channel', value: c.channel ? humanise(c.channel) : null },
               { label: 'Service', value: c.serviceName },
@@ -200,7 +259,7 @@ function Billing({
   const state = useResource<Bill>(fetcher, [consultationId]);
   return (
     <Card title="Billing">
-      <Async state={state} resource="the bill" skeletonRows={2}>
+      <Async state={state} resource="the bill" skeleton={<DefinitionListSkeleton items={7} />}>
         {(b) => (
           <DefinitionList
             items={[
@@ -222,47 +281,5 @@ function Billing({
         )}
       </Async>
     </Card>
-  );
-}
-
-/**
- * The conversation between the doctor and the patient on this case, read-only. Opening it is
- * itself an act worth knowing about, so the window says so.
- */
-function ChatWindow({
-  consultationId,
-  doctor,
-  patient,
-  onClose,
-}: {
-  consultationId: string;
-  doctor: string;
-  patient: string;
-  onClose: () => void;
-}) {
-  const fetcher = useCallback(() => consultations.chat(consultationId), [consultationId]);
-  const state = useResource<ChatMessage[]>(fetcher, [consultationId]);
-  return (
-    <Modal open onClose={onClose} title={`Chat - ${doctor} and ${patient}`} width={620}>
-      <Notice tone="info">Read-only. Opening a chat is recorded against your admin account.</Notice>
-      <Async
-        state={state}
-        resource="the chat"
-        skeletonRows={3}
-        empty={<p className="muted">No messages were exchanged on this case.</p>}
-      >
-        {(messages) => (
-          <ul className="chatThread" aria-label="Messages">
-            {messages.map((m) => (
-              <li key={m.id} className={`chatMsg chatMsg--${m.from}`}>
-                <span className="chatMsg__who">{m.from === 'doctor' ? doctor : patient}</span>
-                <span className="chatMsg__bubble">{m.text}</span>
-                <span className="chatMsg__time">{new Date(m.at).toLocaleTimeString()}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Async>
-    </Modal>
   );
 }

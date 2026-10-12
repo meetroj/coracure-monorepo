@@ -39,7 +39,7 @@ describe('Doctor overview', () => {
     expect(identity).toMatch(/Aadhaar/);
     expect(identity).toMatch(/•••• 4421/);
     expect(identity).toMatch(/ananya\.rao@abdm/);
-    const qual = await section('Professional qualifications');
+    const qual = await section('Qualifications');
     expect(qual).toMatch(/MD Psychiatry/);
     expect(qual).toMatch(/Shown to patients as: MBBS · MD Psychiatry/);
     expect(await section('Experience')).toMatch(/Lilavati Hospital, 8 years/);
@@ -48,9 +48,24 @@ describe('Doctor overview', () => {
     expect(screen.queryByRole('tab', { name: 'Credentials' })).toBeNull();
   });
 
-  it('says plainly when the signature has not been uploaded', async () => {
-    mount('dr-3');
+  it('says plainly when the profile photo has not been uploaded', async () => {
+    mount('dr-2');
     expect(await screen.findByText('Not uploaded')).toBeTruthy();
+  });
+
+  it('gives a non-doctor no digital signature, and no doctor-only tab', async () => {
+    mount('dr-3');
+    await screen.findByRole('heading', { name: 'Meera Krishnan' });
+    expect(screen.queryByRole('heading', { name: 'Digital signature' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Digital signature' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Consultation settings' })).toBeTruthy();
+  });
+
+  it('shows the patient-facing panel, with what is never exposed', async () => {
+    mount('dr-1');
+    expect(await screen.findByText('What patients see')).toBeTruthy();
+    expect(screen.getByText('Government ID')).toBeTruthy();
+    expect(screen.getByText('Total years of experience')).toBeTruthy();
   });
 
   it('shows no registration card for a doctor created by an admin with no form on file', async () => {

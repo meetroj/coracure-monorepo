@@ -8,6 +8,8 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
+  FormSkeleton,
   Notice,
   PageHeader,
   TextArea,
@@ -39,7 +41,19 @@ export function SearchConfig({ level }: { level: AdminLevel }) {
         description="What the patient's search matches on, and what someone in crisis is shown."
       />
 
-      <Async state={state} resource="search configuration">
+      <Async
+        state={state}
+        resource="search configuration"
+        skeleton={
+          <>
+            <CardSkeleton title="Crisis keywords">
+              <FormSkeleton fields={1} />
+            </CardSkeleton>
+            <CardSkeleton title="Search disclaimer" lines={3} />
+            <CardSkeleton title="Popular searches" lines={3} />
+          </>
+        }
+      >
         {(config) => (
           <>
             <CrisisKeywords

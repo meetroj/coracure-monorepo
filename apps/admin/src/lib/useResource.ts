@@ -15,6 +15,12 @@ export type ResourceState<T> = {
   error: ApiError | null;
   /** True only on the first load, so a refetch does not blank the screen. */
   initial: boolean;
+  /**
+   * True while `data` still belongs to the PREVIOUS key (a filter or an id
+   * changed) and the new one is loading. A reload or a poll is not stale: the
+   * same data is simply being refreshed.
+   */
+  stale: boolean;
   reload: () => void;
   /** Applies a local edit after a mutation, avoiding a full round trip. */
   setData: (next: T | null) => void;
@@ -24,17 +30,27 @@ export type ResourceState<T> = {
  * @param fetcher Must be stable or memoised - it is the effect's dependency.
  * @param deps    Anything the fetcher closes over (filters, ids, page).
  * @param enabled Skips the fetch entirely, for a tab that is not open yet.
+ * @param resetOn The subset of `deps` that names WHICH data this is (a filter,
+ *                an id). When one changes, the data on screen is another key's
+ *                and `stale` is set, so a screen can show a body skeleton
+ *                instead of a stale list. Defaults to every dep. Leave a paging
+ *                dep (`limit`) out, so "show more" keeps the rows it has.
  */
 export function useResource<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
   deps: readonly unknown[] = [],
   enabled = true,
+  resetOn: readonly unknown[] = deps,
 ): ResourceState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<ApiError | null>(null);
   const [initial, setInitial] = useState(true);
+  const [stale, setStale] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const key = useRef(resetOn);
+  // A ref as well as state: a reload that lands mid-switch must not forget it.
+  const staleRef = useRef(false);
 
   // Held in a ref so changing the fetcher identity does not retrigger the
   // effect - `deps` is what declares a real change.
@@ -50,6 +66,14 @@ export function useResource<T>(
     const controller = new AbortController();
     let live = true;
 
+    const switched =
+      key.current.length !== resetOn.length || key.current.some((v, i) => !Object.is(v, resetOn[i]));
+    key.current = resetOn;
+    if (switched && !staleRef.current) {
+      staleRef.current = true;
+      setStale(true);
+    }
+
     setLoading(true);
     setError(null);
 
@@ -64,6 +88,8 @@ export function useResource<T>(
       })
       .catch((e: unknown) => {
         if (!live || controller.signal.aborted) return;
+        // Another key's rows under this key's error would mislead: drop them.
+        if (staleRef.current) setData(null);
         setError(
           ApiError.of(e) ??
             new ApiError({
@@ -75,6 +101,8 @@ export function useResource<T>(
       })
       .finally(() => {
         if (!live) return;
+        staleRef.current = false;
+        setStale(false);
         setLoading(false);
         setInitial(false);
       });
@@ -88,7 +116,7 @@ export function useResource<T>(
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
-  return { data, loading, error, initial, reload, setData };
+  return { data, loading, error, initial, stale, reload, setData };
 }
 
 /** Convenience for the common case: a plain GET with no query building. */

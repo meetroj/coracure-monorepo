@@ -40,15 +40,12 @@ const vars: Record<string, string> = {
   ...px('text', typography.size),
 
   /*
-   * The deck names Rounded (headings) and Montserrat (body) - the same two
-   * `libs/typography` declares. Neither binary exists anywhere in the repo, so
-   * both are listed FIRST and fall through to the system stack until the files
-   * land. Adding an `@font-face` for either makes it take effect with no change
-   * here. The names are repeated rather than imported because
-   * `libs/typography` is typed against react-native.
+   * Families come from `libs/brand`; the files are declared in
+   * `libs/typography/fonts.css`, imported by `main.tsx`. System fonts are only
+   * the last resort if a file fails to load.
    */
-  '--font-heading': `'${typography.heading.family ?? 'Rounded'}', 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif`,
-  '--font-body': `'${typography.body.family ?? 'Montserrat'}', system-ui, -apple-system, 'Segoe UI', sans-serif`,
+  '--font-heading': `'${typography.heading.family}', 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif`,
+  '--font-body': `'${typography.body.family}', system-ui, -apple-system, 'Segoe UI', sans-serif`,
 
   /*
    * The deck's flat Soft Grey. `libs/brand` has no token for it - its surface

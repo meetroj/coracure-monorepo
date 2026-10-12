@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ApiError, messageFor, retryAfterSeconds } from '@coracure/api/errors';
 
+import { completeTwoFactor, signIn } from '../api/http';
+import { LIVE } from '../api/live';
 import { mockSignIn } from '../mock/auth';
 import logo from '../assets/brand/coracure-wide-twotone.svg';
 import hero from '../assets/login-hero.png';
@@ -54,8 +56,17 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     setError(null);
     const address = email.trim().toLowerCase();
     try {
-      // UI build: no credentials are checked and nothing leaves the browser.
-      await mockSignIn(address);
+      if (LIVE) {
+        // The real thing: password to the backend, then an OTP if the account has two-factor.
+        const result = await signIn(address, password);
+        if (result.status === 'two_factor_required') {
+          setMfaToken(result.mfaToken);
+          return;
+        }
+      } else {
+        // UI build: no credentials are checked and nothing leaves the browser.
+        await mockSignIn(address);
+      }
       if (remember) localStorage.setItem(REMEMBERED_EMAIL, address);
       else localStorage.removeItem(REMEMBERED_EMAIL);
       onSignedIn();
@@ -72,7 +83,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await mockSignIn(email.trim().toLowerCase());
+      if (LIVE) await completeTwoFactor(mfaToken, code.trim());
+      else await mockSignIn(email.trim().toLowerCase());
       onSignedIn();
     } catch (e) {
       fail(e);

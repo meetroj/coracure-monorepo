@@ -1,7 +1,8 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 
 import { getSession, hydrateSession, onSignedOut, type Session } from '../api/http';
+import { LIVE } from '../api/live';
 import { ToastProvider } from '../lib/toast';
 import { SECTIONS, canSee, landingFor, type AdminLevel, type Section } from '../nav';
 import { Button, EmptyState, PageHeader } from '../ui';
@@ -12,28 +13,52 @@ import { SignIn } from './SignIn';
 /* ----------------------------- module registry ---------------------------- */
 
 import { Dashboard } from '../modules/Dashboard';
-import { ProvidersList } from '../modules/providers/ProvidersList';
+import { ProvidersList, providerList } from '../modules/providers/ProvidersList';
 import { ProviderCreate } from '../modules/providers/ProviderCreate';
 import { ProviderDetail } from '../modules/providers/ProviderDetail';
 import { CredentialQueue } from '../modules/CredentialQueue';
 import { Patients } from '../modules/patients/Patients';
 import { PatientDetail } from '../modules/patients/PatientDetail';
-import { CaseReview } from '../modules/CaseReview';
-import { SettingsHub } from '../modules/settings/SettingsHub';
 import { SafetyAlerts } from '../modules/SafetyAlerts';
+import { CaseSummaries } from '../modules/CaseSummaries';
 import { CaseSummaryDetail } from '../modules/CaseSummaryDetail';
-import { PendingSummaries } from '../modules/PendingSummaries';
 import { Availability } from '../modules/availability/Availability';
-import { Consultations } from '../modules/consultations/Consultations';
 import { ConsultationDetail } from '../modules/consultations/ConsultationDetail';
-import { Complaints } from '../modules/complaints/Complaints';
 import { ComplaintDetail } from '../modules/complaints/ComplaintDetail';
-import { Payments } from '../modules/Payments';
-import { Catalogue } from '../modules/content/Catalogue';
-import { CareHub } from '../modules/content/CareHub';
-import { NotificationTemplates } from '../modules/content/NotificationTemplates';
-import { Pathways } from '../modules/content/Pathways';
+import { Notifications } from '../modules/support/Notifications';
 import { Inbox } from '../modules/Inbox';
+import { Appointments } from '../modules/care/Appointments';
+import { CaseRecordDetail, CaseRecords } from '../modules/care/CaseRecords';
+import { Clarifications } from '../modules/care/Clarifications';
+import { FollowUps } from '../modules/care/FollowUps';
+import { LabOrders } from '../modules/lab/LabOrders';
+import { LabPartners } from '../modules/lab/LabPartners';
+import { LabTests } from '../modules/lab/LabTests';
+import { LabPackages } from '../modules/lab/LabPackages';
+import { LabAllocation } from '../modules/lab/LabAllocation';
+import { LabReports } from '../modules/lab/LabReports';
+import { analyticsPage } from '../modules/analytics/Analytics';
+import { PatientPayments, ProviderPayouts, Refunds } from '../modules/finance/Finance';
+import { Feedback, SupportTickets } from '../modules/support/SupportTickets';
+import { Users } from '../modules/admin/Users';
+import { Roles } from '../modules/admin/Roles';
+import { MasterData } from '../modules/admin/MasterData';
+import { AdminSettings, AppSettings, WebsiteSettings } from '../modules/admin/SettingsHubs';
+import { NotConnected } from '../modules/kit/NotConnected';
+import { TabHub } from '../modules/kit/TabHub';
+import { CaseSummariesLive } from '../modules/care/CaseRecordsLive';
+
+/** Case Records, with the auto-generated case summaries as the second tab. */
+const CaseRecordsHub = ({ level }: { level: AdminLevel }) => (
+  <TabHub
+    title="Case Records"
+    level={level}
+    tabs={[
+      { id: 'records', label: 'Case records', Component: CaseRecords, live: true },
+      { id: 'summaries', label: 'Case summaries', Component: LIVE ? CaseSummariesLive : CaseSummaries, live: true },
+    ]}
+  />
+);
 
 /**
  * Every section's screen, keyed by its `nav.ts` path.
@@ -44,52 +69,152 @@ import { Inbox } from '../modules/Inbox';
 const SCREENS: Record<string, ComponentType<{ level: AdminLevel }>> = {
   dashboard: Dashboard,
   providers: ProvidersList,
-  credentials: CredentialQueue,
-  patients: Patients,
-  consultations: Consultations,
-  'safety-alerts': SafetyAlerts,
-  'case-summaries': PendingSummaries,
-  'case-review': CaseReview,
+  specialists: providerList('specialists'),
+  'super-specialists': providerList('super'),
+  paramedical: providerList('paramedical'),
+  veterinary: providerList('veterinary'),
+  verification: CredentialQueue,
   availability: Availability,
-  payments: Payments,
-  catalogue: Catalogue,
-  'care-hub': CareHub,
-  notifications: NotificationTemplates,
-  pathways: Pathways,
-  complaints: Complaints,
-  settings: SettingsHub,
+  patients: Patients,
+  appointments: Appointments,
+  'case-records': CaseRecordsHub,
+  clarifications: Clarifications,
+  'follow-ups': FollowUps,
+  'safety-alerts': SafetyAlerts,
+  'lab-orders': LabOrders,
+  'lab-partners': LabPartners,
+  'lab-tests': LabTests,
+  'lab-packages': LabPackages,
+  'lab-allocation': LabAllocation,
+  'lab-reports': LabReports,
+  analytics: analyticsPage('overview'),
+  'analytics-consultations': analyticsPage('consultations'),
+  'analytics-providers': analyticsPage('providers'),
+  'analytics-patients': analyticsPage('patients'),
+  'analytics-lab': analyticsPage('lab'),
+  'analytics-financial': analyticsPage('financial'),
+  'patient-payments': PatientPayments,
+  'provider-payouts': ProviderPayouts,
+  refunds: Refunds,
+  'support-tickets': SupportTickets,
+  feedback: Feedback,
+  notifications: Notifications,
+  users: Users,
+  roles: Roles,
+  'master-data': MasterData,
+  'admin-settings': AdminSettings,
+  'app-settings': AppSettings,
+  'website-settings': WebsiteSettings,
 };
 
 /**
- * Old sidebar paths that moved. A bookmark or a link in an audit note still
- * lands in the right place instead of on "page not found".
+ * The sections (and detail routes) that read the real backend.
+ *
+ * In a live build anything NOT listed here renders "Not connected" instead of
+ * its fixtures, so a screen added to `SCREENS` is dark in production until it
+ * is wired and named here. Add it when the screen stops importing `mock/`.
+ */
+const LIVE_SECTIONS = new Set([
+  'dashboard',
+  'providers',
+  'specialists',
+  'super-specialists',
+  'paramedical',
+  'veterinary',
+  'verification',
+  'availability',
+  'patients',
+  'appointments',
+  'users',
+  'patient-payments',
+  'provider-payouts',
+  'refunds',
+  'support-tickets',
+  'feedback',
+  'notifications',
+  'clarifications',
+  'follow-ups',
+  'safety-alerts',
+  'case-records',
+  'roles',
+  'master-data',
+  'analytics',
+  'analytics-consultations',
+  'analytics-providers',
+  'analytics-patients',
+  'analytics-lab',
+  'analytics-financial',
+  'admin-settings',
+  'app-settings',
+  'website-settings',
+]);
+
+/** `<section>/<child path>` of the detail routes that are live. */
+const LIVE_CHILDREN = new Set([
+  'providers/new',
+  'providers/:doctorId',
+  'verification/:doctorId',
+  'patients/:patientId',
+  'appointments/:consultationId',
+  'support-tickets/:complaintId',
+  'case-records/:caseId',
+]);
+
+/**
+ * Old paths that moved. A bookmark or a link in an audit note still lands in
+ * the right place instead of on "page not found".
  */
 const MOVED: Record<string, string> = {
-  'pending-summaries': '/case-summaries',
-  clarification: '/case-review',
-  'allocation-decisions': '/case-review?tab=allocation',
-  legal: '/settings/legal',
-  audit: '/settings/audit',
-  'deletion-requests': '/settings/deletion-requests',
-  retention: '/settings/retention',
-  'admin-accounts': '/settings/admin-accounts',
+  consultations: '/appointments',
+  credentials: '/verification',
+  complaints: '/support-tickets?tab=complaints',
+  payments: '/provider-payouts',
+  catalogue: '/master-data?view=catalogue',
+  'care-hub': '/app-settings?tab=care-hub',
+  pathways: '/app-settings?tab=pathways',
+  settings: '/admin-settings',
+  'pending-summaries': '/case-records?tab=summaries',
+  'case-summaries': '/case-records?tab=summaries',
+  'case-review': '/clarifications',
+  clarification: '/clarifications',
+  'allocation-decisions': '/appointments?tab=allocation',
+  legal: '/website-settings?tab=legal',
+  audit: '/admin-settings?tab=audit',
+  'deletion-requests': '/admin-settings?tab=deletion-requests',
+  retention: '/admin-settings?tab=retention',
+  'admin-accounts': '/users',
 };
+
+/** Old detail paths (`/consultations/:id`) that map onto a new one. */
+const MOVED_DETAIL: { from: string; to: (p: Record<string, string | undefined>) => string }[] = [
+  { from: 'consultations/:id', to: (p) => `/appointments/${p.id}` },
+  { from: 'credentials/:id', to: (p) => `/verification/${p.id}` },
+  { from: 'complaints/:id', to: (p) => `/support-tickets/${p.id}` },
+  { from: 'case-summaries/:id', to: (p) => `/case-records/summary/${p.id}` },
+  { from: 'settings/:tab', to: (p) => `/admin-settings?tab=${p.tab}` },
+];
+
+function RedirectWithParams({ to }: { to: (p: Record<string, string | undefined>) => string }) {
+  return <Navigate to={to(useParams())} replace />;
+}
 
 /** Detail routes that live under a section but are not sidebar entries. */
 const CHILDREN: Record<string, { path: string; Component: ComponentType<{ level: AdminLevel }> }[]> =
   {
     patients: [{ path: ':patientId', Component: PatientDetail }],
-    settings: [{ path: ':tab', Component: SettingsHub }],
     providers: [
       { path: 'new', Component: ProviderCreate },
       { path: ':doctorId', Component: ProviderDetail },
     ],
-    // Reviewing a doctor's documents stays inside Document verification: the
-    // sidebar and the top bar keep naming that section, and Back returns to the queue.
-    credentials: [{ path: ':doctorId', Component: ProviderDetail }],
-    consultations: [{ path: ':consultationId', Component: ConsultationDetail }],
-    'case-summaries': [{ path: ':summaryId', Component: CaseSummaryDetail }],
-    complaints: [{ path: ':complaintId', Component: ComplaintDetail }],
+    // Reviewing a provider stays inside Verification: the sidebar and the top
+    // bar keep naming that section, and Back returns to the list.
+    verification: [{ path: ':doctorId', Component: ProviderDetail }],
+    appointments: [{ path: ':consultationId', Component: ConsultationDetail }],
+    'case-records': [
+      { path: ':caseId', Component: CaseRecordDetail },
+      { path: 'summary/:summaryId', Component: CaseSummaryDetail },
+    ],
+    'support-tickets': [{ path: ':complaintId', Component: ComplaintDetail }],
   };
 
 /* --------------------------------- guards --------------------------------- */
@@ -203,9 +328,15 @@ function SignedIn({
         {Object.entries(MOVED).map(([from, to]) => (
           <Route key={from} path={from} element={<Navigate to={to} replace />} />
         ))}
+        {MOVED_DETAIL.map((m) => (
+          <Route key={m.from} path={m.from} element={<RedirectWithParams to={m.to} />} />
+        ))}
 
         {SECTIONS.map((section) => {
-          const Screen = SCREENS[section.path] ?? SectionPlaceholder(section);
+          const Screen =
+            LIVE && SCREENS[section.path] && !LIVE_SECTIONS.has(section.path)
+              ? () => <NotConnected title={section.label} />
+              : (SCREENS[section.path] ?? SectionPlaceholder(section));
           const children = CHILDREN[section.path] ?? [];
           return (
             <Route key={section.path} path={section.path}>
@@ -214,7 +345,17 @@ function SignedIn({
                 <Route
                   key={child.path}
                   path={child.path}
-                  element={<Guarded section={section} level={level} Component={child.Component} />}
+                  element={
+                    <Guarded
+                      section={section}
+                      level={level}
+                      Component={
+                        LIVE && !LIVE_CHILDREN.has(`${section.path}/${child.path}`)
+                          ? () => <NotConnected title={section.label} />
+                          : child.Component
+                      }
+                    />
+                  }
                 />
               ))}
             </Route>

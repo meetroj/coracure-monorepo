@@ -1,7 +1,10 @@
 import { useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { catalogue, scheduling, type AssignableProvider, type Region, type Specialty } from '../../api/admin';
+import { catalogue, scheduling, type AssignableProvider } from '../../api/admin';
+import { LIVE } from '../../api/live';
+import { specialties as liveSpecialties } from '../../api/liveProviders';
+import { regions as liveRegions } from '../../api/liveScheduling';
 import { useResource } from '../../lib/useResource';
 import type { AdminLevel } from '../../nav';
 import {
@@ -14,7 +17,9 @@ import {
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
   TextField,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -46,10 +51,17 @@ export function Availability({ level }: { level: AdminLevel }) {
     setParams(next, { replace: true });
   };
 
-  const specialtiesFetcher = useCallback(() => catalogue.specialties(), []);
-  const specialties = useResource<Specialty[]>(specialtiesFetcher, []);
-  const regionsFetcher = useCallback(() => catalogue.regions(), []);
-  const regions = useResource<Region[]>(regionsFetcher, []);
+  // Only the id and the name are read, so the live and the fixture lists are one shape here.
+  const specialtiesFetcher = useCallback(
+    (): Promise<{ id: string; name: string }[]> => (LIVE ? liveSpecialties.list() : catalogue.specialties()),
+    [],
+  );
+  const specialties = useResource<{ id: string; name: string }[]>(specialtiesFetcher, []);
+  const regionsFetcher = useCallback(
+    (): Promise<{ id: string; name: string }[]> => (LIVE ? liveRegions.list() : catalogue.regions()),
+    [],
+  );
+  const regions = useResource<{ id: string; name: string }[]>(regionsFetcher, []);
 
   // The lookup only runs once there is something to look up - an unfiltered
   // "who is free, ever" is not a question this endpoint answers.
@@ -69,7 +81,13 @@ export function Availability({ level }: { level: AdminLevel }) {
           <Link to={`/providers/${p.doctorId}`}>
             <strong>{p.fullName}</strong>
           </Link>
-          <small>{p.languages?.length ? p.languages.join(', ') : 'No languages set'}</small>
+          <small>
+            {p.languages?.length
+              ? p.languages.join(', ')
+              : p.requiredMinutes !== undefined
+                ? `Needs ${p.requiredMinutes} min (consultation + buffer)`
+                : 'No languages set'}
+          </small>
         </span>
       ),
     },
@@ -111,6 +129,7 @@ export function Availability({ level }: { level: AdminLevel }) {
           <SelectField
             label="Service / specialty"
             value={serviceId}
+            disabled={specialties.loading}
             onChange={(e) => setParam('serviceId', e.target.value)}
             options={[
               { value: '', label: specialties.loading ? 'Loading…' : 'Any' },
@@ -126,6 +145,7 @@ export function Availability({ level }: { level: AdminLevel }) {
           <SelectField
             label="Region"
             value={regionId}
+            disabled={regions.loading}
             onChange={(e) => setParam('regionId', e.target.value)}
             options={[
               { value: '', label: regions.loading ? 'Loading…' : 'Any' },
@@ -152,6 +172,12 @@ export function Availability({ level }: { level: AdminLevel }) {
         <Async
           state={state}
           resource="assignable providers"
+          skeleton={
+            <TableSkeleton
+              columns={skeletonColumns(columns, { name: 'stack', remaining: 'id', assignable: 'status' })}
+              rows={5}
+            />
+          }
           empty={
             <EmptyState
               icon="alert"

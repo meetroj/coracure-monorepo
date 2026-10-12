@@ -1,4 +1,6 @@
 import * as db from '../mock/db';
+import { LIVE } from './live';
+import { liveManualNotifications } from './liveNotifications';
 import * as store from '../mock/manualNotifications';
 import type {
   Audience,
@@ -52,7 +54,7 @@ export type HistoryQuery = {
   since?: string;
 };
 
-export const manualNotifications = {
+const fixtureManualNotifications = {
   send: (input: SendInput) => {
     const title = input.title.trim();
     const body = input.body.trim();
@@ -100,3 +102,8 @@ export const manualNotifications = {
     return ok(copy(rows));
   },
 };
+
+/** Live against a configured backend, fixtures otherwise. Chosen once, at load. */
+export const manualNotifications: typeof fixtureManualNotifications = LIVE
+  ? (liveManualNotifications as unknown as typeof fixtureManualNotifications)
+  : fixtureManualNotifications;

@@ -31,7 +31,7 @@ import { LEVELS, type AdminLevel } from '../nav';
  * short-lived tokens.
  */
 export const API_BASE: string =
-  import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
+  import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '/api/v1' : 'http://localhost:3000/api/v1');
 
 const TIMEOUT_MS = 20_000;
 
@@ -247,6 +247,12 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
   const { method = 'GET', body, query, retried = false, anonymous = false } = options;
 
   if (!anonymous) {
+    // The in-memory copy is lost when this module is evaluated again - a hot
+    // reload while developing, for one - while the tab still holds the session
+    // in sessionStorage and the screen still shows the panel. Restore it before
+    // calling the admin signed out. Sign-out and idle sign-out remove the stored
+    // copy, so this can never bring back a session that was ended.
+    if (!session) hydrateSession();
     if (!session) throw clientError(ClientCode.SESSION_EXPIRED, 'Not signed in.');
     if (Date.now() - lastActivityAt > IDLE_LIMIT_MS) {
       clearSession('idle');

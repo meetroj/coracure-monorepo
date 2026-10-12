@@ -14,10 +14,13 @@ import {
   Notice,
   PageHeader,
   SelectField,
+  StatusBadge,
   Table,
+  TableSkeleton,
   TextArea,
   humanise,
   may,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -57,7 +60,12 @@ export function LegalDocuments({ level }: { level: AdminLevel }) {
     {
       key: 'preview',
       header: 'Opening',
-      render: (d) => <span className="clamp">{d.body?.slice(0, 120) ?? '-'}</span>,
+      render: (d) => (
+        <span className="clamp">
+          {d.body?.slice(0, 120) ?? d.title ?? '-'}
+          {d.isCurrent && <StatusBadge status="published" label="In force" />}
+        </span>
+      ),
     },
   ];
 
@@ -96,6 +104,9 @@ export function LegalDocuments({ level }: { level: AdminLevel }) {
         <Async
           state={state}
           resource="versions"
+          skeleton={
+            <TableSkeleton columns={skeletonColumns(columns, { version: 'id', published: 'date', preview: 'text' })} rows={4} />
+          }
           empty={
             <EmptyState
               icon="legal"
