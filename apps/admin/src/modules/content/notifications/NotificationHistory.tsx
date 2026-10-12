@@ -12,7 +12,9 @@ import {
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
   TextField,
+  skeletonColumns,
 } from '../../../ui';
 
 const when = (iso: string) => new Date(iso).toLocaleString();
@@ -101,6 +103,13 @@ export function NotificationHistory() {
       <Async
         state={state}
         resource="notification history"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { at: 'date', count: 'amount', title: 'name', type: 'text', status: 'status' })}
+            rows={8}
+            chevron
+          />
+        }
         empty={<EmptyState icon="bell" title="No notifications match" />}
       >
         {(rows) => (

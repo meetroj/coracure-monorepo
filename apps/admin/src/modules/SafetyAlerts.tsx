@@ -16,7 +16,9 @@ import {
   PageHeader,
   StatusBadge,
   Table,
+  TableSkeleton,
   humanise,
+  skeletonColumns,
 } from '../ui';
 
 /**
@@ -67,7 +69,7 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
       header: 'Consultation',
       render: (a) =>
         a.consultationId ? (
-          <Link to={`/consultations/${a.consultationId}`}>{a.consultationId}</Link>
+          <Link to={`/appointments/${a.consultationId}`}>{a.consultationId}</Link>
         ) : (
           <span className="muted">-</span>
         ),
@@ -154,6 +156,13 @@ export function SafetyAlerts({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="safety alerts"
+        // Only the first load draws this: the poll refetches over the rows, never a skeleton.
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { type: 'stack', raised: 'date', consultation: 'id', state: 'status', actions: 'button' })}
+            rows={6}
+          />
+        }
         empty={
           <EmptyState
             icon="check"

@@ -8,6 +8,7 @@
 export type VerificationStatus =
   | 'pending'
   | 'under_review'
+  | 'changes_required'
   | 'verified'
   | 'rejected'
   | 'suspended';
@@ -35,9 +36,34 @@ export type Doctor = {
   createdAt?: string;
   /** What the doctor stated in the sign-up / KYC form. Private to admins. */
   registration?: DoctorRegistration | null;
+
+  /* Provider-management fields (requirements §5, §8, §9, §17, §18, §21). */
+  category?: ProviderCategory;
+  providerCode?: string;
+  superSpecialtyName?: string | null;
+  superSpecialtyId?: string | null;
+  bio?: string | null;
+  registrationCouncil?: string | null;
+  rating?: number | null;
+  totalConsultations?: number;
+  availabilityStatus?: 'available' | 'unavailable';
+  consultationFeeInr?: number | null;
+  /** One or more time windows per consultation day (§18). */
+  schedule?: { day: string; windows: string[] }[];
+  signatureStatus?: 'not_submitted' | 'submitted' | 'approved' | 'replacement_requested';
+  /** The signature file, for the preview link (live only). */
+  signatureDocumentId?: string | null;
+  /** A short-lived signed link to the APPROVED profile photo. Null until an admin approves one. */
+  photoUrl?: string | null;
+  /** What a reviewer asked the provider to fix, shown to the provider. */
+  changesRequiredNote?: string | null;
 };
 
+export type ProviderCategory = 'doctor' | 'paramedical' | 'veterinary';
+
 export type DoctorRegistration = {
+  /** True when the registration facts came from the backend; false or absent, they were not readable. */
+  loaded?: boolean;
   dateOfBirth?: string | null;
   gender?: string | null;
   /** Only the last four characters are ever held in the admin view. */
@@ -71,9 +97,11 @@ export type CredentialQueueRow = {
   doctorId: string;
   fullName: string;
   specialtyName?: string | null;
+  category?: ProviderCategory;
   verificationStatus: VerificationStatus;
   pendingDocuments: number;
   submittedAt?: string | null;
+  photoUrl?: string | null;
 };
 
 export type Reliability = {
@@ -98,6 +126,8 @@ export type AssignableProvider = {
   doctorId: string;
   fullName: string;
   remainingMinutes?: number | null;
+  /** Live only: the consultation plus its buffer, what a booking would occupy. */
+  requiredMinutes?: number;
   languages?: string[];
   regionIds?: string[];
   assignable?: boolean;
@@ -134,7 +164,11 @@ export type Consultation = {
   /** The patient record this case belongs to, so the page can open it. */
   patientId?: string | null;
   channel?: 'video' | 'audio';
-  paymentStatus?: 'paid' | 'pending' | 'failed' | 'refunded';
+  paymentStatus?: 'paid' | 'pending' | 'failed' | 'refunded' | 'not_applicable';
+  /** Live only: the backend's own word for the booking. The fixtures derive theirs. */
+  displayStatus?: string;
+  /** Live only: whole minutes the call actually ran. Null until it has started and ended. */
+  actualDurationMinutes?: number | null;
   createdAt?: string;
 };
 
@@ -167,9 +201,20 @@ export type ClarificationCase = {
   assignedExpertId?: string | null;
   assignedExpertName?: string | null;
   question?: string | null;
+  /** Live only. */
+  title?: string | null;
+  urgency?: string;
+  messagesTotal?: number;
+  closedAt?: string | null;
 };
 
-export type Expert = { doctorId: string; fullName: string; specialtyName?: string | null };
+export type Expert = {
+  doctorId: string;
+  fullName: string;
+  specialtyName?: string | null;
+  /** Live only: how much they already hold, so the queue can be spread. */
+  openCases?: number;
+};
 
 export type AllocationDecision = {
   consultationId: string;
@@ -220,6 +265,11 @@ export type Complaint = {
   raisedAt?: string | null;
   assignedAdminId?: string | null;
   messages?: ComplaintMessage[];
+  /** Live only: what the patient wrote, the TK-style reference, and how it ended. */
+  referenceCode?: string | null;
+  description?: string | null;
+  resolutionNote?: string | null;
+  patientId?: string | null;
 };
 
 export type ComplaintMessage = {
@@ -246,6 +296,11 @@ export type Specialty = {
   mayPrescribe?: boolean;
   intakeForm?: unknown;
   prescriptionTemplate?: unknown;
+  /** Live only. */
+  code?: string;
+  category?: 'medical' | 'super_specialty' | 'paramedical' | 'veterinary';
+  consultationFeeInr?: number;
+  parentSpecialtyId?: string | null;
 };
 
 export type Concern = {
@@ -282,6 +337,10 @@ export type NotificationTemplate = {
   title?: string | null;
   body?: string | null;
   isCustomised?: boolean;
+  /** Live only: who it goes to, what it may mention, and what it is for. */
+  audience?: string[];
+  placeholders?: string[];
+  description?: string | null;
 };
 
 export type SearchConfigShape = {
@@ -298,6 +357,10 @@ export type Pathway = {
   publishedAt?: string | null;
   questions?: unknown;
   redFlagRules?: unknown;
+  /** Live only. */
+  name?: string;
+  durationDays?: number;
+  isCurrent?: boolean;
 };
 
 export type LegalDocument = {
@@ -305,6 +368,9 @@ export type LegalDocument = {
   version?: string | number | null;
   publishedAt?: string | null;
   body?: string | null;
+  /** Live only: the title it was published under, and whether it is the version in force. */
+  title?: string;
+  isCurrent?: boolean;
 };
 
 export type ConfigValue = {

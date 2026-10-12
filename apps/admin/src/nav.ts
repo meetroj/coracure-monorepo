@@ -8,9 +8,11 @@
  * what a level cannot use - it is a UX affordance, not a security boundary.
  * Every screen must still treat `INSUFFICIENT_PERMISSION` as the real answer.
  *
- * Levels come straight from `AdminPermissionLevel` in the backend's
- * `prisma/schema.prisma`. Sections and their gates are transcribed from
- * `docs/ADMIN_PANEL_USER_FLOW.md` §2, which was read out of the controllers.
+ * The first six levels come straight from `AdminPermissionLevel` in the
+ * backend's `prisma/schema.prisma`. `lab` and `analytics` are UI-build levels
+ * for the Lab Admin and Analytics User roles in
+ * `docs/ADMIN_PANEL_REQUIREMENTS.md` §88; the backend enum needs the same two
+ * values before this goes live. Sections follow the §98 sidebar of that file.
  */
 
 import type { IconName } from './ui/Icon';
@@ -22,18 +24,59 @@ export const LEVELS = [
   'care_coordinator',
   'finance',
   'content',
+  'lab',
+  'analytics',
 ] as const;
 
 export type AdminLevel = (typeof LEVELS)[number];
 
+/** Spec role names (§88) for the levels the backend already has. */
 export const LEVEL_LABEL: Record<AdminLevel, string> = {
-  super_admin: 'Super admin',
-  operations: 'Operations',
-  clinical_governance: 'Clinical governance',
-  care_coordinator: 'Care coordinator',
-  finance: 'Finance',
-  content: 'Content',
+  super_admin: 'Super Admin',
+  operations: 'Operations Admin',
+  clinical_governance: 'Verification Admin',
+  care_coordinator: 'Support Admin',
+  finance: 'Finance Admin',
+  content: 'Content Admin',
+  lab: 'Lab Admin',
+  analytics: 'Analytics User',
 };
+
+/**
+ * *** THE SEVEN ROLES OF REQUIREMENTS §88, IN THE SPEC'S ORDER. ***
+ *
+ * Super Admin, Operations Admin, Verification Admin, Finance Admin, Support Admin, Lab Admin,
+ * Analytics User. These are the only roles the panel OFFERS: the Users role picker, its role filter
+ * and the Roles & Permissions table. `content` (Content Admin) is a backend level the spec does not
+ * list; an admin who already holds it keeps working and is still labelled, but it is not a role
+ * anyone can be given from here.
+ */
+export const SPEC_ROLES: readonly AdminLevel[] = [
+  'super_admin',
+  'operations',
+  'clinical_governance',
+  'finance',
+  'care_coordinator',
+  'lab',
+  'analytics',
+];
+
+/** The eight sidebar groups of §2, in order. */
+export const GROUPS = [
+  'Dashboard',
+  'Healthcare Providers',
+  'Patients',
+  'Services',
+  'Analytics',
+  'Finances',
+  'Support',
+  'Admin',
+] as const;
+export type Group = (typeof GROUPS)[number];
+
+/** Services is split in two (§98). */
+export type SubGroup = 'Consultations' | 'Lab Services';
+export const SUB_GROUPS: readonly SubGroup[] = ['Consultations', 'Lab Services'];
 
 export type Section = {
   /** URL segment under `/`. */
@@ -41,7 +84,9 @@ export type Section = {
   /** Sidebar glyph, from the one icon set. */
   icon: IconName;
   label: string;
-  group: 'Overview' | 'People' | 'Care' | 'Money' | 'Content' | 'Support' | 'System';
+  group: Group;
+  /** Only Services has these. */
+  sub?: SubGroup;
   /**
    * Levels that reach this section. `super_admin` is never listed - it passes
    * everything, the same way the backend's `assertPermission` does.
@@ -51,337 +96,132 @@ export type Section = {
   blurb: string;
   /** The endpoints it consumes, so the placeholder is a worklist not a stub. */
   endpoints: readonly string[];
-  /** Flow-doc section, for the "read the spec" link. */
+  /** Section of `docs/ADMIN_PANEL_REQUIREMENTS.md` that specifies it. */
   spec: string;
 };
 
-export const SECTIONS: readonly Section[] = [
-  {
-    path: 'dashboard',
-    icon: 'dashboard',
-    label: 'Dashboard',
-    group: 'Overview',
-    levels: ['operations', 'clinical_governance', 'care_coordinator'],
-    blurb:
-      'The quality dashboard (FR-18.6). Every tile links into the queue behind it.',
-    endpoints: ['GET /admin/governance/dashboard'],
-    spec: '§8.1'
-  },
-  {
-    path: 'providers',
-    icon: 'providers',
-    label: 'Doctors',
-    group: 'People',
-    levels: ['operations', 'clinical_governance', 'care_coordinator'],
-    blurb:
-      'Create the account, edit the profile and commercials, set region pools, suspend. Creating is operations; verifying is not.',
-    endpoints: [
-      'GET /admin/doctors?verificationStatus=&isListed=&search=',
-      'POST /admin/doctors',
-      'GET|PATCH /admin/doctors/:doctorId',
-      'PATCH /admin/doctors/:doctorId/listing',
-      'GET|PATCH /admin/doctors/:doctorId/regions',
-      'PATCH /admin/doctors/:doctorId/seniority',
-      'POST /admin/doctors/:doctorId/suspend',
-      'POST /admin/doctors/:doctorId/reinstate',
-      'GET /admin/doctors/:doctorId/reliability',
-    ],
-    spec: '§5'
-  },
-  {
-    path: 'credentials',
-    icon: 'credentials',
-    label: 'Document verification',
-    group: 'People',
-    levels: ['operations', 'clinical_governance'],
-    blurb:
-      'Review each document, then verify or reject the provider. Verify is clinical_governance only.',
-    endpoints: [
-      'GET /admin/doctors/credential-queue',
-      'GET /admin/doctors/:doctorId/credentials',
-      'POST /admin/doctors/credentials/:documentId/review',
-      'POST /admin/doctors/:doctorId/verify | /reject | /reopen',
-    ],
-    spec: '§5.2–5.3'
-  },
-  {
-    path: 'patients',
-    icon: 'users',
-    label: 'Patients',
-    group: 'People',
-    levels: ['operations', 'clinical_governance', 'care_coordinator'],
-    blurb:
-      'Find a patient, see their consultations, follow-up plans, reports and any complaints in one place.',
-    endpoints: ['GET /admin/patients', 'GET /admin/patients/:patientId'],
-    spec: '§7'
-  },
-  {
-    path: 'consultations',
-    icon: 'consultations',
-    label: 'Consultations',
-    group: 'Care',
-    levels: ['operations', 'care_coordinator', 'clinical_governance'],
-    blurb:
-      'BLOCKED by gap A-2 - there is no admin list endpoint, only fetch-by-id. Reach consultations from the queues until it lands.',
-    endpoints: [
-      'GET /admin/consultations/:consultationId',
-      'POST /admin/consultations/:consultationId/override-provider',
-      'POST /admin/consultations/:consultationId/cancel',
-      'GET /admin/instant/consultations/:consultationId/offers',
-      'GET /admin/consultations/:consultationId/video/session',
-      'GET /admin/consultations/:consultationId/care-record',
-    ],
-    spec: '§7'
-  },
-  {
-    path: 'safety-alerts',
-    icon: 'alert',
-    label: 'Safety alerts',
-    group: 'Care',
-    levels: ['care_coordinator', 'clinical_governance', 'operations'],
-    blurb:
-      'Acknowledge takes responsibility; close records what was done. Two steps, never one button.',
-    endpoints: [
-      'GET /admin/safety-alerts',
-      'POST /admin/safety-alerts/:alertId/acknowledge',
-      'POST /admin/safety-alerts/:alertId/close',
-    ],
-    spec: '§8.3'
-  },
-  {
-    path: 'case-summaries',
-    icon: 'clipboard',
-    label: 'Case summaries',
-    group: 'Care',
-    levels: ['operations', 'clinical_governance', 'care_coordinator'],
-    blurb: 'Every case summary, written automatically after each consultation. Filter by status and open the consultation behind it.',
-    endpoints: ['GET /admin/governance/pending-case-summaries'],
-    spec: '§8.2'
-  },
-  {
-    path: 'case-review',
-    icon: 'clarify',
-    label: 'Clarification & allocation',
-    group: 'Care',
-    levels: ['clinical_governance', 'operations'],
-    blurb:
-      'Expert clarification cases and the allocation decisions behind each assignment, in one place.',
-    endpoints: [
-      'GET /admin/clarification-cases',
-      'POST /admin/clarification-cases/:caseId/assign',
-      'GET /admin/governance/allocation-decisions',
-    ],
-    spec: '§8.4–8.5'
-  },
-  {
-    path: 'availability',
-    icon: 'calendar',
-    label: 'Doctor availability',
-    group: 'Care',
-    levels: ['operations', 'care_coordinator', 'clinical_governance'],
-    blurb:
-      "Edit a provider's diary on their behalf, and answer who is assignable for a service, language, region and time.",
-    endpoints: [
-      'GET /admin/doctors/:doctorId/availability',
-      'PUT /admin/doctors/:doctorId/availability/weekly  (REPLACES the pattern)',
-      'POST /admin/doctors/:doctorId/availability/blocked | /custom-hours',
-      'DELETE /admin/doctors/:doctorId/availability/:ruleId',
-      'GET /admin/doctors/:doctorId/slots',
-      'GET /admin/availability/remaining',
-    ],
-    spec: '§6'
-  },
-  {
-    path: 'payments',
-    icon: 'payments',
-    label: 'Payments & payouts',
-    group: 'Money',
-    levels: ['finance', 'operations'],
-    blurb:
-      'Never recompute a total - the bill is frozen at checkout. Payouts are RECORDED, not paid.',
-    endpoints: [
-      'GET /admin/payments/payouts/pending',
-      'POST /admin/payments/:consultationId/refund   (finance + operations)',
-      'POST /admin/payments/:consultationId/payout',
-      'GET /admin/payments/export?kind=transactions|refunds',
-    ],
-    spec: '§9'
-  },
-  {
-    path: 'catalogue',
-    icon: 'catalogue',
-    label: 'Catalogue',
-    group: 'Content',
-    levels: ['content', 'operations', 'clinical_governance'],
-    blurb:
-      'Specialties, concerns, regions, allocation policy. A specialty decides prescribing eligibility.',
-    endpoints: [
-      'GET|POST /admin/specialties · PATCH /admin/specialties/:id',
-      'GET|POST /admin/concerns · PATCH /admin/concerns/:id',
-      'GET|POST /admin/regions · PATCH /admin/regions/:id',
-      'GET /admin/allocation-policy · PATCH (operations only)',
-    ],
-    spec: '§10.1'
-  },
-  {
-    path: 'care-hub',
-    icon: 'content',
-    label: 'Care Hub',
-    group: 'Content',
-    levels: ['content', 'clinical_governance'],
-    blurb:
-      'draft → submit → in review → publish. Publish is clinical_governance ONLY.',
-    endpoints: [
-      'GET|POST /admin/care-hub/items',
-      'GET|PATCH /admin/care-hub/items/:id',
-      'POST /admin/care-hub/items/:id/submit | /publish | /archive',
-    ],
-    spec: '§10.2'
-  },
-  {
-    path: 'notifications',
-    icon: 'bell',
-    label: 'Notifications',
-    group: 'Content',
-    levels: ['content', 'clinical_governance'],
-    blurb:
-      'Notification wording, a manual send to doctors or patients, and what was sent.',
-    endpoints: [
-      'GET /admin/notification-templates',
-      'GET|PATCH /admin/notification-templates/:code',
-      'POST /admin/notification-templates/:code/reset',
-    ],
-    spec: '§10.3'
-  },
-  {
-    path: 'pathways',
-    icon: 'pathway',
-    label: 'Follow-up pathways',
-    group: 'Content',
-    levels: ['clinical_governance', 'content', 'operations'],
-    blurb:
-      'POST publishes a NEW version and never edits the live one. No in-place edit form.',
-    endpoints: [
-      'GET /admin/followup-pathways',
-      'POST /admin/followup-pathways/:code',
-    ],
-    spec: '§10.5'
-  },
-  {
-    path: 'complaints',
-    icon: 'note',
-    label: 'Complaints & feedback',
-    group: 'Support',
-    levels: ['operations', 'clinical_governance'],
-    blurb:
-      'A reply is either to the patient or to the file. That toggle must be unmissable.',
-    endpoints: [
-      'GET /admin/feedback',
-      'GET /admin/complaints',
-      'GET /admin/complaints/:complaintId',
-      'POST /admin/complaints/:complaintId/assign | /reply | /close',
-    ],
-    spec: '§11'
-  },
-  {
-    path: 'settings',
-    icon: 'settings',
-    label: 'Settings',
-    group: 'System',
-    levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
-    blurb:
-      'Platform values, plus legal documents, the audit log, deletion requests, retention and admin accounts as tabs.',
-    endpoints: ['GET /admin/config', 'PUT /admin/config/:key'],
-    spec: '§10.7'
-  },
-];
+const STAFF: readonly AdminLevel[] = ['operations', 'clinical_governance', 'care_coordinator'];
+const LAB: readonly AdminLevel[] = ['lab', 'operations'];
+const ANALYTICS: readonly AdminLevel[] = ['analytics', 'operations', 'clinical_governance'];
+const MONEY: readonly AdminLevel[] = ['finance', 'operations'];
+const SUPPORT: readonly AdminLevel[] = ['care_coordinator', 'operations', 'clinical_governance'];
+
+const sec = (
+  path: string,
+  icon: IconName,
+  label: string,
+  group: Group,
+  levels: readonly AdminLevel[],
+  spec: string,
+  blurb: string,
+  sub?: SubGroup,
+): Section => ({ path, icon, label, group, sub, levels, blurb, endpoints: [], spec });
 
 /**
- * The tabs inside Settings (`/settings/:tab`). They were sidebar sections of
- * their own; each keeps its own permission levels, so an admin sees only the
- * tabs their level may use, exactly as the sidebar used to hide them.
+ * Lab Services is built but switched off for now (hidden from the sidebar, the
+ * dashboard, analytics and Master Data, and its routes are not registered).
+ * Set this to `true` to bring all of it back; nothing else needs to change.
  */
-export type SettingsTab = Omit<Section, 'group'>;
+export const LAB_SERVICES_ENABLED = false;
 
-export const SETTINGS_TABS: readonly SettingsTab[] = [
-  {
-    path: 'general',
-    icon: 'settings',
-    label: 'General',
-    levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
-    blurb:
-      'Values the platform reads at runtime, rendered from the response - `editable` and `managedBy` decide the form, not a local list.',
-    endpoints: ['GET /admin/config', 'PUT /admin/config/:key'],
-    spec: '§10.7'
-  },
-  {
-    path: 'legal',
-    icon: 'legal',
-    label: 'Legal documents',
-    levels: ['content', 'clinical_governance', 'operations'],
-    blurb:
-      'Publishing a new consent version re-prompts every patient. The most disruptive button in the panel.',
-    endpoints: [
-      'POST /admin/legal/documents',
-      'GET /admin/legal/documents/:documentType/versions',
-    ],
-    spec: '§10.6'
-  },
-  {
-    path: 'audit',
-    icon: 'audit',
-    label: 'Audit log',
-    levels: ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'],
-    blurb:
-      'Rows are filtered to what your level may read - say so. Searching the log is itself audited.',
-    endpoints: [
-      'GET /admin/compliance/audit',
-      'GET /admin/compliance/audit/export',
-      'GET /admin/compliance/audit/consultation/:consultationId',
-    ],
-    spec: '§12.1'
-  },
-  {
-    path: 'deletion-requests',
-    icon: 'trash',
-    label: 'Deletion requests',
-    levels: ['operations'],
-    blurb:
-      'Operations reviews. super_admin alone executes - a separate queue, never the same screen.',
-    endpoints: [
-      'GET /admin/deletion-requests',
-      'POST /admin/deletion-requests/:id/review',
-      'POST /admin/compliance/deletion-requests/:requestId/execute   (super_admin)',
-    ],
-    spec: '§12.2'
-  },
-  {
-    path: 'retention',
-    icon: 'shieldCheck',
-    label: 'Retention & data rights',
-    levels: [],
-    blurb:
-      'super_admin only. `retention/apply` is destructive - typed confirmation, and show the window first.',
-    endpoints: [
-      'GET /admin/compliance/retention',
-      'POST /admin/compliance/retention/apply',
-      'GET /admin/compliance/patients/:patientId/data-export',
-    ],
-    spec: '§12.3'
-  },
-  {
-    path: 'admin-accounts',
-    icon: 'users',
-    label: 'Admin accounts',
-    levels: [],
-    blurb:
-      'BLOCKED by gap A-4 - only POST exists. No list, no edit, no 2FA toggle, so a super admin cannot see the other admins.',
-    endpoints: ['POST /auth/admin/accounts'],
-    spec: '§3'
-  },
+const ALL_SECTIONS: readonly Section[] = [
+  sec('dashboard', 'dashboard', 'Dashboard', 'Dashboard', LEVELS.filter((l) => l !== 'super_admin'), '§3',
+    'Providers, patients, consultations, lab, finances and support at a glance. Every card opens the queue behind it.'),
+
+  sec('providers', 'providers', 'Doctors', 'Healthcare Providers', STAFF, '§5',
+    'Every doctor, with specialty, registration, fee, verification, account status and rating.'),
+  sec('specialists', 'providers', 'Specialists', 'Healthcare Providers', STAFF, '§6',
+    'Doctors in a medical specialty. The specialty list comes from Master Data, not from code.'),
+  sec('super-specialists', 'providers', 'Super-specialists', 'Healthcare Providers', STAFF, '§7',
+    'Doctors in a super-specialty. The list is configurable in Master Data.'),
+  sec('paramedical', 'providers', 'Paramedical Professionals', 'Healthcare Providers', STAFF, '§8',
+    'Dietitians, physiotherapists, psychologists, therapists and other approved professionals.'),
+  sec('veterinary', 'providers', 'Veterinary Specialists', 'Healthcare Providers', STAFF, '§9',
+    'Veterinary professionals, a separate provider category with its own specialties.'),
+  sec('verification', 'credentials', 'Verification', 'Healthcare Providers', ['operations', 'clinical_governance'], '§20, §21',
+    'Review identity, qualifications, registration, experience and signature, then approve, request changes, reject or suspend.'),
+  sec('availability', 'calendar', 'Doctor availability', 'Healthcare Providers', STAFF, '§18',
+    "Edit a provider's diary on their behalf, and answer who is assignable for a service, language, region and time."),
+
+  sec('patients', 'users', 'Patients', 'Patients', STAFF, '§22',
+    'Find a patient: overview, address, consultations, prescriptions and care plans, reports, follow-ups, payments and support.'),
+
+  sec('appointments', 'consultations', 'Appointments', 'Services', STAFF, '§33',
+    'Every appointment request and its status, from requested to completed.', 'Consultations'),
+  sec('case-records', 'clipboard', 'Case Records', 'Services', STAFF, '§34',
+    'The complete record of each consultation: overview, documentation, prescription or care plan, summary and documents.', 'Consultations'),
+  sec('clarifications', 'clarify', 'Clarifications', 'Services', ['clinical_governance', 'operations'], '§48',
+    'Clarification threads and the experts they are assigned to.', 'Consultations'),
+  sec('follow-ups', 'pathway', 'Follow-ups', 'Services', STAFF, '§49',
+    'The dedicated follow-up workflow: patient response, provider review and recommendation.', 'Consultations'),
+  sec('safety-alerts', 'alert', 'Safety alerts', 'Services', STAFF, '§8.3',
+    'Acknowledge takes responsibility; close records what was done. Two steps, never one button.', 'Consultations'),
+
+  sec('lab-orders', 'lab', 'Lab Orders', 'Services', LAB, '§51', 'Every lab order, its collection and its report.', 'Lab Services'),
+  sec('lab-partners', 'lab', 'Lab Partners', 'Services', LAB, '§58', 'Add, edit, activate and deactivate partners and the PIN codes they serve.', 'Lab Services'),
+  sec('lab-tests', 'lab', 'Individual Lab Tests', 'Services', LAB, '§60', 'The CoraCure test master, with aliases, prices and partner mapping.', 'Lab Services'),
+  sec('lab-packages', 'lab', 'Lab Test Packages', 'Services', LAB, '§62', 'Predefined test batteries, each offered by one partner at a set price.', 'Lab Services'),
+  sec('lab-allocation', 'settings', 'Allocation Settings', 'Services', LAB, '§57', 'PIN code and first acceptance: eligibility and acceptance rules.', 'Lab Services'),
+  sec('lab-reports', 'note', 'Reports', 'Services', LAB, '§68', 'Lab reports by status. Files are only reachable from authenticated CoraCure systems.', 'Lab Services'),
+
+  sec('analytics', 'chart', 'Overview', 'Analytics', ANALYTICS, '§72', 'Patients, providers, consultations, lab services and financial activity.'),
+  sec('analytics-consultations', 'chart', 'Consultation Analytics', 'Analytics', ANALYTICS, '§73', 'Volume, acceptance, repeat, follow-up completion and duration.'),
+  sec('analytics-providers', 'chart', 'Provider Analytics', 'Analytics', ANALYTICS, '§74', 'Offered, accepted, completed, response time, ratings and complaints.'),
+  sec('analytics-patients', 'chart', 'Patient Analytics', 'Analytics', ANALYTICS, '§75', 'Registrations, age, gender, location and specialty utilisation.'),
+  sec('analytics-lab', 'chart', 'Lab Analytics', 'Analytics', ['analytics', 'lab', 'operations'], '§76', 'Orders, tests, packages, partners, location, collection and reports.'),
+  sec('analytics-financial', 'chart', 'Financial Analytics', 'Analytics', ['analytics', 'finance', 'operations'], '§77', 'Gross value, commission, fees, payouts, refunds and revenue trend.'),
+
+  sec('patient-payments', 'payments', 'Patient Payments', 'Finances', MONEY, '§79', 'Consultation and lab payments, status and transaction reference.'),
+  sec('provider-payouts', 'payments', 'Provider Payouts', 'Finances', MONEY, '§80',
+    'Never recompute a total - the bill is frozen at checkout. Payouts are RECORDED, not paid.'),
+  sec('refunds', 'payments', 'Refunds', 'Finances', MONEY, '§81', 'Consultation and lab refunds in one list.'),
+
+  sec('support-tickets', 'note', 'Support Tickets', 'Support', SUPPORT, '§83', 'Tickets by status, category and priority, plus patient complaints.'),
+  sec('feedback', 'note', 'Feedback', 'Support', SUPPORT, '§84', 'Patient, provider, lab-service and app feedback.'),
+  sec('notifications', 'bell', 'Notifications', 'Support', ['content', 'clinical_governance', 'operations', 'care_coordinator'], '§85',
+    'Notification wording, a manual send to doctors or patients, and what was sent.'),
+
+  sec('users', 'users', 'Users', 'Admin', [], '§87', 'Admin users, their role and status. Super Admin only.'),
+  sec('roles', 'shieldCheck', 'Roles & Permissions', 'Admin', [], '§88', 'Seven roles and what each may open. Super Admin only.'),
+  sec('master-data', 'catalogue', 'Master Data', 'Admin', ['operations', 'content', 'clinical_governance', 'lab'], '§90',
+    'Specialties, lab master data and the other lists the platform reads.'),
+  sec('admin-settings', 'settings', 'Admin Settings', 'Admin', ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'], '§93',
+    'Platform rules and fee values, plus the audit log, deletion requests and retention.'),
+  sec('app-settings', 'content', 'App Settings', 'Admin', ['content', 'operations', 'clinical_governance'], '§94',
+    'App languages, feature controls, content, labels, the Care Hub and follow-up pathways.'),
+  sec('website-settings', 'globe', 'Website Settings', 'Admin', ['content', 'operations'], '§95',
+    'Public website content, contact information, links and the legal documents.'),
 ];
 
-export const GROUPS = ['Overview', 'People', 'Care', 'Money', 'Content', 'Support', 'System'] as const;
+const isLab = (s: Section) => s.sub === 'Lab Services' || s.path === 'analytics-lab';
+
+export const SECTIONS: readonly Section[] = ALL_SECTIONS.filter((s) => LAB_SERVICES_ENABLED || !isLab(s));
+
+/**
+ * The tabs inside Admin Settings (`/admin-settings/:tab`). Each keeps its own
+ * permission levels, so an admin sees only the tabs their level may use.
+ */
+export type SettingsTab = Omit<Section, 'group' | 'sub'>;
+
+const tab = (
+  path: string,
+  icon: IconName,
+  label: string,
+  levels: readonly AdminLevel[],
+  spec: string,
+  blurb: string,
+): SettingsTab => ({ path, icon, label, levels, blurb, endpoints: [], spec });
+
+export const SETTINGS_TABS: readonly SettingsTab[] = [
+  tab('general', 'settings', 'General', ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'], '§93',
+    'Values the platform reads at runtime, rendered from the response - `editable` and `managedBy` decide the form, not a local list.'),
+  tab('audit', 'audit', 'Audit log', ['operations', 'clinical_governance', 'care_coordinator', 'finance', 'content'], '§12.1',
+    'Rows are filtered to what your level may read - say so. Searching the log is itself audited.'),
+  tab('deletion-requests', 'trash', 'Deletion requests', ['operations'], '§12.2',
+    'Operations reviews. super_admin alone executes - a separate queue, never the same screen.'),
+  tab('retention', 'shieldCheck', 'Retention & data rights', [], '§12.3',
+    'super_admin only. `retention/apply` is destructive - typed confirmation, and show the window first.'),
+];
 
 /** `super_admin` passes everything, exactly as the backend does. */
 export const canSee = (level: AdminLevel, section: Pick<Section, 'levels'>): boolean =>
@@ -394,6 +234,6 @@ export const sectionsFor = (level: AdminLevel): Section[] =>
 export const landingFor = (level: AdminLevel): string =>
   sectionsFor(level)[0]?.path ?? 'no-access';
 
-/** The Settings tabs this level may open, in order. */
+/** The Admin Settings tabs this level may open, in order. */
 export const settingsTabsFor = (level: AdminLevel): SettingsTab[] =>
   SETTINGS_TABS.filter((t) => canSee(level, t));

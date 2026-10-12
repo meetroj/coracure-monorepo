@@ -177,6 +177,32 @@ describe('single-flight refresh', () => {
   });
 });
 
+describe('a session the module no longer holds in memory', () => {
+  it("is restored from the tab's storage, so a re-evaluated module does not sign the admin out", async () => {
+    const counts: Counts = { refresh: 1, protected: 0 }; // already refreshed: the stored token is the good one
+    vi.stubGlobal('fetch', backend(counts));
+    const stored = {
+      accessToken: adminToken('operations'),
+      refreshToken: 'refresh-1',
+      expiresAt: Date.now() + 60_000,
+      level: 'operations',
+      email: 'ops@coracure.example',
+    };
+    // What a hot reload leaves behind: nothing in memory, the session in storage.
+    __resetForTests();
+    sessionStorage.setItem('coracure.admin.session', JSON.stringify(stored));
+
+    await expect(request('/admin/doctors')).resolves.toEqual({ ok: true });
+    expect(getSession()?.refreshToken).toBe('refresh-1');
+  });
+
+  it('still refuses when nothing is stored: a signed-out tab stays signed out', async () => {
+    __resetForTests();
+    sessionStorage.clear();
+    await expect(request('/admin/doctors')).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+  });
+});
+
 describe('error handling', () => {
   it('raises an ApiError carrying the backend code, not the message', async () => {
     vi.stubGlobal(

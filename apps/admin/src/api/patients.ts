@@ -2,6 +2,17 @@ import { ApiError } from '@coracure/api/errors';
 
 import * as db from '../mock/db';
 import { patientRecords } from '../mock/patients';
+import { request } from './http';
+import { LIVE } from './live';
+import {
+  fromLivePatientDetail,
+  fromLivePatientRow,
+  patientEditBody,
+  patientListQuery,
+  type LivePatientDetail,
+  type LivePatientEdit,
+  type LivePatientPage,
+} from './livePatients';
 
 /**
  * The patient directory, on fixtures like the rest of the panel.
@@ -10,7 +21,8 @@ import { patientRecords } from '../mock/patients';
  * these types, so no screen can show them by accident.
  */
 
-export type PatientStatus = 'active' | 'inactive' | 'pending_deletion';
+/** `pending` and `suspended` are the backend's own words; the other three are the fixtures'. */
+export type PatientStatus = 'active' | 'inactive' | 'pending_deletion' | 'pending' | 'suspended';
 export type CheckInColour = 'green' | 'amber' | 'red';
 
 export type PatientConsultation = {
@@ -61,7 +73,8 @@ export type PatientSummary = {
   mobileNumber: string;
   /** `YYYY-MM-DD`, as entered at sign-up. Null when the patient left it out. */
   dateOfBirth: string | null;
-  age: number;
+  /** Null when the patient has not given a date of birth yet. */
+  age: number | null;
   gender: string;
   language: string;
   region: string;
@@ -104,6 +117,9 @@ export type PatientProfile = {
 };
 
 export type PatientDetailRecord = PatientSummary & {
+  /** Live only: what the edit form sends back (the screen shows names, the API takes ids and codes). */
+  regionId?: string | null;
+  languageCodes?: string[];
   profile: PatientProfile;
   consultations: PatientConsultation[];
   complaints: PatientComplaint[];
@@ -152,9 +168,16 @@ const summarise = (p: PatientDetailRecord): PatientSummary => {
   };
 };
 
+/** The live roster: `total` counts every match across pages, so the screen can say how many there are. */
+async function liveList(q: PatientQuery): Promise<{ rows: PatientSummary[]; total: number }> {
+  const page = await request<LivePatientPage>('/admin/patients', { query: patientListQuery(q) });
+  return { rows: page.items.map(fromLivePatientRow), total: page.total };
+}
+
 export const patients = {
   /** Newest activity first. `total` is the match count before `limit` is applied. */
   list: (q: PatientQuery = {}) => {
+    if (LIVE) return liveList(q);
     const term = (q.search ?? '').trim().toLowerCase();
     const digits = term.replace(/\D/g, '');
     const all = patientRecords().map(summarise);
@@ -212,7 +235,34 @@ export const patients = {
   },
 
   get: (id: string) => {
+    if (LIVE) {
+      return request<LivePatientDetail>(`/admin/patients/${encodeURIComponent(id)}`).then(fromLivePatientDetail);
+    }
     const found = patientRecords().find((p) => p.id === id);
     return found ? db.delay(copy(found)) : notFound('Patient');
   },
+
+  /**
+   * Live only: what a support edit may change. The email, mobile number and health
+   * fields are the patient's own and the backend refuses them, so the live form
+   * never offers them.
+   */
+  updateLive: (id: string, input: LivePatientEdit) =>
+    request<unknown>(`/admin/patients/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: patientEditBody(input),
+    }),
+
+  /** Blocks the patient from signing in. The reason goes to the audit log only. */
+  suspend: (id: string, reason?: string) =>
+    request<{ id: string; status: string }>(`/admin/patients/${encodeURIComponent(id)}/suspend`, {
+      method: 'POST',
+      body: reason?.trim() ? { reason: reason.trim() } : {},
+    }),
+
+  reinstate: (id: string) =>
+    request<{ id: string; status: string }>(`/admin/patients/${encodeURIComponent(id)}/reinstate`, {
+      method: 'POST',
+      body: {},
+    }),
 };

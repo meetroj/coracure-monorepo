@@ -1,5 +1,16 @@
 import * as db from '../mock/db';
-import { consultationsList } from './consultationsList';
+import { request } from './http';
+import { LIVE } from './live';
+import { liveChat } from './liveChat';
+import { billFromRecord, fromLiveRecord, type LiveRecord } from './liveAppointments';
+import { liveDoctors, updateProfile, type RosterQuery } from './liveProviders';
+import { liveScheduling } from './liveScheduling';
+import { liveSupport } from './liveSupport';
+import { liveClarification } from './liveClarification';
+import { liveGovernance, liveSafety } from './liveCare';
+import { liveCatalogue } from './liveCatalogue';
+import { liveCompliance, liveConfig, liveLegal, livePathways } from './liveAdmin';
+import { liveTemplates } from './liveNotifications';
 import { baseExtras, extraConsultations } from '../mock/moreConsultations';
 import { chatFor } from '../mock/consultationChat';
 import { ownerOf } from '../mock/patients';
@@ -27,7 +38,6 @@ import type {
   LegalDocument,
   NotificationTemplate,
   Pathway,
-  PatientPayment,
   PendingPayout,
   PendingSummary,
   Region,
@@ -79,8 +89,8 @@ const notFound = (what: string) =>
 
 /* -------------------------------- providers ------------------------------- */
 
-export const doctors = {
-  list: (q: { verificationStatus?: string; isListed?: string; search?: string }) => {
+const fixtureDoctors = {
+  list: (q: RosterQuery) => {
     const term = (q.search ?? '').trim().toLowerCase();
     const rows = db.doctors.filter((d) => {
       if (q.verificationStatus && d.verificationStatus !== q.verificationStatus) return false;
@@ -190,7 +200,11 @@ export const doctors = {
     return ok(copy(found));
   },
 
-  credentialQueue: () => ok(copy(db.credentialQueue())),
+  /** The Verification worklist: every provider and how many documents wait. */
+  queue: () => ok(copy(db.credentialQueue())),
+
+  /** Fixtures hold no file bytes, so there is no link to open. */
+  downloadUrl: (_documentId: string) => ok({ url: '', expiresInSeconds: 0 }),
 
   credentials: (doctorId: string) => ok(copy(db.documents[doctorId] ?? [])),
 
@@ -212,6 +226,7 @@ export const doctors = {
     if (!found) return notFound('Provider');
     found.verificationStatus = 'verified';
     found.rejectionReason = null;
+    found.changesRequiredNote = null;
     return ok(copy(found));
   },
 
@@ -221,6 +236,24 @@ export const doctors = {
     found.verificationStatus = 'rejected';
     found.rejectionReason = reason;
     found.isListed = false;
+    return ok(copy(found));
+  },
+
+  /** Verification action: send the provider back to fix something (§21). */
+  requestChanges: (doctorId: string, note: string) => {
+    const found = db.findDoctor(doctorId);
+    if (!found) return notFound('Provider');
+    found.verificationStatus = 'changes_required';
+    found.changesRequiredNote = note;
+    found.isListed = false;
+    return ok(copy(found));
+  },
+
+  /** Preview / approve / request replacement of a doctor's digital signature (§17). */
+  setSignature: (doctorId: string, status: 'approved' | 'replacement_requested', _reason?: string) => {
+    const found = db.findDoctor(doctorId);
+    if (!found) return notFound('Provider');
+    found.signatureStatus = status;
     return ok(copy(found));
   },
 
@@ -317,9 +350,34 @@ export const doctors = {
     ),
 };
 
+/**
+ * Providers: the backend when live, the fixtures otherwise.
+ *
+ * In a live build only the calls named here reach the network. `create`,
+ * `regions` and `setRegions` stay on fixtures and are unreachable from a live
+ * screen: the add-provider route is "Not connected", and no screen reads the
+ * other two.
+ */
+const liveFacade = {
+  ...liveDoctors,
+  update: (doctorId: string, input: Record<string, unknown>) =>
+    updateProfile(doctorId, {
+      payoutFeeInr: typeof input.payoutFeeInr === 'number' ? input.payoutFeeInr : undefined,
+      consultationDurationMinutes:
+        typeof input.consultationDurationMinutes === 'number' ? input.consultationDurationMinutes : undefined,
+      languages: Array.isArray(input.languages) ? (input.languages as string[]) : undefined,
+    }),
+};
+
+export const doctors = (LIVE ? { ...fixtureDoctors, ...liveFacade } : fixtureDoctors) as Omit<
+  typeof fixtureDoctors,
+  keyof typeof liveFacade
+> &
+  typeof liveFacade;
+
 /* ------------------------------- scheduling ------------------------------- */
 
-export const scheduling = {
+const fixtureScheduling = {
   availability: (doctorId: string) => ok(copy(db.availability[doctorId] ?? [])),
 
   /** Replaces the whole weekly pattern, exactly as the real PUT does. */
@@ -377,13 +435,40 @@ export const scheduling = {
     ok(copy(db.assignable)),
 };
 
+/** A provider's diary and the coverage lookup: the backend when live, the fixtures otherwise. */
+export const scheduling: typeof fixtureScheduling = LIVE
+  ? (liveScheduling as unknown as typeof fixtureScheduling)
+  : fixtureScheduling;
+
 /* ------------------------------ consultations ----------------------------- */
 
 const findConsultation = (id: string) =>
   [...db.consultations, ...extraConsultations].find((c) => c.id === id || c.referenceCode === id);
 
+/**
+ * One appointment, live. The record carries ids only, so the patient, provider and
+ * service names are looked up beside it. A lookup that fails (a level that may not
+ * read patients, say) leaves a dash - the record itself still opens.
+ */
+async function liveConsultation(id: string) {
+  const rec = await request<LiveRecord>(`/admin/consultations/${encodeURIComponent(id)}`);
+  const [patient, doctor, services] = await Promise.all([
+    request<{ fullName: string | null }>(`/admin/patients/${rec.patientId}`).catch(() => null),
+    rec.doctorId
+      ? request<{ fullName: string }>(`/admin/doctors/${rec.doctorId}`).catch(() => null)
+      : Promise.resolve(null),
+    request<{ id: string; name: string }[]>('/services').catch(() => [] as { id: string; name: string }[]),
+  ]);
+  return fromLiveRecord(rec, {
+    patient: patient?.fullName ?? null,
+    doctor: doctor?.fullName ?? null,
+    service: services.find((x) => x.id === rec.specialtyId)?.name ?? null,
+  });
+}
+
 export const consultations = {
   get: (id: string) => {
+    if (LIVE) return liveConsultation(id);
     const found = findConsultation(id);
     if (!found) return notFound('Consultation');
     const regionName = db.regions.find((r) => r.id === found.regionId)?.name ?? null;
@@ -396,6 +481,7 @@ export const consultations = {
 
   /** The doctor–patient chat for this case. Read-only. */
   chat: (id: string) => {
+    if (LIVE) return liveChat(id);
     const found = findConsultation(id);
     return found ? ok(chatFor(found.id, found.startsAt ?? null, found.status)) : notFound('Consultation');
   },
@@ -453,14 +539,19 @@ export const consultations = {
 
 /* -------------------------------- governance ------------------------------ */
 
-export const governance = {
+const fixtureGovernance = {
   dashboard: () => ok(copy(db.dashboard)),
   pendingSummaries: () => ok(copy(db.pendingSummaries)),
   providerQuality: () => ok(copy(db.reliability) as unknown),
   allocationDecisions: () => ok(copy(db.allocationDecisions)),
 };
 
-export const safety = {
+/** Governance reads: the allocation decisions are the backend's when live; the rest have their own live screens. */
+export const governance: typeof fixtureGovernance = LIVE
+  ? { ...fixtureGovernance, ...(liveGovernance as unknown as Partial<typeof fixtureGovernance>) }
+  : fixtureGovernance;
+
+const fixtureSafety = {
   list: () => ok(copy(db.safetyAlerts)),
 
   acknowledge: (alertId: string) => {
@@ -479,7 +570,12 @@ export const safety = {
   },
 };
 
-export const clarification = {
+/** Safety alerts: the backend when live, the fixtures otherwise. */
+export const safety: typeof fixtureSafety = LIVE
+  ? (liveSafety as unknown as typeof fixtureSafety)
+  : fixtureSafety;
+
+const fixtureClarification = {
   list: () => ok(copy(db.clarificationCases)),
   experts: () => ok(copy(db.experts)),
 
@@ -501,13 +597,20 @@ export const clarification = {
   },
 };
 
+/** Case clarification: the backend when live, the fixtures otherwise. */
+export const clarification: typeof fixtureClarification = LIVE
+  ? (liveClarification as unknown as typeof fixtureClarification)
+  : fixtureClarification;
+
 /* --------------------------------- payments ------------------------------- */
 
 export const payments = {
   pendingPayouts: () => ok(copy(db.pendingPayouts)),
 
-  bill: (_consultationId: string) =>
-    ok({
+  bill: (consultationId: string) =>
+    LIVE
+      ? request<LiveRecord>(`/admin/consultations/${encodeURIComponent(consultationId)}`).then(billFromRecord)
+      : ok({
       consultationFee: 1200,
       convenienceFeePct: 8,
       convenienceFee: 96,
@@ -517,19 +620,6 @@ export const payments = {
       status: 'paid',
       refundAmount: 0,
     } as Bill),
-
-  /** What patients were charged, one row per consultation that has a payment. */
-  patientPayments: async (): Promise<PatientPayment[]> => {
-    const page = await consultationsList.list();
-    return page.items.map((c) => ({
-      consultationId: c.id,
-      referenceCode: c.referenceCode ?? c.id,
-      patientName: c.patientName,
-      at: c.startsAt ?? null,
-      amountInr: 1313.28,
-      status: c.paymentStatus,
-    }));
-  },
 
   refund: (_consultationId: string, _amount: number, _reason: string) => ok({} as unknown),
 
@@ -545,7 +635,7 @@ export const payments = {
 
 /* --------------------------------- support -------------------------------- */
 
-export const support = {
+const fixtureSupport = {
   feedback: () => ok(copy(db.feedback)),
 
   complaints: (q: { status?: string } = {}) =>
@@ -589,9 +679,22 @@ export const support = {
   },
 };
 
+/**
+ * Complaints: the backend when live, the fixtures otherwise. Ticket and feedback
+ * lists have their own live screens; nothing here reads `feedback`, so a live
+ * build answers it empty rather than with a fixture.
+ */
+export const support: typeof fixtureSupport = LIVE
+  ? {
+      ...fixtureSupport,
+      ...(liveSupport as unknown as Partial<typeof fixtureSupport>),
+      feedback: async () => [],
+    }
+  : fixtureSupport;
+
 /* -------------------------------- catalogue ------------------------------- */
 
-export const catalogue = {
+const fixtureCatalogue = {
   specialties: () => ok(copy(db.specialties)),
 
   specialty: (id: string) => {
@@ -663,6 +766,17 @@ export const catalogue = {
   },
 };
 
+/**
+ * Specialties, concerns, regions and the allocation policy: the backend when
+ * live, the fixtures otherwise. The live creates take what the backend needs
+ * (a fee, a category), which the fixtures ignore.
+ */
+export const catalogue = (LIVE ? { ...fixtureCatalogue, ...liveCatalogue } : fixtureCatalogue) as Omit<
+  typeof fixtureCatalogue,
+  keyof typeof liveCatalogue
+> &
+  typeof liveCatalogue;
+
 /* --------------------------------- content -------------------------------- */
 
 export const content = {
@@ -718,7 +832,7 @@ export const content = {
   },
 };
 
-export const notificationTemplates = {
+const fixtureTemplates = {
   list: () => ok(copy(db.templates)),
 
   get: (code: string) => {
@@ -740,6 +854,11 @@ export const notificationTemplates = {
     return ok(copy(found));
   },
 };
+
+/** The wording of every automatic notification: the backend when live, the fixtures otherwise. */
+export const notificationTemplates: typeof fixtureTemplates = LIVE
+  ? (liveTemplates as unknown as typeof fixtureTemplates)
+  : fixtureTemplates;
 
 export const searchConfig = {
   get: () => ok(copy(db.searchConfiguration)),
@@ -770,7 +889,7 @@ export const searchConfig = {
   },
 };
 
-export const pathways = {
+const fixturePathways = {
   list: () => ok(copy(db.pathways)),
 
   /** Publishes a NEW version; the live one is never edited. */
@@ -790,13 +909,18 @@ export const pathways = {
   },
 };
 
+/** Follow-up pathways: the backend when live, the fixtures otherwise. */
+export const pathways: typeof fixturePathways = LIVE
+  ? (livePathways as unknown as typeof fixturePathways)
+  : fixturePathways;
+
 /** The next whole version: 1.0, then 2.0, 3.0 … - never 2.1 or 2.2, and never a repeat. */
 export const nextLegalVersion = (existing: { version?: string | number | null }[]): string => {
   const highest = existing.reduce((max, d) => Math.max(max, Math.floor(parseFloat(String(d.version ?? 0))) || 0), 0);
   return `${highest + 1}.0`;
 };
 
-export const legal = {
+const fixtureLegal = {
   versions: (documentType: string) => ok(copy(db.legalDocuments[documentType] ?? [])),
 
   publish: (input: { documentType: string; body: string; version?: string }) => {
@@ -812,9 +936,14 @@ export const legal = {
   },
 };
 
+/** Legal documents: the backend when live, the fixtures otherwise. */
+export const legal: typeof fixtureLegal = LIVE
+  ? (liveLegal as unknown as typeof fixtureLegal)
+  : fixtureLegal;
+
 /* -------------------------------- platform -------------------------------- */
 
-export const config = {
+const fixtureConfig = {
   list: () => ok(copy(db.configValues)),
 
   set: (key: string, value: unknown) => {
@@ -825,7 +954,12 @@ export const config = {
   },
 };
 
-export const compliance = {
+/** Platform configuration: the backend when live, the fixtures otherwise. */
+export const config: typeof fixtureConfig = LIVE
+  ? (liveConfig as unknown as typeof fixtureConfig)
+  : fixtureConfig;
+
+const fixtureCompliance = {
   audit: (q: {
     actorType?: string;
     action?: string;
@@ -874,6 +1008,11 @@ export const compliance = {
   },
 };
 
+/** Audit, retention and deletion: the backend when live, the fixtures otherwise. */
+export const compliance: typeof fixtureCompliance = LIVE
+  ? (liveCompliance as unknown as typeof fixtureCompliance)
+  : fixtureCompliance;
+
 export const adminAccounts = {
   create: (_input: {
     email: string;
@@ -885,7 +1024,7 @@ export const adminAccounts = {
   }) => ok({ id: db.newId('ad') }),
 };
 
-export const inbox = {
+const fixtureInbox = {
   list: () => ok(copy(db.notifications)),
 
   unreadCount: () => ok({ count: db.notifications.filter((n) => !n.readAt).length }),
@@ -903,6 +1042,22 @@ export const inbox = {
     return ok(undefined as void);
   },
 };
+
+/**
+ * The signed-in admin's own notifications (`/me/notifications`). The backend
+ * pages newest-first up to 100; the panel shows that first page.
+ */
+const liveInbox = {
+  list: () => request<AdminNotification[]>('/me/notifications', { query: { limit: 100 } }),
+  unreadCount: () =>
+    request<{ unread: number }>('/me/notifications/unread-count').then((r) => ({ count: r.unread })),
+  markRead: (id: string) =>
+    request<void>(`/me/notifications/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} }),
+  markAllRead: () =>
+    request<unknown>('/me/notifications/read-all', { method: 'POST', body: {} }).then(() => undefined as void),
+};
+
+export const inbox = LIVE ? liveInbox : fixtureInbox;
 
 /* Re-exported so screens keep importing types from one place. */
 export type {

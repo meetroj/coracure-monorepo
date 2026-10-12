@@ -3,6 +3,8 @@ import { BrowserRouter } from 'react-router-dom';
 import * as ReactDOM from 'react-dom/client';
 
 import { applyBrandTheme } from './brand-css';
+// The brand's @font-face rules (Outfit + Montserrat) - nothing else loads them.
+import '../../../libs/typography/fonts.css';
 // The component kit's styles. `styles.css` is linked from index.html and owns
 // page chrome; this one travels with the kit in `src/ui`.
 import './ui/ui.css';

@@ -8,8 +8,10 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   ConfirmDialog,
   DefinitionList,
+  DefinitionListSkeleton,
   EmptyState,
   Notice,
   PageHeader,
@@ -61,7 +63,18 @@ export function Retention({ level }: { level: AdminLevel }) {
         cannot be undone. A scheduled run does this routinely - use this only when it has not.
       </Notice>
 
-      <Async state={state} resource="retention settings" skeletonRows={2}>
+      <Async
+        state={state}
+        resource="retention settings"
+        skeleton={
+          <>
+            <CardSkeleton title="Current window">
+              <DefinitionListSkeleton items={3} />
+            </CardSkeleton>
+            <CardSkeleton title="Run the sweep" lines={2} />
+          </>
+        }
+      >
         {(info) => (
           <>
             <Card title="Current window">

@@ -5,7 +5,7 @@ import { inbox, type AdminNotification } from '../api/admin';
 import { inboxChanged, timeAgo, useInboxChanged } from '../lib/inboxEvents';
 import { useToast } from '../lib/toast';
 import { useResource } from '../lib/useResource';
-import { Button, Icon } from '../ui';
+import { Button, Icon, ListSkeleton, SkeletonRegion, useSkeletonGate } from '../ui';
 
 /** How many rows the dropdown shows; the page behind "View all" has the rest. */
 const PREVIEW = 5;
@@ -33,6 +33,9 @@ export function NotificationBell() {
   const listFetcher = useCallback(() => inbox.list(), []);
   const list = useResource<AdminNotification[]>(listFetcher, [], open);
   const count = unread.data?.count ?? 0;
+  // No data and no failure yet is "still loading", including the frame before the
+  // fetch starts, so the list never flashes "all caught up" on its way in.
+  const listPhase = useSkeletonGate(open && list.data === null && !list.error);
 
   // The page marked something read, or this did: both numbers move together.
   const refresh = useCallback(() => {
@@ -111,8 +114,13 @@ export function NotificationBell() {
           </div>
 
           <div className="notifPop__body">
-            {list.loading && list.initial ? (
-              <p className="notifPop__empty">Loading…</p>
+            {listPhase === 'skeleton' && !list.error ? (
+              <SkeletonRegion label="Loading notifications">
+                <ListSkeleton rows={3} trailing={false} />
+              </SkeletonRegion>
+            ) : list.data === null && !list.error ? (
+              // Inside the delay nothing is drawn, so a fast answer never blinks a placeholder.
+              null
             ) : list.error ? (
               <p className="notifPop__empty">
                 Could not load notifications.{' '}

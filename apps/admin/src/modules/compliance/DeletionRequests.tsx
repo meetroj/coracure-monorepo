@@ -8,6 +8,7 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   Column,
   ConfirmDialog,
   EmptyState,
@@ -15,7 +16,9 @@ import {
   PageHeader,
   StatusBadge,
   Table,
+  TableSkeleton,
   may,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -122,6 +125,18 @@ export function DeletionRequests({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="deletion requests"
+        skeleton={
+          <>
+            {['Awaiting review', 'Approved - awaiting execution', 'Closed'].map((title) => (
+              <CardSkeleton key={title} title={title}>
+                <TableSkeleton
+                  columns={skeletonColumns(columns, { requested: 'date', patient: 'id', status: 'status', note: 'text', actions: 'button' })}
+                  rows={2}
+                />
+              </CardSkeleton>
+            ))}
+          </>
+        }
         empty={
           <EmptyState
             icon="trash"

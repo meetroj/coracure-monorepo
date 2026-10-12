@@ -14,7 +14,9 @@ import type { ApiError } from '@coracure/api/errors';
 
 import { canSee, SECTIONS, SETTINGS_TABS, type AdminLevel, type Section } from '../nav';
 import { Icon, type IconName } from './Icon';
+import { ListSkeleton, SkeletonRegion, useSkeletonGate } from './skeleton';
 
+export * from './skeleton';
 export { Icon } from './Icon';
 export type { IconName } from './Icon';
 
@@ -340,6 +342,51 @@ const TONES: Record<string, BadgeTone> = {
   // Seniority
   expert: 'info',
   standard: 'neutral',
+  // Provider account and verification (requirements §19, §20)
+  changes_required: 'warning',
+  active: 'positive',
+  inactive: 'neutral',
+  available: 'positive',
+  unavailable: 'neutral',
+  // Appointments (§33)
+  allocated: 'info',
+  accepted: 'info',
+  upcoming: 'info',
+  rescheduled: 'warning',
+  // Clarifications and follow-ups (§48, §49)
+  new: 'warning',
+  awaiting_response: 'warning',
+  responded: 'info',
+  closed: 'neutral',
+  patient_response_pending: 'warning',
+  provider_review_pending: 'warning',
+  reviewed: 'positive',
+  follow_up_consultation_recommended: 'info',
+  // Lab orders, collection and reports (§53, §66)
+  payment_pending: 'warning',
+  payment_successful: 'info',
+  lab_allocation_pending: 'warning',
+  lab_confirmed: 'info',
+  collection_pending: 'warning',
+  collection_scheduled: 'info',
+  sample_collected: 'info',
+  collection_rescheduled: 'warning',
+  collection_failed: 'danger',
+  recollection_required: 'danger',
+  recollection_scheduled: 'warning',
+  recollection_completed: 'positive',
+  sample_processing: 'info',
+  report_ready: 'positive',
+  cancellation_requested: 'warning',
+  refund_initiated: 'info',
+  processing: 'info',
+  // Payouts, refunds, support (§80, §81, §83)
+  initiated: 'info',
+  awaiting_user_response: 'warning',
+  urgent: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
 };
 
 /** Turns `awaiting_documentation` into `Awaiting documentation`. */
@@ -470,16 +517,6 @@ export function Card({
 
 /* ------------------------------- Data states ------------------------------ */
 
-export function Skeleton({ rows = 5 }: { rows?: number }) {
-  return (
-    <div className="skeleton" aria-hidden="true">
-      {Array.from({ length: rows }, (_, i) => (
-        <div className="skeleton__row" key={i} />
-      ))}
-    </div>
-  );
-}
-
 export function EmptyState({
   icon = 'inbox',
   title,
@@ -509,6 +546,10 @@ export function EmptyState({
  * Reads `error.code`, never the message. Shows the request id so a screenshot
  * is enough for support, and offers one manual retry rather than looping.
  */
+/** A network failure while the browser itself says it has no connection. */
+const isOffline = (error: ApiError): boolean =>
+  error.isNetwork && typeof navigator !== 'undefined' && navigator.onLine === false;
+
 export function ErrorState({
   error,
   onRetry,
@@ -520,18 +561,24 @@ export function ErrorState({
 }) {
   const forbidden = error.code === 'INSUFFICIENT_PERMISSION' || error.code === 'FORBIDDEN';
   const missing = error.code === 'NOT_FOUND';
+  // Offline is its own state: nothing is wrong with the server, and Retry is the way out.
+  const offline = isOffline(error);
 
   const title = forbidden
     ? 'You do not have permission to view this'
     : missing
       ? `We could not find ${resource}`
-      : `Unable to load ${resource}`;
+      : offline
+        ? 'You appear to be offline'
+        : `Unable to load ${resource}`;
 
   const description = forbidden
     ? 'Your admin role does not include this. A super admin can change your permission level.'
     : missing
       ? 'It may have been removed, or the link may be out of date.'
-      : error.message;
+      : offline
+        ? 'Check your connection, then try again.'
+        : error.message;
 
   return (
     <div className="state state--error">
@@ -555,6 +602,14 @@ export function ErrorState({
 /**
  * Loading → error → empty → content, in the one order every screen needs
  * (§56, §57). Takes the `useResource` result straight through.
+ *
+ * Pass `skeleton` a composition that matches the screen (TableSkeleton,
+ * DetailSkeleton, MetricGridSkeleton...); `skeletonRows` alone gives a generic
+ * list. The skeleton is gated: not on a fast response, not as a blink, and a
+ * failure replaces it at once. Only the FIRST load shows one; a refetch keeps
+ * the old data up. A filter or id change (`state.stale`) is a fresh load: the old
+ * rows stay up through the delay, then give way to the skeleton, so a list never
+ * shows one filter's rows under another's.
  */
 export function Async<T>({
   state,
@@ -562,29 +617,64 @@ export function Async<T>({
   resource,
   empty,
   skeletonRows,
+  skeleton,
 }: {
   state: {
     data: T | null;
     loading: boolean;
     error: ApiError | null;
     initial: boolean;
+    /** Set by `useResource` while the data on screen belongs to the previous filter or id. */
+    stale?: boolean;
     reload: () => void;
   };
   children: (data: T) => ReactNode;
   resource?: string;
   empty?: ReactNode;
   skeletonRows?: number;
+  skeleton?: ReactNode;
 }) {
-  // Only the FIRST load blanks the screen; a refetch keeps the old data up.
-  if (state.loading && state.initial) return <Skeleton rows={skeletonRows} />;
+  const phase = useSkeletonGate(state.loading && (state.initial || Boolean(state.stale)));
+
+  // A failure clears the placeholder at once: one that will never fill is worse.
   if (state.error && !state.data)
     return <ErrorState error={state.error} onRetry={state.reload} resource={resource} />;
+  // Inside the delay there is nothing to show, unless a previous key's data is still up.
+  if (phase === 'hold' && !state.data) return null;
+  if (phase === 'skeleton')
+    return (
+      <SkeletonRegion label={`Loading ${resource ?? 'content'}`}>
+        {skeleton ?? <ListSkeleton rows={skeletonRows} />}
+      </SkeletonRegion>
+    );
   if (!state.data) return <>{empty ?? <EmptyState title="Nothing to show" />}</>;
 
-  const isEmptyList = Array.isArray(state.data) && state.data.length === 0;
-  if (isEmptyList && empty) return <>{empty}</>;
+  // A refresh that failed leaves the last good data up. Never silently: say so, and offer a retry.
+  const refreshFailed =
+    state.error && !state.stale ? (
+      <Notice tone="warning">
+        {isOffline(state.error) ? 'You appear to be offline.' : 'Could not refresh.'} Showing what was loaded last.{' '}
+        <Button size="sm" variant="ghost" onClick={state.reload}>
+          Retry
+        </Button>
+      </Notice>
+    ) : null;
 
-  return <>{children(state.data)}</>;
+  const isEmptyList = Array.isArray(state.data) && state.data.length === 0;
+  if (isEmptyList && empty)
+    return (
+      <>
+        {refreshFailed}
+        {empty}
+      </>
+    );
+
+  return (
+    <>
+      {refreshFailed}
+      {children(state.data)}
+    </>
+  );
 }
 
 /* --------------------------------- Table ---------------------------------- */

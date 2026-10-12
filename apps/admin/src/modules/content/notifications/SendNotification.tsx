@@ -9,9 +9,20 @@ import {
   type Channel,
   type Recipient,
 } from '../../../api/manualNotifications';
+import { LIVE } from '../../../api/live';
 import { useMutation, useResource } from '../../../lib/useResource';
 import { useToast } from '../../../lib/toast';
-import { Button, Card, ConfirmDialog, Notice, SelectField, TextArea, TextField } from '../../../ui';
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  ListSkeleton,
+  Notice,
+  SelectField,
+  SkeletonGate,
+  TextArea,
+  TextField,
+} from '../../../ui';
 
 /**
  * Send a notification by hand to doctors or patients.
@@ -135,21 +146,37 @@ export function SendNotification() {
                 ))}
               </p>
             )}
-            <ul className="plainList" aria-label="Matching recipients">
-              {matches.slice(0, 8).map((r) => (
-                <li key={r.id}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setPicked((cur) => [...cur, r])}
-                    aria-label={`Add ${r.name}`}
-                  >
-                    {r.name} · {r.detail}
+            {/* Until the audience has loaded, "No one matches" would be a false answer. */}
+            <SkeletonGate
+              loading={people.loading && (people.initial || people.stale)}
+              label={`Loading ${noun}`}
+              skeleton={<ListSkeleton rows={3} avatar={false} trailing={false} />}
+            >
+              {people.error ? (
+                <p className="muted">
+                  Could not load {noun}.{' '}
+                  <Button size="sm" variant="ghost" onClick={people.reload}>
+                    Retry
                   </Button>
-                </li>
-              ))}
-              {matches.length === 0 && <li>No one matches.</li>}
-            </ul>
+                </p>
+              ) : (
+                <ul className="plainList" aria-label="Matching recipients">
+                  {matches.slice(0, 8).map((r) => (
+                    <li key={r.id}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setPicked((cur) => [...cur, r])}
+                        aria-label={`Add ${r.name}`}
+                      >
+                        {r.name} · {r.detail}
+                      </Button>
+                    </li>
+                  ))}
+                  {matches.length === 0 && <li>No one matches.</li>}
+                </ul>
+              )}
+            </SkeletonGate>
           </>
         )}
       </Card>
@@ -172,12 +199,15 @@ export function SendNotification() {
           hint={`${body.length}/${BODY_MAX}`}
           onChange={(e) => setBody(e.target.value)}
         />
-        <SelectField
-          label="Opens (optional)"
-          value={deepLink}
-          onChange={(e) => setDeepLink(e.target.value)}
-          options={deepLinks}
-        />
+        {/* The backend broadcast takes no deep link, so a live build does not offer one. */}
+        {!LIVE && (
+          <SelectField
+            label="Opens (optional)"
+            value={deepLink}
+            onChange={(e) => setDeepLink(e.target.value)}
+            options={deepLinks}
+          />
+        )}
         <fieldset className="checkGroup">
           <legend>Delivery channel</legend>
           <label className="checkOption">

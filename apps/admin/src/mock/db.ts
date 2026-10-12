@@ -252,6 +252,90 @@ export const doctors: Doctor[] = [
   },
 ];
 
+/* More providers, so the specialist / super-specialist / paramedical / veterinary lists
+   (requirements §6-§9) each have someone in them. */
+const mk = (
+  n: number,
+  fullName: string,
+  specialtyName: string,
+  category: 'doctor' | 'paramedical' | 'veterinary',
+  verificationStatus: Doctor['verificationStatus'],
+  extra: Partial<Doctor> = {},
+): Doctor => ({
+  id: `dr-${n}`,
+  fullName,
+  mobileNumber: `+9198000${String(10000 + n).slice(1)}`,
+  specialtyId: null,
+  specialtyName,
+  category,
+  verificationStatus,
+  isListed: verificationStatus === 'verified',
+  seniority: 'standard',
+  languages: ['English', 'Hindi'],
+  regionIds: ['rg-mh'],
+  createdAt: daysAgo(30 + n * 7),
+  ...extra,
+});
+
+doctors.push(
+  mk(7, 'Dr Neha Kulkarni', 'Dermatology', 'doctor', 'verified', {
+    qualification: 'MBBS, MD (Dermatology)', registrationNumber: 'MH-2015-30211', yearsOfExperience: 10,
+    languages: ['English', 'Hindi', 'Marathi'], payoutFeeInr: 900,
+    registration: { gender: 'Female', dateOfBirth: '1986-02-14', idType: 'Aadhaar', idNumberLast4: '5521', basicQualification: 'MBBS', pgSpecialisation: 'MD Dermatology', hasSignature: true, hasPhoto: true, experience: [{ designation: 'Consultant Dermatologist', institution: 'Sion Hospital', years: 10 }], mobileVerified: true, emailVerified: true },
+  }),
+  mk(8, 'Dr Arjun Menon', 'General Medicine', 'doctor', 'verified', {
+    superSpecialtyName: 'Cardiology', qualification: 'MBBS, MD, DM (Cardiology)', registrationNumber: 'KL-2009-11873', yearsOfExperience: 17,
+    languages: ['English', 'Malayalam', 'Hindi'], regionIds: ['rg-ka'], payoutFeeInr: 1800, seniority: 'expert',
+    registration: { gender: 'Male', dateOfBirth: '1979-07-30', idType: 'Passport', idNumberLast4: '2290', basicQualification: 'MBBS', pgSpecialisation: 'MD General Medicine', superSpecialisation: 'DM Cardiology', hasSignature: true, hasPhoto: true, experience: [{ designation: 'Interventional Cardiologist', institution: 'Amrita Hospital', years: 12 }, { designation: 'Registrar', institution: 'Medical College Kochi', years: 5 }], mobileVerified: true, emailVerified: true },
+  }),
+  mk(9, 'Dr Farah Khan', 'General Medicine', 'doctor', 'changes_required', {
+    superSpecialtyName: 'Neurology', qualification: 'MBBS, MD, DM (Neurology)', registrationNumber: 'DL-2013-77412', yearsOfExperience: 12,
+    changesRequiredNote: 'The DM certificate is blurred. Upload a clear scan of both sides.',
+    registration: { gender: 'Female', dateOfBirth: '1983-12-01', idType: 'Aadhaar', idNumberLast4: '7710', basicQualification: 'MBBS', pgSpecialisation: 'MD General Medicine', superSpecialisation: 'DM Neurology', hasSignature: true, hasPhoto: true, experience: [{ designation: 'Consultant Neurologist', institution: 'AIIMS Delhi', years: 12 }], mobileVerified: true, emailVerified: true },
+  }),
+  mk(10, 'Dr Tara Sen', 'Paediatrics', 'doctor', 'pending', {
+    qualification: 'MBBS, DCH, MD (Paediatrics)', registrationNumber: 'WB-2017-20933', yearsOfExperience: 7, languages: ['English', 'Bengali'],
+    registration: { gender: 'Female', dateOfBirth: '1989-05-19', idType: 'Aadhaar', idNumberLast4: '3308', basicQualification: 'MBBS', pgSpecialisation: 'MD Paediatrics', hasSignature: true, hasPhoto: false, experience: [{ designation: 'Paediatrician', institution: 'Calcutta Children Hospital', years: 7 }], mobileVerified: true, emailVerified: false },
+  }),
+  mk(11, 'Isha Patel', 'Dietitian / Nutritionist', 'paramedical', 'verified', {
+    qualification: 'MSc Clinical Nutrition', yearsOfExperience: 6, languages: ['English', 'Gujarati', 'Hindi'], payoutFeeInr: 600,
+    registration: { gender: 'Female', dateOfBirth: '1992-08-08', idType: 'Aadhaar', idNumberLast4: '6114', basicQualification: 'BSc Nutrition', pgSpecialisation: 'MSc Clinical Nutrition', hasSignature: false, hasPhoto: true, experience: [{ designation: 'Clinical Dietitian', institution: 'Wockhardt Hospital', years: 6 }], mobileVerified: true, emailVerified: true },
+  }),
+  mk(12, 'Rohan Desai', 'Physiotherapist', 'paramedical', 'under_review', {
+    qualification: 'BPT, MPT (Orthopaedics)', yearsOfExperience: 5, payoutFeeInr: 700,
+    registration: { gender: 'Male', dateOfBirth: '1993-01-27', idType: 'Aadhaar', idNumberLast4: '8842', basicQualification: 'BPT', pgSpecialisation: 'MPT Orthopaedics', hasSignature: false, hasPhoto: true, experience: [{ designation: 'Physiotherapist', institution: 'Kokilaben Hospital', years: 5 }], mobileVerified: true, emailVerified: true },
+  }),
+  mk(13, 'Dr Sunita Iyer', 'Companion Animal Medicine', 'veterinary', 'verified', {
+    qualification: 'BVSc & AH, MVSc', registrationNumber: 'VCI-TN-2012-4410', yearsOfExperience: 13, languages: ['English', 'Tamil'], regionIds: ['rg-tn'], payoutFeeInr: 800,
+    registration: { gender: 'Female', dateOfBirth: '1985-04-04', idType: 'Aadhaar', idNumberLast4: '1907', basicQualification: 'BVSc & AH', pgSpecialisation: 'MVSc Companion Animal Medicine', hasSignature: true, hasPhoto: true, experience: [{ designation: 'Veterinary Surgeon', institution: 'Madras Veterinary College', years: 13 }], mobileVerified: true, emailVerified: true },
+  }),
+  mk(14, 'Dr Pranav Rao', 'Veterinary Surgery', 'veterinary', 'pending', {
+    qualification: 'BVSc & AH', registrationNumber: 'VCI-KA-2018-9021', yearsOfExperience: 6, regionIds: ['rg-ka'],
+    registration: { gender: 'Male', dateOfBirth: '1990-10-10', idType: 'Aadhaar', idNumberLast4: '4426', basicQualification: 'BVSc & AH', hasSignature: true, hasPhoto: false, experience: [{ designation: 'Veterinary Surgeon', institution: 'Bangalore Pet Hospital', years: 6 }], mobileVerified: true, emailVerified: false },
+  }),
+);
+
+/** The spec's provider-list columns that the first six fixtures did not carry. */
+const providerExtras: Record<string, Partial<Doctor>> = {
+  'dr-1': { providerCode: 'PRV-0001', registrationCouncil: 'Maharashtra Medical Council', rating: 4.8, totalConsultations: 412, availabilityStatus: 'available', consultationFeeInr: 1500, signatureStatus: 'approved', schedule: [{ day: 'Mon', windows: ['09:00-13:00', '16:00-19:00'] }, { day: 'Tue', windows: ['09:00-13:00'] }, { day: 'Thu', windows: ['14:00-18:00'] }] },
+  'dr-2': { providerCode: 'PRV-0002', registrationCouncil: 'Delhi Medical Council', rating: 4.5, totalConsultations: 268, availabilityStatus: 'available', consultationFeeInr: 1300, signatureStatus: 'approved', schedule: [{ day: 'Wed', windows: ['10:00-16:00'] }] },
+  'dr-3': { providerCode: 'PRV-0003', category: 'paramedical', specialtyName: 'Psychologist', rating: null, totalConsultations: 0, availabilityStatus: 'unavailable', consultationFeeInr: 1100, signatureStatus: 'not_submitted', schedule: [] },
+  'dr-4': { providerCode: 'PRV-0004', registrationCouncil: 'Karnataka Medical Council', rating: null, totalConsultations: 0, availabilityStatus: 'unavailable', consultationFeeInr: 1200, signatureStatus: 'submitted', schedule: [] },
+  'dr-5': { providerCode: 'PRV-0005', category: 'paramedical', specialtyName: 'Occupational Therapist', rating: 3.9, totalConsultations: 41, availabilityStatus: 'unavailable', consultationFeeInr: 900, signatureStatus: 'not_submitted', schedule: [] },
+  'dr-6': { providerCode: 'PRV-0006', registrationCouncil: 'Karnataka Medical Council', rating: 3.4, totalConsultations: 133, availabilityStatus: 'unavailable', consultationFeeInr: 1400, signatureStatus: 'approved', schedule: [] },
+  'dr-7': { providerCode: 'PRV-0007', registrationCouncil: 'Maharashtra Medical Council', rating: 4.7, totalConsultations: 188, availabilityStatus: 'available', consultationFeeInr: 1200, signatureStatus: 'approved', schedule: [{ day: 'Mon', windows: ['10:00-14:00'] }, { day: 'Fri', windows: ['10:00-14:00', '17:00-20:00'] }] },
+  'dr-8': { providerCode: 'PRV-0008', registrationCouncil: 'Kerala Medical Council', rating: 4.9, totalConsultations: 530, availabilityStatus: 'available', consultationFeeInr: 2200, signatureStatus: 'approved', schedule: [{ day: 'Tue', windows: ['09:00-12:00'] }, { day: 'Sat', windows: ['09:00-12:00'] }] },
+  'dr-9': { providerCode: 'PRV-0009', registrationCouncil: 'Delhi Medical Council', rating: null, totalConsultations: 0, availabilityStatus: 'unavailable', consultationFeeInr: 2000, signatureStatus: 'submitted', schedule: [] },
+  'dr-10': { providerCode: 'PRV-0010', registrationCouncil: 'West Bengal Medical Council', rating: null, totalConsultations: 0, availabilityStatus: 'unavailable', consultationFeeInr: 800, signatureStatus: 'submitted', schedule: [] },
+  'dr-11': { providerCode: 'PRV-0011', registrationCouncil: 'Indian Dietetic Association', rating: 4.6, totalConsultations: 97, availabilityStatus: 'available', consultationFeeInr: 800, signatureStatus: 'not_submitted', schedule: [{ day: 'Mon', windows: ['11:00-15:00'] }, { day: 'Wed', windows: ['11:00-15:00'] }] },
+  'dr-12': { providerCode: 'PRV-0012', registrationCouncil: 'Indian Association of Physiotherapists', rating: null, totalConsultations: 0, availabilityStatus: 'unavailable', consultationFeeInr: 900, signatureStatus: 'not_submitted', schedule: [] },
+  'dr-13': { providerCode: 'PRV-0013', registrationCouncil: 'Veterinary Council of India', rating: 4.8, totalConsultations: 156, availabilityStatus: 'available', consultationFeeInr: 1000, signatureStatus: 'approved', schedule: [{ day: 'Thu', windows: ['10:00-13:00', '15:00-18:00'] }] },
+  'dr-14': { providerCode: 'PRV-0014', registrationCouncil: 'Veterinary Council of India', rating: null, totalConsultations: 0, availabilityStatus: 'unavailable', consultationFeeInr: 1100, signatureStatus: 'submitted', schedule: [] },
+};
+for (const d of doctors) {
+  Object.assign(d, { category: d.category ?? 'doctor', ...providerExtras[d.id] });
+}
+
 export const documents: Record<string, DoctorDocument[]> = {
   'dr-3': [
     { id: 'doc-1', documentType: 'degree_certificate', status: 'approved', uploadedAt: daysAgo(20), reviewedAt: daysAgo(18) },
@@ -275,6 +359,24 @@ export const documents: Record<string, DoctorDocument[]> = {
       uploadedAt: daysAgo(50),
       reviewedAt: daysAgo(48),
     },
+  ],
+  'dr-9': [
+    { id: 'doc-11', documentType: 'degree_certificate', status: 'rejected', rejectionReason: 'The DM certificate is blurred. Upload a clear scan of both sides.', uploadedAt: daysAgo(12), reviewedAt: daysAgo(9) },
+    { id: 'doc-12', documentType: 'registration_certificate', status: 'approved', uploadedAt: daysAgo(12), reviewedAt: daysAgo(9) },
+    { id: 'doc-13', documentType: 'identity_proof', status: 'approved', uploadedAt: daysAgo(12), reviewedAt: daysAgo(9) },
+  ],
+  'dr-10': [
+    { id: 'doc-14', documentType: 'degree_certificate', status: 'pending', uploadedAt: daysAgo(2) },
+    { id: 'doc-15', documentType: 'registration_certificate', status: 'pending', uploadedAt: daysAgo(2) },
+    { id: 'doc-16', documentType: 'identity_proof', status: 'pending', uploadedAt: daysAgo(2) },
+  ],
+  'dr-12': [
+    { id: 'doc-17', documentType: 'degree_certificate', status: 'pending', uploadedAt: daysAgo(8) },
+    { id: 'doc-18', documentType: 'identity_proof', status: 'approved', uploadedAt: daysAgo(8), reviewedAt: daysAgo(6) },
+  ],
+  'dr-14': [
+    { id: 'doc-19', documentType: 'registration_certificate', status: 'pending', uploadedAt: daysAgo(3) },
+    { id: 'doc-20', documentType: 'degree_certificate', status: 'pending', uploadedAt: daysAgo(3) },
   ],
   'dr-1': [
     { id: 'doc-9', documentType: 'degree_certificate', status: 'approved', uploadedAt: daysAgo(418), reviewedAt: daysAgo(416) },
@@ -674,17 +776,20 @@ export const notifications: AdminNotification[] = [
 
 /* --------------------------- derived / helpers ----------------------------- */
 
+/** Every provider with their review state, so Verification can show all six statuses (§20). */
 export const credentialQueue = (): CredentialQueueRow[] =>
-  doctors
-    .filter((d) => (documents[d.id] ?? []).some((doc) => doc.status === 'pending'))
-    .map((d) => ({
+  doctors.map((d) => {
+    const docs = documents[d.id] ?? [];
+    return {
       doctorId: d.id,
       fullName: d.fullName,
       specialtyName: d.specialtyName ?? null,
+      category: d.category,
       verificationStatus: d.verificationStatus,
-      pendingDocuments: (documents[d.id] ?? []).filter((doc) => doc.status === 'pending').length,
-      submittedAt: (documents[d.id] ?? []).find((doc) => doc.status === 'pending')?.uploadedAt ?? null,
-    }));
+      pendingDocuments: docs.filter((doc) => doc.status === 'pending').length,
+      submittedAt: docs.find((doc) => doc.status === 'pending')?.uploadedAt ?? docs[0]?.uploadedAt ?? d.createdAt ?? null,
+    };
+  });
 
 export const findDoctor = (id: string): Doctor | undefined => doctors.find((d) => d.id === id);
 

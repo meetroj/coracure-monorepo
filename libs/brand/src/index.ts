@@ -15,69 +15,29 @@
  * module is a one-line re-export whenever its owner wants it.
  */
 
-export const colors = {
-  /** Surfie Green — PANTONE 328 C. Primary interface colour. */
-  surfie: '#0E766C',
-  /**
-   * The solid primary-action green.
-   *
-   * Taken as the midpoint of the brand gradient (`#0E9C7E` → `#12B981`) rather
-   * than invented, so it stays inside the brand's own range. It is applied
-   * FLAT: the visual direction avoids gradients on controls, and a gradient
-   * under a pill button reads as a 2018 dashboard rather than a 2026 health
-   * product. The gradient is kept for the logo tile, where it belongs.
-   */
-  cta: '#10AA80',
-  /** Pressed / darker step of `cta`. */
-  ctaPressed: '#0D8F6B',
-  /** Paris Green — PANTONE 3385 C. Secondary accents, active/success. */
-  paris: '#34D499',
-
-  white: '#FFFFFF',
-  /** Near black, per the brand deck's mono lockups. */
-  ink: '#1C1C1C',
-  inkMuted: '#5A6B67',
-  inkFaint: '#6B7E78',
-
-  /** Genuine errors, rejected verification, cancellations, clinical red flags. */
-  danger: '#D94A45',
-  dangerSoft: '#FDECEB',
-  /** Pending, warning, follow-up-required only. */
-  warn: '#E0972B',
-  warnSoft: '#FDF4E5',
-  /** Success / verified. */
-  success: '#0E766C',
-  successSoft: '#E7F7F0',
-
-  /** Derived tints of the brand greens — chrome only, not brand colours. */
-  surface: {
-    /** App background. */
-    page: '#F7FBF9',
-    /** Banner / hero tint, sampled from the supplied banner artwork. */
-    mint: '#EFFDF8',
-    mintSoft: '#F2FAF6',
-    /** Card background. */
-    card: '#FFFFFF',
-    /** Hairline dividers. */
-    line: '#E4EEEA',
-    /** Input + card outline. */
-    inputBorder: '#D5E4DF',
-    /** Selected tab / chip background. */
-    selected: '#E7F7F0',
-  },
-} as const;
-
 /**
- * The two gradients in the visual direction. Both run surfie → paris; the
- * onboarding artwork is the same pair at low opacity over `surface.page`.
- * Consumed by `BrandBackground` and the primary CTA, never mixed by hand.
+ * `colors` and `gradient` are the LIVE theme values (see `./theme`): Light is
+ * the brand values below, and `applyColorScheme('dark')` rewrites them in
+ * place. The light values are the originals — `surfie` #0E766C (PANTONE 328 C,
+ * primary interface colour), `cta` #10AA80 (the brand gradient's midpoint,
+ * applied flat), `paris` #34D499 (PANTONE 3385 C), `ink` #1C1C1C, and the
+ * surface tints — now defined, with their dark counterparts, in `./palette`.
  */
-export const gradient = {
-  /** Primary CTA and the logo tile. */
-  brand: ['#0E9C7E', '#12B981'] as const,
-  /** The mint wash behind onboarding. Painted, never an image of the mock. */
-  wash: ['#FFFFFF', '#F6FCF9', '#ECF9F3'] as const,
-} as const;
+export {
+  colors,
+  gradient,
+  applyColorScheme,
+  getColorScheme,
+  getThemeVersion,
+  subscribeColorScheme,
+  useColorScheme,
+  themed,
+  themedValue,
+  lightPalette,
+  darkPalette,
+} from './theme';
+export type { ColorScheme, Palette } from './theme';
+import { colors, gradient } from './theme';
 
 /** 8px spacing system. */
 export const spacing = {
@@ -103,21 +63,25 @@ export const radius = {
 /**
  * Typography.
  *
- * The deck specifies "Rounded" (Igor Stepanchenko) for headings and
- * "Montserrat" (Julieta Ulanovsky) for body. Neither font file is in the repo
- * as a .ttf (only .woff2, which React Native cannot load), so `family` stays
- * undefined and React Native falls back to the platform font — the temporary
- * development fallback. Drop the .ttf files into
- * `android/app/src/main/assets/fonts` and set the two names here; nothing else
- * changes.
+ * The guideline specifies "Rounded" (Igor Stepanchenko) for headlines and
+ * "Montserrat" (Julieta Ulanovsky) for body, UI labels and buttons.
+ *
+ * Montserrat is bundled (`assets/fonts`). The Rounded files have not been
+ * supplied, so headlines use Outfit - already bundled, and the face the deck
+ * used - until they arrive. To switch: add the Rounded TTFs beside the others,
+ * register them in both apps (Info.plist + project.pbxproj, MainApplication.kt)
+ * and change `heading.family` to 'Rounded'. Nothing else changes.
+ *
+ * Use `heading` only for headlines (>= 17px). Rounded draws "v" like "u", so
+ * small UI text - buttons, chips, labels - must use `body`.
  */
 export const typography = {
   heading: {
-    family: undefined as string | undefined, // 'Rounded'
+    family: 'Outfit' as string, // 'Rounded' once its font files are bundled
     weight: '700' as const,
   },
   body: {
-    family: undefined as string | undefined, // 'Montserrat'
+    family: 'Montserrat' as string,
     weight: '400' as const,
   },
   size: {

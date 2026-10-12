@@ -14,6 +14,8 @@ import {
   PageHeader,
   StatusBadge,
   Table,
+  TableSkeleton,
+  skeletonColumns,
 } from '../ui';
 
 /**
@@ -123,6 +125,12 @@ export function Clarification({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="clarification cases"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { case: 'stack', posted: 'date', expert: 'name', status: 'status', actions: 'button' })}
+            rows={6}
+          />
+        }
         empty={
           <EmptyState
             icon="clarify"
@@ -171,7 +179,11 @@ function AssignExpert({
 
   const columns: Column<Expert>[] = [
     { key: 'name', header: 'Expert', render: (e) => e.fullName },
-    { key: 'specialty', header: 'Specialty', render: (e) => e.specialtyName ?? '-' },
+    {
+      key: 'specialty',
+      header: 'Specialty',
+      render: (e) => e.specialtyName ?? (e.openCases !== undefined ? `${e.openCases} open case(s)` : '-'),
+    },
     {
       key: 'pick',
       header: '',
@@ -206,7 +218,12 @@ function AssignExpert({
       <Async
         state={state}
         resource="experts"
-        skeletonRows={3}
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { name: 'name', specialty: 'text', pick: 'button' })}
+            rows={4}
+          />
+        }
         empty={
           <EmptyState
             icon="users"

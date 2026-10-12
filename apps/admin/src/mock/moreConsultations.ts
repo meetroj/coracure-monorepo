@@ -12,7 +12,11 @@ import type { Consultation, ConsultationStatus } from '../api/types';
 export type ListedConsultation = Consultation & {
   patientName: string;
   channel: 'video' | 'audio';
-  paymentStatus: 'paid' | 'pending' | 'failed' | 'refunded';
+  paymentStatus: 'paid' | 'pending' | 'failed' | 'refunded' | 'not_applicable';
+  /** Live only: the backend's own word for the booking. The fixtures derive theirs. */
+  displayStatus?: string;
+  /** Live only: whole minutes the call really ran. */
+  actualDurationMinutes?: number | null;
 };
 
 const h = (hours: number) => new Date(Date.now() + hours * 3_600_000).toISOString();
