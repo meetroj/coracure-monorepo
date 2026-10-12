@@ -5,6 +5,8 @@ import { useMutation } from '../../lib/useResource';
 import { useToast } from '../../lib/toast';
 import type { AdminLevel } from '../../nav';
 import { Button, Modal, SelectField, TextField, may } from '../../ui';
+import { LIVE } from '../../api/live';
+import { EditPatientLive } from './EditPatientLive';
 
 /**
  * Correct a patient's profile on their behalf (operations only). The mobile number is
@@ -24,6 +26,7 @@ export function EditPatient({
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  if (LIVE) return <EditPatientLive patient={patient} level={level} onSaved={onSaved} />;
   if (!may(level, ['operations'])) return null;
   return (
     <>

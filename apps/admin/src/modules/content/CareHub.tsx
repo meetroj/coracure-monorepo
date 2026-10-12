@@ -32,7 +32,9 @@ export function CareHub({ level }: { level: AdminLevel }) {
   const editing = params.get('edit');
 
   const close = () => {
-    setParams({});
+    const next = new URLSearchParams(params);
+    next.delete('edit');
+    setParams(next);
     state.reload();
   };
 
@@ -44,8 +46,8 @@ export function CareHub({ level }: { level: AdminLevel }) {
       <CareHubLibrary
         state={state}
         level={level}
-        onEdit={(id) => setParams({ edit: id })}
-        onNew={() => setParams({ edit: 'new' })}
+        onEdit={(id) => setParams(new URLSearchParams([...params, ['edit', id]]))}
+        onNew={() => setParams(new URLSearchParams([...params, ['edit', 'new']]))}
         onChanged={(message) => {
           toast.success(message);
           state.reload();

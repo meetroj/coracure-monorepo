@@ -1,6 +1,10 @@
 import * as db from '../mock/db';
 import { baseExtras, extraConsultations, type ListedConsultation } from '../mock/moreConsultations';
 import { ownerOf } from '../mock/patients';
+import { appointmentStatus } from '../mock/ops/appointment';
+import { request } from './http';
+import { LIVE } from './live';
+import { fromLiveRow, liveQuery, type LivePage } from './liveAppointments';
 
 export type { ListedConsultation };
 
@@ -42,7 +46,7 @@ const withPatient = (c: ListedConsultation): ListedConsultation => ({
   patientName: ownerOf(c.id).fullName,
 });
 
-const all = (): ListedConsultation[] =>
+export const allListed = (): ListedConsultation[] =>
   [
     ...db.consultations.map((c) => ({
       ...c,
@@ -51,9 +55,40 @@ const all = (): ListedConsultation[] =>
     ...extraConsultations,
   ].map(withPatient);
 
+/**
+ * The live list: the page itself, the unfiltered count (only when something is
+ * filtered, so "N in total" is the real number and not a copy of the match count),
+ * and the providers for the filter dropdown. A failed provider lookup empties the
+ * dropdown; it never fails the list.
+ */
+async function liveList(q: ConsultationsQuery): Promise<ConsultationsPage> {
+  const filtered = Boolean(q.search || q.status || q.mode || q.doctorId || q.from || q.to);
+  const [page, everything, providers] = await Promise.all([
+    request<LivePage>('/admin/consultations', { query: liveQuery(q) }),
+    filtered
+      ? request<LivePage>('/admin/consultations', { query: { limit: 1 } })
+      : Promise.resolve<LivePage | null>(null),
+    request<{ items: { id: string; fullName: string }[] }>('/admin/doctors', { query: { limit: 100 } }).catch(
+      () => ({ items: [] as { id: string; fullName: string }[] }),
+    ),
+  ]);
+  return {
+    items: page.items.map(fromLiveRow),
+    matched: page.total,
+    total: everything ? everything.total : page.total,
+    doctors: providers.items.map((d) => ({ id: d.id, name: d.fullName })),
+  };
+}
+
 export const consultationsList = {
-  list: (q: ConsultationsQuery = {}) => {
-    const rows = all();
+  list: (q: ConsultationsQuery = {}): Promise<ConsultationsPage> => {
+    if (LIVE) return liveList(q);
+    return mockList(q);
+  },
+};
+
+const mockList = (q: ConsultationsQuery = {}) => {
+    const rows = allListed();
     const needle = (q.search ?? '').trim().toLowerCase();
     const from = q.from ? dayStart(q.from) : null;
     const to = q.to ? dayEnd(q.to) : null;
@@ -66,7 +101,7 @@ export const consultationsList = {
             [c.referenceCode, c.patientName, c.doctorName].some((v) =>
               v?.toLowerCase().includes(needle),
             )) &&
-          (!q.status || c.status === q.status) &&
+          (!q.status || appointmentStatus(c.status, c.id) === q.status) &&
           (!q.mode || c.mode === q.mode) &&
           (!q.doctorId || c.doctorId === q.doctorId) &&
           (from === null || at >= from) &&
@@ -83,5 +118,4 @@ export const consultationsList = {
       doctors: db.doctors.map((d) => ({ id: d.id, name: d.fullName })),
     };
     return db.delay(page);
-  },
 };

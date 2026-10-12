@@ -5,7 +5,7 @@ import { config, type ConfigValue } from '../api/admin';
 import { useMutation, useResource } from '../lib/useResource';
 import { useToast } from '../lib/toast';
 import type { AdminLevel } from '../nav';
-import { Async, Button, Card, EmptyState, Notice, PageHeader, TextField } from '../ui';
+import { Async, Button, Card, CardSkeleton, EmptyState, FormSkeleton, Notice, PageHeader, TextField } from '../ui';
 
 /**
  * Platform settings (§39).
@@ -28,12 +28,12 @@ import { Async, Button, Card, EmptyState, Notice, PageHeader, TextField } from '
 const OWNER_ROUTE: Record<string, string> = {
   'notification-templates': '/notifications',
   notifications: '/notifications',
-  'search-config': '/settings/general',
-  search: '/settings/general',
-  'allocation-policy': '/catalogue?tab=policy',
-  allocation: '/catalogue?tab=policy',
-  pathways: '/pathways',
-  'followup-pathways': '/pathways',
+  'search-config': '/admin-settings?tab=general',
+  search: '/admin-settings?tab=general',
+  'allocation-policy': '/master-data?view=catalogue&tab=policy',
+  allocation: '/master-data?view=catalogue&tab=policy',
+  pathways: '/app-settings?tab=pathways',
+  'followup-pathways': '/app-settings?tab=pathways',
 };
 
 export function Settings({ level }: { level: AdminLevel }) {
@@ -55,6 +55,16 @@ export function Settings({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="settings"
+        // Each setting is its own card (key as title, a description, one value field).
+        skeleton={
+          <>
+            {[0, 1, 2].map((i) => (
+              <CardSkeleton key={i} lines={1}>
+                <FormSkeleton fields={1} />
+              </CardSkeleton>
+            ))}
+          </>
+        }
         empty={<EmptyState icon="settings" title="No configurable settings" />}
       >
         {(values) => (
@@ -153,7 +163,7 @@ function SettingRow({ setting, onSaved }: { setting: ConfigValue; onSaved: () =>
         )}
 
         {/* The audit entry IS the configuration history (§39). */}
-        <Link to={`/settings/audit?entityType=app_config&entityId=${encodeURIComponent(setting.key)}`}>
+        <Link to={`/admin-settings?tab=audit&entityType=app_config&entityId=${encodeURIComponent(setting.key)}`}>
           <Button variant="ghost" size="sm" icon="audit">
             History
           </Button>

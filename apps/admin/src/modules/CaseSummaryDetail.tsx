@@ -8,16 +8,22 @@ import {
 } from "../api/caseSummaries";
 import { useResource } from "../lib/useResource";
 import { useToast } from "../lib/toast";
+import { ChatWindow } from "./consultations/ChatWindow";
 import type { AdminLevel } from "../nav";
 import {
   Async,
   Button,
   Card,
   DefinitionList,
+  DetailSkeleton,
   Notice,
   PageHeader,
+  PageHeaderSkeleton,
+  SkeletonBlock,
   StatusBadge,
   Tabs,
+  TabsSkeleton,
+  may,
 } from "../ui";
 
 const when = (iso: string | null) =>
@@ -46,6 +52,7 @@ export function CaseSummaryDetail(props: {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [localTab, setLocalTab] = useState("patient");
+  const [chatOpen, setChatOpen] = useState(false);
   const fetcher = useCallback(() => summaries.get(summaryId), [summaryId]);
   const state = useResource<Loaded>(fetcher, [summaryId]);
   const wanted = embedded ? localTab : params.get("tab");
@@ -64,7 +71,18 @@ export function CaseSummaryDetail(props: {
   };
 
   return (
-    <Async state={state} resource="this case summary">
+    <Async
+      state={state}
+      resource="this case summary"
+      skeleton={
+        <>
+          {embedded ? <SkeletonBlock w="55%" h={22} /> : <PageHeaderSkeleton actions={1} />}
+          {/* Two tab labels depend on whether the case has a prescriber. */}
+          <TabsSkeleton count={6} />
+          <DetailSkeleton identity={false} sections={3} pairs={4} />
+        </>
+      }
+    >
       {({ row, detail }) => (
         <>
           {embedded ? (
@@ -83,6 +101,11 @@ export function CaseSummaryDetail(props: {
               <span className="muted">
                 {row.doctorName ?? "-"} · {row.patientLabel} · {row.serviceName}
               </span>
+              {may(props.level, ["operations", "clinical_governance"]) && (
+                <Button size="sm" variant="secondary" icon="consultations" onClick={() => setChatOpen(true)}>
+                  Chat
+                </Button>
+              )}
               {row.status === "failed" && (
                 <Button size="sm" variant="secondary" icon="refresh" onClick={regenerate}>
                   Regenerate
@@ -110,6 +133,11 @@ export function CaseSummaryDetail(props: {
                 <span className="muted">
                   {row.doctorName ?? "-"} · {row.patientLabel} · {row.serviceName}
                 </span>
+                {may(props.level, ["operations", "clinical_governance"]) && (
+                  <Button variant="secondary" icon="consultations" onClick={() => setChatOpen(true)}>
+                    Chat
+                  </Button>
+                )}
                 {row.status === "failed" && (
                   <Button variant="secondary" icon="refresh" onClick={regenerate}>
                     Regenerate
@@ -121,6 +149,14 @@ export function CaseSummaryDetail(props: {
           )}
           {row.failureReason && (
             <Notice tone="danger">{row.failureReason}</Notice>
+          )}
+          {chatOpen && (
+            <ChatWindow
+              consultationId={row.consultationId}
+              doctor={row.doctorName ?? "Doctor"}
+              patient={row.patientLabel}
+              onClose={() => setChatOpen(false)}
+            />
           )}
 
           <Tabs

@@ -14,8 +14,10 @@ import {
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
   TextField,
   humanise,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -186,6 +188,12 @@ export function AuditLog({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="audit entries"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { when: 'date', actor: 'stack', action: 'status', entity: 'stack' })}
+            rows={10}
+          />
+        }
         empty={
           <EmptyState
             icon="audit"

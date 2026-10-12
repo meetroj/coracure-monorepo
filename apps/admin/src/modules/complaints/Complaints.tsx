@@ -1,21 +1,20 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { support, type Complaint, type Feedback } from '../../api/admin';
+import { support, type Complaint } from '../../api/admin';
 import { useResource } from '../../lib/useResource';
 import type { AdminLevel } from '../../nav';
 import {
   Async,
   Button,
-  Card,
   Column,
   EmptyState,
-  PageHeader,
   SelectField,
   StatusBadge,
   Table,
-  Tabs,
+  TableSkeleton,
   humanise,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -23,11 +22,6 @@ import {
  *
  * Status filter is URL-backed so a working view survives Back and a refresh.
  */
-
-const TABS = [
-  { id: 'complaints', label: 'Complaints' },
-  { id: 'feedback', label: 'Feedback' },
-];
 
 const STATUSES = [
   { value: '', label: 'Any status' },
@@ -37,32 +31,15 @@ const STATUSES = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
-export function Complaints({ level }: { level: AdminLevel }) {
+export function Complaints({ level: _level }: { level: AdminLevel }) {
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'complaints';
-
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
     setParams(next, { replace: true });
   };
-
-  return (
-    <>
-      <PageHeader
-        title="Complaints & feedback"
-        description="Patient complaints, their full thread, and post-consultation feedback."
-      />
-      <Tabs tabs={TABS} active={tab} onChange={(id) => setParam('tab', id)} />
-
-      {tab === 'complaints' ? (
-        <ComplaintQueue status={params.get('status') ?? ''} onStatus={(s) => setParam('status', s)} />
-      ) : (
-        <FeedbackList />
-      )}
-    </>
-  );
+  return <ComplaintQueue status={params.get('status') ?? ''} onStatus={(st) => setParam('status', st)} />;
 }
 
 function ComplaintQueue({
@@ -108,7 +85,7 @@ function ComplaintQueue({
       width: '110px',
       render: (c) => (
         <span className="rowActions">
-          <Button size="sm" variant="secondary" onClick={() => navigate(`/complaints/${c.id}`)}>
+          <Button size="sm" variant="secondary" onClick={() => navigate(`/support-tickets/${c.id}`)}>
             Open
           </Button>
         </span>
@@ -139,6 +116,12 @@ function ComplaintQueue({
       <Async
         state={state}
         resource="complaints"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { subject: 'stack', status: 'status', raised: 'date', owner: 'status', actions: 'button' })}
+            rows={6}
+          />
+        }
         empty={
           <EmptyState
             icon="note"
@@ -153,57 +136,11 @@ function ComplaintQueue({
             columns={columns}
             rows={ordered(rows)}
             rowKey={(c) => c.id}
-            onRowClick={(c) => navigate(`/complaints/${c.id}`)}
+            onRowClick={(c) => navigate(`/support-tickets/${c.id}`)}
             hideChevron
           />
         )}
       </Async>
     </>
-  );
-}
-
-function FeedbackList() {
-  const fetcher = useCallback(() => support.feedback(), []);
-  const state = useResource<Feedback[]>(fetcher, []);
-
-  const columns: Column<Feedback>[] = [
-    {
-      key: 'rating',
-      header: 'Rating',
-      width: '110px',
-      render: (f) =>
-        f.rating != null ? (
-          <StatusBadge
-            status={f.rating >= 4 ? 'verified' : f.rating >= 3 ? 'pending' : 'rejected'}
-            label={`${f.rating} / 5`}
-          />
-        ) : (
-          <span className="muted">-</span>
-        ),
-    },
-    {
-      key: 'comment',
-      header: 'Comment',
-      render: (f) => f.comment ?? <span className="muted">No comment left</span>,
-    },
-    {
-      key: 'when',
-      header: 'Submitted',
-      render: (f) => (f.submittedAt ? new Date(f.submittedAt).toLocaleDateString() : '-'),
-    },
-  ];
-
-  return (
-    <Card title="Patient feedback">
-      <Async
-        state={state}
-        resource="feedback"
-        empty={<EmptyState icon="note" title="No feedback submitted yet" />}
-      >
-        {(rows) => (
-          <Table caption="Feedback" columns={columns} rows={rows} rowKey={(f) => f.id} />
-        )}
-      </Async>
-    </Card>
   );
 }

@@ -66,7 +66,7 @@ describe('Patients', () => {
 
   it('keeps the selected tab in the URL', async () => {
     render(app('/patients/pt-1001'));
-    fireEvent.click(await screen.findByRole('tab', { name: 'Complaints' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Support' }));
     expect(await screen.findByText('Video call would not connect')).toBeTruthy();
   });
 
@@ -101,23 +101,30 @@ describe('Patient detail header and registration details', () => {
     expect(topLine).not.toMatch(/Joined/);
   });
 
-  it('lists what the patient entered at sign-up, including date of birth', async () => {
+  it('shows the spec overview, and an address with no emergency contact', async () => {
     render(app('/patients'));
     fireEvent.click(await screen.findByText('Aarav Mehta'));
-    const heading = await screen.findByRole('heading', { name: 'Basic details' });
+    const heading = await screen.findByRole('heading', { name: 'Overview' });
     const list = heading.closest('section, div')!.parentElement!.textContent!;
 
-    ['Full name', 'Date of birth', 'Gender', 'Mobile number', 'Email address', 'Preferred language(s)'].forEach(
-      (label) => expect(list).toContain(label),
+    ['Name', 'Mobile', 'Email', 'DOB', 'Age', 'Gender', 'Account status'].forEach((label) =>
+      expect(list).toContain(label),
     );
-    expect(list).toMatch(/Hindi/);
-    const contact = (await screen.findByRole('heading', { name: 'Contact details' }))
-      .closest('section, div')!.parentElement!.textContent!;
-    ['Address line 1', 'City', 'State', 'PIN code', 'Country'].forEach((label) =>
-      expect(contact).toContain(label),
-    );
-    expect(contact).toMatch(/Delhi/);
     expect(screen.getByRole('heading', { name: /Health profile/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Address' }));
+    const address = (await screen.findByRole('heading', { name: 'Address' }))
+      .closest('section, div')!.parentElement!.textContent!;
+    ['Location', 'PIN Code', 'Address'].forEach((label) => expect(address).toContain(label));
+    expect(address).toMatch(/Delhi/);
+    expect(document.body.textContent).not.toMatch(/emergency contact/i);
+  });
+
+  it('has a tab for each part of the patient profile in the spec', async () => {
+    render(app('/patients/pt-1001'));
+    for (const name of ['Overview', 'Address', 'Consultations', 'Prescriptions / Care Plans', 'Reports & Documents', 'Follow-ups', 'Payments', 'Support']) {
+      expect(await screen.findByRole('tab', { name })).toBeTruthy();
+    }
   });
 
   it('lets an admin correct a patient, recalculates the age and keeps the mobile locked', async () => {

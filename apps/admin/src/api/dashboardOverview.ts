@@ -100,7 +100,7 @@ export const dashboardOverview = {
         at: c.startsAt ?? new Date(now).toISOString(),
         kind: 'consultation' as const,
         text: `${c.referenceCode ?? c.id} · ${c.serviceName ?? 'Consultation'} with ${c.doctorName ?? 'a doctor'} is ${c.status.replace(/_/g, ' ')}`,
-        to: `/consultations/${c.id}`,
+        to: `/appointments/${c.id}`,
       })),
       ...db.safetyAlerts.map((a) => ({
         id: `a-${a.id}`,
@@ -114,7 +114,7 @@ export const dashboardOverview = {
         at: c.raisedAt ?? new Date(now).toISOString(),
         kind: 'complaint' as const,
         text: `Complaint: ${c.subject ?? 'No subject'}`,
-        to: `/complaints/${c.id}`,
+        to: `/support-tickets/${c.id}`,
       })),
       ...sentHistory.slice(0, 4).map((h) => ({
         id: `n-${h.id}`,

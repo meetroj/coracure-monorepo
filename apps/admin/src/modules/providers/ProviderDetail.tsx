@@ -8,6 +8,9 @@ import {
   type Region,
   type Reliability,
 } from '../../api/admin';
+import { LIVE } from '../../api/live';
+import { LANGUAGE_HINT, providerRegions } from '../../api/liveProviders';
+import { regions as regionList } from '../../api/liveScheduling';
 import { useMutation, useResource } from '../../lib/useResource';
 import { useToast } from '../../lib/toast';
 import type { AdminLevel } from '../../nav';
@@ -15,20 +18,28 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   ConfirmDialog,
   DefinitionList,
+  DefinitionListSkeleton,
   EmptyState,
   Notice,
   PageHeader,
+  PageHeaderSkeleton,
   PermissionGate,
+  SkeletonBlock,
   StatusBadge,
   Tabs,
+  TabsSkeleton,
   TextField,
   may,
 } from '../../ui';
-import { CredentialReview, SECTIONS } from './CredentialReview';
+import { CredentialReview, DocumentTableSkeleton, SECTIONS } from './CredentialReview';
 import { EditDoctor } from './EditDoctor';
+import { EditProviderLive } from './ProviderFormsLive';
 import { AvailabilityEditor } from '../availability/AvailabilityEditor';
+import { PatientFacingCard, ScheduleCard, SignaturePane } from './ProviderExtras';
+import { AccountBadge, CATEGORY_LABEL, ProviderAvatar, VerificationBadge, isDoctor } from './provider';
 
 /**
  * One provider, in full (§20).
@@ -42,30 +53,31 @@ import { AvailabilityEditor } from '../availability/AvailabilityEditor';
  * and the backend refuses listing unless the provider is already verified.
  */
 
-const TABS = [
-  { id: 'overview', label: 'Overview' },
+const tabsFor = (doctor: Doctor) => [
+  { id: 'overview', label: 'Profile' },
+  { id: 'consultation', label: 'Consultation settings' },
+  ...(isDoctor(doctor) ? [{ id: 'signature', label: 'Digital signature' }] : []),
   { id: 'availability', label: 'Availability' },
   { id: 'regions', label: 'Regions & languages' },
-  { id: 'commercials', label: 'Commercials' },
   { id: 'reliability', label: 'Reliability' },
 ];
 
-/** Opened from Document verification: the tabs are the review sections, nothing else. */
-const VERIFY_TABS = SECTIONS.map((s) => ({ id: s.id, label: s.title }));
+/** Opened from Verification: the tabs are the review sections (§21), nothing else. */
+const verifyTabsFor = (doctor: Doctor) =>
+  SECTIONS.filter((s) => s.id !== 'basic' && (s.id !== 'signature' || isDoctor(doctor))).map((s) => ({ id: s.id, label: s.title }));
 
 export function ProviderDetail({ level }: { level: AdminLevel }) {
   const { doctorId = '' } = useParams();
   const [params, setParams] = useSearchParams();
-  const verifying = useLocation().pathname.startsWith('/credentials/');
+  const verifying = useLocation().pathname.startsWith('/verification/');
   const wanted = params.get('tab') ?? '';
-  const tab = verifying
-    ? VERIFY_TABS.some((t) => t.id === wanted)
-      ? wanted
-      : VERIFY_TABS[0].id
-    : wanted || 'overview';
 
   const fetcher = useCallback(() => doctors.get(doctorId), [doctorId]);
   const state = useResource<Doctor>(fetcher, [doctorId]);
+  // The decision is taken on the whole record: not before the documents under
+  // review have loaded. (Once they have, a refetch does not lock it again.)
+  const [docsLoaded, setDocsLoaded] = useState(false);
+  const markDocsLoaded = useCallback(() => setDocsLoaded(true), []);
 
   const setTab = (id: string) => {
     const next = new URLSearchParams(params);
@@ -74,30 +86,83 @@ export function ProviderDetail({ level }: { level: AdminLevel }) {
   };
 
   return (
-    <Async state={state} resource="this doctor">
-      {(doctor) => (
+    <Async
+      state={state}
+      resource="this doctor"
+      // The tab set depends on the provider's category, so the tabs are neutral here.
+      skeleton={
+        <>
+          <PageHeaderSkeleton description actions={verifying ? 3 : 2} />
+          <TabsSkeleton count={verifying ? 5 : 6} />
+          {verifying ? (
+            <>
+              <CardSkeleton title="Declared by the doctor">
+                <DefinitionListSkeleton items={3} />
+              </CardSkeleton>
+              <CardSkeleton title="Documents">
+                <DocumentTableSkeleton />
+              </CardSkeleton>
+            </>
+          ) : (
+            <>
+              <CardSkeleton title="Basic details">
+                <DefinitionListSkeleton items={6} />
+              </CardSkeleton>
+              <CardSkeleton title="Proof of identity">
+                <DefinitionListSkeleton items={3} />
+              </CardSkeleton>
+            </>
+          )}
+        </>
+      }
+    >
+      {(doctor) => {
+        const TABS = tabsFor(doctor);
+        const VERIFY_TABS = verifyTabsFor(doctor);
+        const tab = verifying
+          ? VERIFY_TABS.some((t) => t.id === wanted)
+            ? wanted
+            : VERIFY_TABS[0].id
+          : TABS.some((t) => t.id === wanted)
+            ? wanted
+            : 'overview';
+        return (
         <>
           <PageHeader
-            back={{ to: verifying ? '/credentials' : '/providers', label: 'Back' }}
+            back={{ to: verifying ? '/verification' : '/providers', label: 'Back' }}
             title={doctor.fullName}
             description={
               <span className="row">
-                <StatusBadge status={doctor.verificationStatus} />
-                <StatusBadge status={doctor.isListed ? 'listed' : 'unlisted'} />
-                {doctor.seniority && <StatusBadge status={doctor.seniority} />}
+                <ProviderAvatar name={doctor.fullName} photoUrl={doctor.photoUrl} size={40} />
+                <VerificationBadge status={doctor.verificationStatus} />
+                <AccountBadge doctor={doctor} />
+                <StatusBadge status={doctor.category ?? 'doctor'} tone="neutral" label={CATEGORY_LABEL[doctor.category ?? 'doctor']} />
+                {doctor.seniority === 'expert' && <StatusBadge status="expert" />}
               </span>
             }
             actions={
               <>
                 {/* Editing details belongs to the doctor's own page, not the verification review. */}
-                {!verifying && <EditDoctor doctor={doctor} level={level} onSaved={state.reload} />}
-                <VerificationActions doctor={doctor} level={level} onChanged={state.reload} />
+                {/* Editing belongs to the provider's own page, not the verification review. */}
+                {!verifying &&
+                  (LIVE ? (
+                    <EditProviderLive doctor={doctor} level={level} onSaved={state.reload} />
+                  ) : (
+                    <EditDoctor doctor={doctor} level={level} onSaved={state.reload} />
+                  ))}
+                <VerificationActions
+                  doctor={doctor}
+                  level={level}
+                  onChanged={state.reload}
+                  locked={verifying && !docsLoaded}
+                />
               </>
             }
           />
 
           <Tabs tabs={verifying ? VERIFY_TABS : TABS} active={tab} onChange={setTab} />
 
+          <div key={tab} className="fadeIn">
           {verifying && (
             <>
               <VerifyDetails
@@ -110,22 +175,32 @@ export function ProviderDetail({ level }: { level: AdminLevel }) {
                   doctorId={doctor.id}
                   level={level}
                   onReviewed={state.reload}
+                  onLoaded={markDocsLoaded}
                   section={tab}
                 />
               )}
             </>
           )}
           {!verifying && tab === 'overview' && <Overview doctor={doctor} />}
+          {!verifying && tab === 'consultation' && (
+            <>
+              {/* Days and windows are the provider's own, set in their app; the live detail does not carry them. */}
+              {!LIVE && <ScheduleCard doctor={doctor} />}
+              <Commercials doctor={doctor} level={level} onChanged={state.reload} />
+            </>
+          )}
+          {!verifying && tab === 'signature' && (
+            <SignaturePane doctor={doctor} level={level} onChanged={state.reload} />
+          )}
           {!verifying && tab === 'availability' && <AvailabilityEditor doctorId={doctor.id} level={level} />}
           {!verifying && tab === 'regions' && (
             <RegionsAndLanguages doctor={doctor} level={level} onChanged={state.reload} />
           )}
-          {!verifying && tab === 'commercials' && (
-            <Commercials doctor={doctor} level={level} onChanged={state.reload} />
-          )}
           {!verifying && tab === 'reliability' && <ReliabilityPane doctorId={doctor.id} />}
+          </div>
         </>
-      )}
+        );
+      }}
     </Async>
   );
 }
@@ -136,18 +211,23 @@ function VerificationActions({
   doctor,
   level,
   onChanged,
+  locked = false,
 }: {
   doctor: Doctor;
   level: AdminLevel;
   onChanged: () => void;
+  /** The documents under review are still loading: the review decision waits for them. */
+  locked?: boolean;
 }) {
   const toast = useToast();
   const [rejecting, setRejecting] = useState(false);
   const [suspending, setSuspending] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const [listing, setListing] = useState(false);
 
   const verify = useMutation(doctors.verify);
   const reject = useMutation(doctors.reject);
+  const requestChanges = useMutation(doctors.requestChanges);
   const reopen = useMutation(doctors.reopen);
   const setListed = useMutation(doctors.setListing);
   const suspend = useMutation(doctors.suspend);
@@ -172,18 +252,24 @@ function VerificationActions({
       {/* Verify / reject / reopen - clinical_governance ONLY. Operations does
           not see a disabled button with a tooltip; it sees nothing (§18). */}
       <PermissionGate level={level} allow={['clinical_governance']}>
-        {!isVerified && !isRejected && (
+        {!isVerified && !isRejected && !isSuspended && (
           <Button
             variant="success"
             icon="check"
             loading={verify.busy}
-            onClick={() => run(() => verify.mutate(doctor.id), `${doctor.fullName} is verified.`)}
+            disabled={locked}
+            onClick={() => run(() => verify.mutate(doctor.id), `${doctor.fullName} is approved.`)}
           >
-            Verify
+            Approve
           </Button>
         )}
-        {!isRejected && !isVerified && (
-          <Button variant="danger" icon="close" onClick={() => setRejecting(true)}>
+        {!isRejected && !isVerified && !isSuspended && (
+          <Button variant="secondary" disabled={locked} onClick={() => setRequesting(true)}>
+            Changes required
+          </Button>
+        )}
+        {!isRejected && !isVerified && !isSuspended && (
+          <Button variant="danger" icon="close" disabled={locked} onClick={() => setRejecting(true)}>
             Reject
           </Button>
         )}
@@ -192,6 +278,7 @@ function VerificationActions({
             variant="secondary"
             icon="refresh"
             loading={reopen.busy}
+            disabled={locked}
             onClick={() =>
               run(() => reopen.mutate(doctor.id), `${doctor.fullName} is back in the queue.`)
             }
@@ -201,7 +288,7 @@ function VerificationActions({
         )}
       </PermissionGate>
 
-      {/* Listing and suspension - operations. */}
+      {/* Listing - operations only, as the backend has it. */}
       <PermissionGate level={level} allow={['operations']}>
         {isVerified && (
           <Button
@@ -215,6 +302,10 @@ function VerificationActions({
             {doctor.isListed ? 'Unlist' : 'List doctor'}
           </Button>
         )}
+      </PermissionGate>
+
+      {/* Suspension - operations and clinical governance. */}
+      <PermissionGate level={level} allow={['operations', 'clinical_governance']}>
         {isSuspended ? (
           <Button
             variant="secondary"
@@ -231,6 +322,30 @@ function VerificationActions({
           </Button>
         )}
       </PermissionGate>
+
+      <ConfirmDialog
+        open={requesting}
+        busy={requestChanges.busy}
+        onClose={() => setRequesting(false)}
+        variant="primary"
+        title={`Ask ${doctor.fullName} for changes?`}
+        confirmLabel="Request changes"
+        consequence={
+          <>
+            The provider is sent back to fix something and resubmit. Nothing is rejected, and
+            they stay out of the assignment pool until approved.
+          </>
+        }
+        reason={{
+          label: 'What needs to change',
+          hint: 'Shown to the provider word for word. Write it as instructions they can act on.',
+          maxLength: 255,
+        }}
+        onConfirm={async (reason) => {
+          await run(() => requestChanges.mutate(doctor.id, reason), `Changes requested from ${doctor.fullName}.`);
+          setRequesting(false);
+        }}
+      />
 
       <ConfirmDialog
         open={rejecting}
@@ -344,6 +459,12 @@ const Verified = ({ ok, what }: { ok?: boolean; what: string }) =>
   );
 
 /** What the doctor declared for one review section, shown above that section's documents. */
+/**
+ * Shown only when the registration call was refused. The backend lets clinical
+ * governance and operations read what a provider stated about themselves.
+ */
+const NOT_VISIBLE = 'Only clinical governance and operations can read these:';
+
 function VerifyDetails({
   doctor,
   section,
@@ -359,7 +480,16 @@ function VerifyDetails({
 
   if (section === 'basic') {
     items = [
-      { label: 'Profile photo (optional)', value: yesNo(r?.hasPhoto) },
+      {
+        label: 'Profile photo (optional)',
+        value: doctor.photoUrl ? (
+          <ProviderAvatar name={doctor.fullName} photoUrl={doctor.photoUrl} size={72} />
+        ) : LIVE ? (
+          'No photo uploaded yet.'
+        ) : (
+          yesNo(r?.hasPhoto)
+        ),
+      },
       { label: 'Full name', value: doctor.fullName },
       { label: 'Date of birth', value: dateLabel(r?.dateOfBirth) },
       { label: 'Gender', value: r?.gender },
@@ -384,6 +514,7 @@ function VerifyDetails({
         value: doctor.languages && doctor.languages.length > 0 ? doctor.languages.join(', ') : null,
       },
     ];
+    if (LIVE && !r?.loaded) note = <Notice tone="warning">{NOT_VISIBLE} Date of birth, gender and e-mail address.</Notice>;
   } else if (section === 'identity') {
     items = [
       { label: 'Government ID type', value: r?.idType },
@@ -391,6 +522,10 @@ function VerifyDetails({
       { label: 'Government ID number', value: r?.idNumberLast4 ? `•••• ${r.idNumberLast4}` : null },
       { label: 'ABHA ID / address (optional)', value: r?.abhaId },
     ];
+    if (LIVE && !r?.loaded) note = <Notice tone="warning">{NOT_VISIBLE} Government ID, ID number and ABHA ID.</Notice>;
+  } else if (section === 'qualification' && LIVE && !r?.basicQualification) {
+    items = [{ label: 'Qualifications (as shown to patients)', value: doctor.qualification }];
+    note = <p className="muted">The degree certificate stays private and is used only for verification.</p>;
   } else if (section === 'qualification') {
     const shown = [r?.basicQualification, r?.pgSpecialisation, r?.superSpecialisation, r?.fellowship]
       .filter(Boolean)
@@ -400,14 +535,27 @@ function VerifyDetails({
       { label: 'PG specialisation (optional)', value: r?.pgSpecialisation },
       { label: 'Super specialisation (optional)', value: r?.superSpecialisation },
       { label: 'Fellowship (optional)', value: r?.fellowship },
-      { label: 'Registration number', value: doctor.registrationNumber },
     ];
     note = (
       <p className="muted">
-        Shown to patients as: <strong>{shown || '-'}</strong>. The degree and registration
-        certificates stay private and are used only for verification.
+        Shown to patients as: <strong>{shown || '-'}</strong>. The degree certificate stays private
+        and is used only for verification.
       </p>
     );
+  } else if (section === 'registration') {
+    items = [
+      { label: 'Registration number', value: doctor.registrationNumber },
+      { label: 'Registration council', value: doctor.registrationCouncil },
+    ];
+    note = <p className="muted">The registration certificate stays private and is used only for verification.</p>;
+  } else if (section === 'experience' && LIVE && !r?.loaded) {
+    items = [
+      {
+        label: 'Total experience',
+        value: doctor.yearsOfExperience != null ? `${doctor.yearsOfExperience} ${doctor.yearsOfExperience === 1 ? 'year' : 'years'}` : null,
+      },
+    ];
+    note = <Notice tone="warning">{NOT_VISIBLE} Designation and institution per entry.</Notice>;
   } else if (section === 'experience') {
     const entries = r?.experience ?? [];
     const total = entries.reduce((sum, x) => sum + x.years, 0);
@@ -456,6 +604,9 @@ function Overview({ doctor }: { doctor: Doctor }) {
       {doctor.verificationStatus === 'rejected' && doctor.rejectionReason && (
         <Notice tone="danger">Rejected: {doctor.rejectionReason}</Notice>
       )}
+      {doctor.verificationStatus === 'changes_required' && doctor.changesRequiredNote && (
+        <Notice tone="warning">Changes required: {doctor.changesRequiredNote}</Notice>
+      )}
       {doctor.verificationStatus === 'suspended' && doctor.suspensionReason && (
         <Notice tone="danger">Suspended: {doctor.suspensionReason}</Notice>
       )}
@@ -465,9 +616,10 @@ function Overview({ doctor }: { doctor: Doctor }) {
         </Notice>
       )}
 
-      {SECTIONS.map((x) => (
-        <VerifyDetails key={x.id} doctor={doctor} section={x.id} title={x.title} />
+      {SECTIONS.filter((x) => x.id !== 'signature' || isDoctor(doctor)).map((x) => (
+        <VerifyDetails key={x.id} doctor={doctor} section={x.id} title={x.profileTitle} />
       ))}
+      <PatientFacingCard />
     </>
   );
 }
@@ -506,7 +658,7 @@ function RegionsAndLanguages({
           label="Languages"
           value={languages}
           disabled={!canEditPools}
-          hint="Comma separated."
+          hint={LIVE ? `Comma separated: ${LANGUAGE_HINT}.` : 'Comma separated.'}
           onChange={(e) => setLanguages(e.target.value)}
         />
 
@@ -532,6 +684,8 @@ function RegionsAndLanguages({
           </div>
         )}
       </Card>
+
+      {LIVE && <ServiceRegions doctorId={doctor.id} editable={canEditPools} />}
 
       <Card title="Seniority">
         <Notice tone="info">
@@ -591,6 +745,98 @@ function RegionsAndLanguages({
   );
 }
 
+/* ------------------------------ service regions ----------------------------- */
+
+/**
+ * The regions a provider serves (live only). Language is never relaxed in
+ * assignment and region may be, depending on the allocation policy, so an
+ * empty set is a provider who is matched only when the policy relaxes region.
+ */
+function ServiceRegions({ doctorId, editable }: { doctorId: string; editable: boolean }) {
+  const toast = useToast();
+  const fetcher = useCallback(
+    async () => {
+      const [all, mine] = await Promise.all([regionList.list(), providerRegions.get(doctorId)]);
+      return { all: all.filter((r) => r.isActive || mine.includes(r.id)), mine };
+    },
+    [doctorId],
+  );
+  const state = useResource<{ all: { id: string; name: string }[]; mine: string[] }>(fetcher, [doctorId]);
+  const [chosen, setChosen] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Async
+      state={state}
+      resource="regions"
+      // Which boxes are ticked is the provider's own; the card and its title are not.
+      skeleton={
+        <CardSkeleton title="Service regions">
+          <div className="formGrid">
+            {[0, 1, 2, 3].map((i) => (
+              <SkeletonBlock key={i} w={i % 2 ? '55%' : '70%'} h={20} />
+            ))}
+          </div>
+        </CardSkeleton>
+      }
+    >
+      {({ all, mine }) => {
+        const current = chosen ?? mine;
+        const toggle = (id: string) =>
+          setChosen(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
+        const dirty = chosen !== null && [...chosen].sort().join() !== [...mine].sort().join();
+        return (
+          <Card title="Service regions">
+            {all.length === 0 ? (
+              <p className="muted">No regions have been set up in Master data yet.</p>
+            ) : (
+              <div className="formGrid">
+                {all.map((r) => (
+                  <label className="checkbox" key={r.id}>
+                    <input
+                      type="checkbox"
+                      checked={current.includes(r.id)}
+                      disabled={!editable || busy}
+                      onChange={() => toggle(r.id)}
+                    />
+                    {r.name}
+                  </label>
+                ))}
+              </div>
+            )}
+            {editable && dirty && (
+              <div className="formActions">
+                <Button variant="secondary" disabled={busy} onClick={() => setChosen(null)}>
+                  Reset
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await providerRegions.set(doctorId, chosen ?? []);
+                      toast.success('Regions updated.');
+                      setChosen(null);
+                      state.reload();
+                    } catch (e) {
+                      toast.fromError(e);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Save regions
+                </Button>
+              </div>
+            )}
+          </Card>
+        );
+      }}
+    </Async>
+  );
+}
+
 /* ------------------------------- commercials ------------------------------- */
 
 function Commercials({
@@ -613,7 +859,7 @@ function Commercials({
       <Card title="Commercials">
         <DefinitionList
           items={[
-            { label: 'Consultation fee', value: doctor.payoutFeeInr ? `₹${doctor.payoutFeeInr}` : null },
+            { label: LIVE ? 'Payout fee' : 'Consultation fee', value: doctor.payoutFeeInr ? `₹${doctor.payoutFeeInr}` : null },
             {
               label: 'Duration',
               value: doctor.consultationDurationMinutes
@@ -636,10 +882,10 @@ function Commercials({
 
       <div className="formGrid">
         <TextField
-          label="Consultation fee (₹)"
+          label={LIVE ? 'Payout fee (₹)' : 'Consultation fee (₹)'}
           inputMode="numeric"
           value={fee}
-          hint="The doctor keeps all of it."
+          hint={LIVE ? 'What the provider is paid. The patient is charged the specialty fee.' : 'The doctor keeps all of it.'}
           onChange={(e) => setFee(e.target.value)}
         />
         <TextField
@@ -684,7 +930,15 @@ function ReliabilityPane({ doctorId }: { doctorId: string }) {
   const state = useResource<Reliability>(fetcher, [doctorId]);
 
   return (
-    <Async state={state} resource="reliability" skeletonRows={2}>
+    <Async
+      state={state}
+      resource="reliability"
+      skeleton={
+        <CardSkeleton title="Reliability">
+          <DefinitionListSkeleton items={4} />
+        </CardSkeleton>
+      }
+    >
       {(r) => (
         <Card title="Reliability">
           <p className="muted">

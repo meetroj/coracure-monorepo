@@ -1,70 +1,91 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { doctors, type CredentialQueueRow } from '../api/admin';
+import { doctors } from '../api/admin';
+import { LIVE } from '../api/live';
+import type { CredentialQueueRow, VerificationStatus } from '../api/types';
 import { useResource } from '../lib/useResource';
+import { credentialQueue } from '../mock/db';
 import type { AdminLevel } from '../nav';
-import {
-  Async,
-  Button,
-  Column,
-  EmptyState,
-  PageHeader,
-  SearchField,
-  SelectField,
-  StatusBadge,
-  Table,
-} from '../ui';
+import { Button, ErrorState, StatusBadge, TableSkeleton, skeletonColumns, type Column } from '../ui';
+import { ListScreen, type ListTab } from './kit/ListScreen';
+import { CATEGORY_LABEL, ProviderAvatar, VERIFICATION_LABEL, VerificationBadge } from './providers/provider';
 
 /**
- * The credential queue (§17) - clinical governance's home screen.
+ * Verification (requirements §20, §21): every provider with their review
+ * state, in the six spec statuses, oldest submission first - how long someone
+ * has waited matters more than how many are in the list.
  *
- * Every provider with documents awaiting a decision, oldest submission first,
- * because how long someone has been waiting matters more than how many are in
- * the list. Opening a row goes straight to that provider's Credentials tab.
+ * Opening a row goes to that provider's review: Identity, Qualifications,
+ * Professional registration, Experience and Signature, with Approve, Changes
+ * required, Reject and Suspend at the top.
  */
-export function CredentialQueue({ level }: { level: AdminLevel }) {
-  const navigate = useNavigate();
-  const fetcher = useCallback(() => doctors.credentialQueue(), []);
-  const state = useResource<CredentialQueueRow[]>(fetcher, []);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [order, setOrder] = useState<'oldest' | 'newest'>('oldest');
+const STATUS_ORDER: VerificationStatus[] = ['pending', 'under_review', 'changes_required', 'verified', 'rejected', 'suspended'];
 
-  const open = (row: CredentialQueueRow) =>
-    navigate(`/credentials/${row.doctorId}?tab=credentials`);
+const TABS: ListTab<CredentialQueueRow>[] = STATUS_ORDER.map((s) => ({
+  id: s,
+  label: VERIFICATION_LABEL[s],
+  test: (r) => r.verificationStatus === s,
+}));
+
+const oldestFirst = (rows: CredentialQueueRow[]) =>
+  [...rows].sort((a, b) => new Date(a.submittedAt ?? 0).getTime() - new Date(b.submittedAt ?? 0).getTime());
+
+/** Live: the whole roster from the backend, with its document counts. Fixtures otherwise. */
+export function CredentialQueue({ level }: { level: AdminLevel }) {
+  return LIVE ? <LiveQueue level={level} /> : <QueueView level={level} rows={oldestFirst(credentialQueue())} />;
+}
+
+function LiveQueue({ level }: { level: AdminLevel }) {
+  const fetcher = useCallback(() => doctors.queue(), []);
+  const state = useResource<CredentialQueueRow[]>(fetcher, []);
+  // The tabs, search and their counts belong to the list, so it stays mounted
+  // and only its body is the skeleton.
+  if (state.error && !state.data)
+    return <ErrorState error={state.error} onRetry={state.reload} resource="providers" />;
+  return <QueueView level={level} rows={oldestFirst(state.data ?? [])} loading={state.data === null} />;
+}
+
+function QueueView({
+  level: _level,
+  rows,
+  loading = false,
+}: {
+  level: AdminLevel;
+  rows: CredentialQueueRow[];
+  loading?: boolean;
+}) {
+  const navigate = useNavigate();
+  const open = (r: CredentialQueueRow) => navigate(`/verification/${r.doctorId}`);
 
   const columns: Column<CredentialQueueRow>[] = [
     {
       key: 'name',
-      header: 'Doctor',
+      header: 'Provider',
       render: (r) => (
-        <span className="cellStack">
-          <strong>{r.fullName}</strong>
-          <small>{r.specialtyName ?? '-'}</small>
+        <span className="provCell">
+          <ProviderAvatar name={r.fullName} photoUrl={r.photoUrl} />
+          <span className="cellStack">
+            <strong>{r.fullName}</strong>
+            <small>
+              {r.category ? CATEGORY_LABEL[r.category] : 'Doctor'} · {r.specialtyName ?? '-'}
+            </small>
+          </span>
         </span>
       ),
     },
+    { key: 'status', header: 'Verification', render: (r) => <VerificationBadge status={r.verificationStatus} /> },
     {
       key: 'pending',
-      header: 'Awaiting review',
-      render: (r) => (
-        <StatusBadge
-          status={r.pendingDocuments > 0 ? 'pending' : 'approved'}
-          label={r.pendingDocuments > 0 ? `${r.pendingDocuments} document(s)` : 'None'}
-        />
-      ),
+      header: 'Documents awaiting review',
+      render: (r) =>
+        r.pendingDocuments > 0 ? (
+          <StatusBadge status="pending" label={`${r.pendingDocuments} document(s)`} />
+        ) : (
+          <span className="muted">None</span>
+        ),
     },
-    {
-      key: 'status',
-      header: 'Verification',
-      render: (r) => <StatusBadge status={r.verificationStatus} />,
-    },
-    {
-      key: 'waiting',
-      header: 'Waiting since',
-      render: (r) => (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '-'),
-    },
+    { key: 'since', header: 'Submitted', render: (r) => (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '-') },
     {
       key: 'actions',
       header: '',
@@ -80,77 +101,24 @@ export function CredentialQueue({ level }: { level: AdminLevel }) {
     },
   ];
 
-  const visible = (rows: CredentialQueueRow[]) => {
-    const q = search.trim().toLowerCase();
-    const dir = order === 'oldest' ? 1 : -1;
-    return rows
-      .filter((r) => !status || r.verificationStatus === status)
-      .filter(
-        (r) => !q || `${r.fullName} ${r.specialtyName ?? ''}`.toLowerCase().includes(q),
-      )
-      .sort(
-        (a, b) =>
-          dir * (new Date(a.submittedAt ?? 0).getTime() - new Date(b.submittedAt ?? 0).getTime()),
-      );
-  };
-
   return (
-    <>
-      <PageHeader
-        title="Document verification"
-        description="Doctors with documents awaiting a decision, longest wait first. Reviewing a document is separate from verifying the doctor."
-      />
-
-      <div className="filterBar">
-        <SearchField value={search} onSearch={setSearch} placeholder="Doctor name or specialty" />
-        <SelectField
-          label="Verification"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          options={[
-            { value: '', label: 'Any status' },
-            { value: 'pending', label: 'Pending' },
-            { value: 'under_review', label: 'Under review' },
-          ]}
+    <ListScreen
+      caption="Provider verification"
+      rows={rows}
+      columns={columns}
+      rowKey={(r) => r.doctorId}
+      tabs={TABS}
+      onOpen={open}
+      search={(r) => `${r.fullName} ${r.specialtyName ?? ''}`}
+      searchPlaceholder="Provider name or specialty"
+      emptyIcon="check"
+      empty={{ title: 'No providers yet' }}
+      loading={loading}
+      skeleton={
+        <TableSkeleton
+          columns={skeletonColumns(columns, { name: 'person', status: 'status', pending: 'status', since: 'date', actions: 'button' })}
         />
-        <SelectField
-          label="Sort by"
-          value={order}
-          onChange={(e) => setOrder(e.target.value as 'oldest' | 'newest')}
-          options={[
-            { value: 'oldest', label: 'Longest waiting' },
-            { value: 'newest', label: 'Newest first' },
-          ]}
-        />
-      </div>
-
-      <Async
-        state={state}
-        resource="the document verification queue"
-        empty={
-          <EmptyState
-            icon="check"
-            title="No pending credentials"
-            description="Every submitted document has been reviewed."
-          />
-        }
-      >
-        {(rows) => {
-          const shown = visible(rows);
-          return shown.length === 0 ? (
-            <EmptyState icon="search" title="No matches" description="Try a different search or status." />
-          ) : (
-            <Table
-              caption="Document verification"
-              columns={columns}
-              rows={shown}
-              rowKey={(r) => r.doctorId}
-              onRowClick={open}
-              hideChevron
-            />
-          );
-        }}
-      </Async>
-    </>
+      }
+    />
   );
 }

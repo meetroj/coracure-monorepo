@@ -8,22 +8,45 @@ import {
 } from '../../api/patients';
 import { useResource } from '../../lib/useResource';
 import { EditPatient } from './EditPatient';
+import { PatientAccount } from './PatientAccount';
+import { LIVE } from '../../api/live';
+import { fromLiveRow } from '../../api/liveAppointments';
 import type { AdminLevel } from '../../nav';
 import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   Column,
   DefinitionList,
+  DefinitionListSkeleton,
   EmptyState,
   Notice,
   PageHeader,
+  PageHeaderSkeleton,
   StatusBadge,
   Table,
+  TableSkeleton,
   Tabs,
   humanise,
+  skeletonColumns,
 } from '../../ui';
 import { PatientStatusBadge, initials } from './Patients';
+import {
+  LiveFiles,
+  LiveFollowUps,
+  LivePayments,
+  LivePrescriptions,
+  LiveSupport,
+  patientConsultations,
+} from './PatientLiveTabs';
+import { appointmentStatus } from '../../mock/ops/appointment';
+import { findCaseRecord, followUps as followUpStore } from '../../mock/ops/care';
+import { labOrders, partnerName } from '../../mock/ops/lab';
+import { patientPayments } from '../../mock/ops/money';
+import { feedbackItems, tickets } from '../../mock/ops/support';
+import { inr } from '../kit/format';
+import { useStore } from '../kit/store';
 
 /**
  * One patient. The tab lives in the URL (`?tab=`) so refresh and Back keep it.
@@ -34,12 +57,18 @@ import { PatientStatusBadge, initials } from './Patients';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'address', label: 'Address' },
   { id: 'consultations', label: 'Consultations' },
-  { id: 'followup', label: 'Follow-up' },
-  { id: 'files', label: 'Reports & files' },
-  { id: 'complaints', label: 'Complaints' },
+  { id: 'prescriptions', label: 'Prescriptions / Care Plans' },
+  { id: 'files', label: 'Reports & Documents' },
+  { id: 'followup', label: 'Follow-ups' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'support', label: 'Support' },
   { id: 'consents', label: 'Consents' },
 ];
+
+/** Live, every tab but Consents: the backend withholds a patient's consents from the admin on purpose. */
+const LIVE_TABS = TABS.filter((t) => t.id !== 'consents');
 
 const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : null);
 const dateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : null);
@@ -55,7 +84,9 @@ const CheckIn = ({ colour }: { colour: CheckInColour | null }) =>
 export function PatientDetail({ level }: { level: AdminLevel }) {
   const { patientId = '' } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'overview';
+  const tabs = LIVE ? LIVE_TABS : TABS;
+  const wanted = params.get('tab') ?? 'overview';
+  const tab = tabs.some((t) => t.id === wanted) ? wanted : 'overview';
 
   const fetcher = useCallback(() => patients.get(patientId), [patientId]);
   const state = useResource<PatientDetailRecord>(fetcher, [patientId]);
@@ -67,7 +98,7 @@ export function PatientDetail({ level }: { level: AdminLevel }) {
   };
 
   // The kit's not-found state has no way back; this one does.
-  if (state.error?.code === 'NOT_FOUND') {
+  if (state.error?.code === 'NOT_FOUND' || state.error?.code === 'PATIENT_NOT_FOUND') {
     return (
       <EmptyState
         icon="users"
@@ -85,7 +116,29 @@ export function PatientDetail({ level }: { level: AdminLevel }) {
   }
 
   return (
-    <Async state={state} resource="this patient">
+    <Async
+      state={state}
+      resource="this patient"
+      skeleton={
+        <>
+          {/* The name and facts are the record's own; the tabs are the same for every patient. */}
+          <PageHeaderSkeleton description actions={2} />
+          <Tabs tabs={tabs} active={tab} onChange={setTab} />
+          <div className="stack">
+            {tab === 'overview' ? (
+              <>
+                <CardSkeleton title="Overview">
+                  <DefinitionListSkeleton items={8} />
+                </CardSkeleton>
+                <CardSkeleton title="Health profile (optional)" lines={2} />
+              </>
+            ) : (
+              <CardSkeleton lines={4} />
+            )}
+          </div>
+        </>
+      }
+    >
       {(p) => (
         <>
           <PageHeader
@@ -99,27 +152,33 @@ export function PatientDetail({ level }: { level: AdminLevel }) {
             actions={
               <span className="headerFacts">
                 <EditPatient patient={p} level={level} onSaved={state.reload} />
+                {LIVE && <PatientAccount patient={p} level={level} onChanged={state.reload} />}
                 <span className="avatar" aria-hidden="true">
                   {initials(p.fullName)}
                 </span>
                 <PatientStatusBadge status={p.status} />
                 <span>{p.mobileNumber}</span>
                 <span>
-                  {p.age} · {p.gender}
+                  {p.age ?? '-'} · {p.gender}
                 </span>
                 <span>{p.language}</span>
               </span>
             }
           />
 
-          <Tabs tabs={TABS} active={tab} onChange={setTab} />
+          <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
+          <div key={tab} className="fadeIn">
           {tab === 'overview' && <Overview p={p} />}
-          {tab === 'consultations' && <Consultations p={p} />}
-          {tab === 'followup' && <FollowUp p={p} />}
-          {tab === 'files' && <Files p={p} />}
-          {tab === 'complaints' && <Complaints p={p} />}
+          {tab === 'address' && <Address p={p} />}
+          {tab === 'consultations' && (LIVE ? <LiveConsultations patientId={p.id} /> : <Consultations p={p} />)}
+          {tab === 'prescriptions' && (LIVE ? <LivePrescriptions patientId={p.id} /> : <Prescriptions p={p} />)}
+          {tab === 'files' && (LIVE ? <LiveFiles patientId={p.id} /> : <Files p={p} />)}
+          {tab === 'followup' && (LIVE ? <LiveFollowUps patientId={p.id} /> : <FollowUp p={p} />)}
+          {tab === 'payments' && (LIVE ? <LivePayments patientId={p.id} /> : <Payments p={p} />)}
+          {tab === 'support' && (LIVE ? <LiveSupport patientId={p.id} /> : <Support p={p} />)}
           {tab === 'consents' && <Consents p={p} />}
+          </div>
         </>
       )}
     </Async>
@@ -129,53 +188,29 @@ export function PatientDetail({ level }: { level: AdminLevel }) {
 /* --------------------------------- panes ---------------------------------- */
 
 function Overview({ p }: { p: PatientDetailRecord }) {
-  // Recent activity, newest first, built from what the other tabs hold.
-  const events = [
-    ...p.consultations.map((c) => ({
-      at: c.startsAt,
-      text: `Consultation ${c.referenceCode} (${c.serviceName}) - ${humanise(c.status)}`,
-    })),
-    ...p.complaints.map((c) => ({ at: c.raisedAt, text: `Complaint raised: ${c.subject}` })),
-    ...p.files.map((f) => ({ at: f.uploadedAt, text: `Uploaded ${f.name} (${f.category})` })),
-    ...p.followUps
-      .filter((f) => f.lastCheckInAt)
-      .map((f) => ({ at: f.lastCheckInAt as string, text: `Check-in on ${f.planName}` })),
-  ]
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 6);
-
   return (
     <div className="stack">
-      <Card title="Basic details">
+      <Card title="Overview">
         <DefinitionList
           items={[
-            { label: 'Full name', value: p.fullName },
-            { label: 'Date of birth', value: date(p.dateOfBirth) },
-            { label: 'Age', value: p.age },
+            { label: 'Name', value: p.fullName },
+            { label: 'Mobile', value: p.mobileNumber },
+            { label: 'Email', value: p.profile.email },
+            { label: 'DOB', value: date(p.dateOfBirth) },
+            { label: 'Age', value: p.age ?? '-' },
             { label: 'Gender', value: p.gender },
-            { label: 'Mobile number', value: p.mobileNumber },
-            { label: 'Email address', value: p.profile.email },
-            { label: 'Preferred language(s)', value: p.profile.languages.join(', ') },
-            { label: 'Profile photo (optional)', value: p.profile.photoUploaded ? 'Uploaded' : 'Not uploaded' },
-            { label: 'Joined', value: date(p.joinedAt) },
-          ]}
-        />
-      </Card>
-      <Card title="Contact details">
-        <DefinitionList
-          items={[
-            { label: 'Address line 1', value: p.profile.addressLine1 },
-            { label: 'Address line 2 (optional)', value: p.profile.addressLine2 },
-            { label: 'City', value: p.profile.city },
-            { label: 'District (optional)', value: p.profile.district },
-            { label: 'State', value: p.profile.state },
-            { label: 'PIN code', value: p.profile.pinCode },
-            { label: 'Country', value: p.profile.country },
+            { label: 'Account status', value: <PatientStatusBadge status={p.status} /> },
+            { label: 'Patient ID', value: p.referenceCode },
           ]}
         />
       </Card>
       <Card title="Health profile (optional)">
-        {p.profile.health ? (
+        {LIVE ? (
+          <p className="muted">
+            Health details are the patient’s own report and are not shown in the admin panel. A clinical record is
+            read per consultation.
+          </p>
+        ) : p.profile.health ? (
           <DefinitionList
             items={[
               { label: 'Blood group', value: p.profile.health.bloodGroup },
@@ -190,33 +225,23 @@ function Overview({ p }: { p: PatientDetailRecord }) {
           <p className="muted">The patient has not filled in a health profile.</p>
         )}
       </Card>
-      <Card title="Key facts">
-        <DefinitionList
-          items={[
-            { label: 'Patient ID', value: p.referenceCode },
-            { label: 'Consultations', value: p.consultationCount },
-            { label: 'Last consultation', value: date(p.lastConsultationAt) },
-            { label: 'Last active', value: dateTime(p.lastActiveAt) },
-            { label: 'Open complaints', value: p.hasOpenComplaint ? 'Yes' : 'None' },
-            { label: 'Active follow-up', value: p.hasActiveFollowUp ? 'Yes' : 'None' },
-          ]}
-        />
-      </Card>
-      <Card title="Recent activity">
-        {events.length === 0 ? (
-          <p className="muted">No activity yet.</p>
-        ) : (
-          <ol className="timeline">
-            {events.map((e, i) => (
-              <li key={i} className="timeline__item">
-                <span className="timeline__date">{date(e.at)}</span>
-                <span className="timeline__text">{e.text}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Card>
     </div>
+  );
+}
+
+/** Location, PIN code and address - and no emergency contact (requirements §24). */
+function Address({ p }: { p: PatientDetailRecord }) {
+  const pr = p.profile;
+  return (
+    <Card title="Address">
+      <DefinitionList
+        items={[
+          { label: 'Location', value: [pr.city, pr.district, pr.state].filter(Boolean).join(', ') },
+          { label: 'PIN Code', value: pr.pinCode },
+          { label: 'Address', value: [pr.addressLine1, pr.addressLine2].filter(Boolean).join(', ') },
+        ]}
+      />
+    </Card>
   );
 }
 
@@ -227,26 +252,180 @@ function Consultations({ p }: { p: PatientDetailRecord }) {
       key: 'ref',
       header: 'Reference',
       render: (c) => (
-        <Link to={`/consultations/${c.id}`} onClick={(e) => e.stopPropagation()}>
+        <Link to={`/appointments/${c.id}`} onClick={(e) => e.stopPropagation()}>
           {c.referenceCode}
         </Link>
       ),
     },
-    { key: 'service', header: 'Service', render: (c) => c.serviceName },
-    { key: 'doctor', header: 'Doctor', render: (c) => c.doctorName ?? '-' },
-    { key: 'when', header: 'When', render: (c) => dateTime(c.startsAt) },
-    { key: 'status', header: 'Status', render: (c) => <StatusBadge status={c.status} /> },
+    { key: 'doctor', header: 'Consulting professional', render: (c) => c.doctorName ?? '-' },
+    { key: 'service', header: 'Specialty / service', render: (c) => c.serviceName },
+    { key: 'when', header: 'Consultation date', render: (c) => dateTime(c.startsAt) },
+    {
+      key: 'status',
+      header: 'Appointment status',
+      render: (c) => <StatusBadge status={appointmentStatus(c.status as never, c.id)} />,
+    },
   ];
   if (p.consultations.length === 0)
     return <EmptyState icon="consultations" title="No consultations yet" />;
+  const upcoming = p.consultations.filter((c) => new Date(c.startsAt).getTime() > Date.now() && c.status !== 'cancelled');
+  const previous = p.consultations.filter((c) => !upcoming.includes(c));
+  const table = (rows: typeof upcoming, caption: string) => (
+    <Card title={caption}>
+      {rows.length === 0 ? (
+        <p className="muted">None.</p>
+      ) : (
+        <Table caption={caption} columns={columns} rows={rows} rowKey={(c) => c.id} onRowClick={(c) => navigate(`/appointments/${c.id}`)} />
+      )}
+    </Card>
+  );
+  return (
+    <div className="stack">
+      {table(upcoming, 'Upcoming consultations')}
+      {table(previous, 'Previous consultations')}
+    </div>
+  );
+}
+
+/** The patient's bookings, live: the Appointments list with the patient fixed (`GET /admin/patients/:id/consultations`). */
+function LiveConsultations({ patientId }: { patientId: string }) {
+  const navigate = useNavigate();
+  const fetcher = useCallback(() => patientConsultations(patientId), [patientId]);
+  const state = useResource(fetcher, [patientId]);
+  const columns: Column<ReturnType<typeof fromLiveRow>>[] = [
+    {
+      key: 'ref',
+      header: 'Reference',
+      render: (c) => (
+        <Link to={`/appointments/${c.id}`} onClick={(e) => e.stopPropagation()}>
+          {c.referenceCode}
+        </Link>
+      ),
+    },
+    { key: 'pro', header: 'Consulting professional', render: (c) => c.doctorName ?? <span className="muted">Not assigned</span> },
+    { key: 'service', header: 'Specialty / service', render: (c) => c.serviceName ?? '-' },
+    { key: 'when', header: 'Consultation date', render: (c) => dateTime(c.startsAt) },
+    { key: 'status', header: 'Appointment status', render: (c) => <StatusBadge status={c.displayStatus ?? c.status} /> },
+  ];
+  return (
+    <Async
+      state={state}
+      resource="this patient's consultations"
+      skeleton={
+        <TableSkeleton
+          columns={skeletonColumns(columns, { ref: 'id', pro: 'name', when: 'date', status: 'status' })}
+          rows={4}
+          chevron
+        />
+      }
+    >
+      {({ rows, total }) =>
+        rows.length === 0 ? (
+          <EmptyState icon="consultations" title="No consultations yet" />
+        ) : (
+          <>
+            <Table
+              caption="Consultations"
+              columns={columns}
+              rows={rows}
+              rowKey={(c) => c.id}
+              onRowClick={(c) => navigate(`/appointments/${c.id}`)}
+            />
+            {total > rows.length && (
+              <p className="muted">
+                Showing the latest {rows.length} of {total}.
+              </p>
+            )}
+          </>
+        )
+      }
+    </Async>
+  );
+}
+
+/** A Prescription for a doctor consultation, a Care Plan for an approved non-doctor one (§26). */
+function Prescriptions({ p }: { p: PatientDetailRecord }) {
+  const rows = p.consultations
+    .filter((c) => c.status === 'completed' || c.status === 'awaiting_documentation')
+    .map((c) => ({ c, record: findCaseRecord(c.id) }));
+  if (rows.length === 0) return <EmptyState icon="clipboard" title="No prescriptions or care plans yet" description="They appear once a consultation has been held." />;
+  return (
+    <div className="stack">
+      <Notice>Prescriptions open only inside authenticated CoraCure systems. They are never sent over WhatsApp.</Notice>
+      <Table
+        caption="Prescriptions and care plans"
+        columns={[
+          { key: 'type', header: 'Type', render: ({ record }) => <StatusBadge status="approved" tone="info" label={record?.kind === 'non_doctor' ? 'Care Plan' : 'Prescription'} /> },
+          { key: 'ref', header: 'Case', render: ({ c }) => <Link to={`/case-records/${c.id}`}>{c.referenceCode}</Link> },
+          { key: 'pro', header: 'Consulting professional', render: ({ c }) => c.doctorName ?? '-' },
+          { key: 'when', header: 'Date', render: ({ c }) => dateTime(c.startsAt) },
+        ]}
+        rows={rows}
+        rowKey={({ c }) => c.id}
+      />
+    </div>
+  );
+}
+
+function Payments({ p }: { p: PatientDetailRecord }) {
+  const rows = useStore(patientPayments).filter((x) => x.patientId === p.id);
+  if (rows.length === 0) return <EmptyState icon="payments" title="No payments yet" />;
   return (
     <Table
-      caption="Consultations"
-      columns={columns}
-      rows={p.consultations}
-      rowKey={(c) => c.id}
-      onRowClick={(c) => navigate(`/consultations/${c.id}`)}
+      caption="Payments"
+      columns={[
+        { key: 'service', header: 'Payment', render: (x) => (x.service === 'lab' ? 'Lab payment' : 'Consultation payment') },
+        { key: 'ref', header: 'Reference', render: (x) => <Link to={x.to}>{x.ref}</Link> },
+        { key: 'amount', header: 'Amount', align: 'end', render: (x) => inr(x.amountInr) },
+        { key: 'status', header: 'Payment status', render: (x) => <StatusBadge status={x.status} /> },
+        { key: 'refund', header: 'Refund', render: (x) => (x.refund === 'none' ? <span className="muted">None</span> : <StatusBadge status={x.refund} />) },
+        { key: 'txn', header: 'Transaction reference', render: (x) => <code>{x.txn}</code> },
+      ]}
+      rows={rows}
+      rowKey={(x) => x.id}
     />
+  );
+}
+
+function Support({ p }: { p: PatientDetailRecord }) {
+  const mine = useStore(tickets).filter((t) => t.patientId === p.id);
+  const feedback = useStore(feedbackItems).filter((f) => f.from === p.fullName);
+  return (
+    <div className="stack">
+      <Card title="Support tickets">
+        {mine.length === 0 ? (
+          <p className="muted">No support tickets.</p>
+        ) : (
+          <Table
+            caption="Support tickets"
+            columns={[
+              { key: 'code', header: 'Ticket', render: (t) => t.code },
+              { key: 'subject', header: 'Subject', render: (t) => t.subject },
+              { key: 'status', header: 'Status', render: (t) => <StatusBadge status={t.status} /> },
+              { key: 'priority', header: 'Priority', render: (t) => <StatusBadge status={t.priority} /> },
+            ]}
+            rows={mine}
+            rowKey={(t) => t.id}
+          />
+        )}
+      </Card>
+      <Card title="Complaints">
+        <Complaints p={p} />
+      </Card>
+      <Card title="Feedback">
+        {feedback.length === 0 ? (
+          <p className="muted">No feedback from this patient.</p>
+        ) : (
+          <ul className="plainList">
+            {feedback.map((f) => (
+              <li key={f.id}>
+                {f.rating} / 5 about {f.about}: {f.comment}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -256,7 +435,7 @@ function FollowUp({ p }: { p: PatientDetailRecord }) {
       key: 'case',
       header: 'Case ID',
       // Opens the case this plan belongs to; the row itself has no other click action.
-      render: (f) => <Link to={`/consultations/${f.consultationId}`}>{f.consultationRef}</Link>,
+      render: (f) => <Link to={`/appointments/${f.consultationId}`}>{f.consultationRef}</Link>,
     },
     { key: 'plan', header: 'Plan', render: (f) => f.planName },
     { key: 'status', header: 'Status', render: (f) => <StatusBadge status={f.status === 'active' ? 'in_progress' : f.status} label={humanise(f.status)} /> },
@@ -265,9 +444,26 @@ function FollowUp({ p }: { p: PatientDetailRecord }) {
     { key: 'checkin', header: 'Check-in', render: (f) => <CheckIn colour={f.checkIn} /> },
     { key: 'last', header: 'Last check-in', render: (f) => date(f.lastCheckInAt) ?? '-' },
   ];
-  if (p.followUps.length === 0)
+  const plans = useStore(followUpStore).filter((f) => f.patientId === p.id);
+  if (p.followUps.length === 0 && plans.length === 0)
     return <EmptyState icon="clipboard" title="No follow-up plans" />;
-  return <Table caption="Follow-up plans" columns={columns} rows={p.followUps} rowKey={(f) => f.id} />;
+  return (
+    <div className="stack">
+      {plans.map((f) => (
+        <Card key={f.id} title={f.planName}>
+          <DefinitionList
+            items={[
+              { label: 'Follow-up status', value: <StatusBadge status={f.status} /> },
+              { label: 'Patient responses', value: f.patientResponse ?? 'Not received yet' },
+              { label: 'Provider review', value: f.providerReview ?? 'Not reviewed yet' },
+              { label: 'Follow-up recommendation', value: f.recommendation ?? 'None' },
+            ]}
+          />
+        </Card>
+      ))}
+      {p.followUps.length > 0 && <Table caption="Follow-up plans" columns={columns} rows={p.followUps} rowKey={(f) => f.id} />}
+    </div>
+  );
 }
 
 function Files({ p }: { p: PatientDetailRecord }) {
@@ -289,6 +485,9 @@ function Files({ p }: { p: PatientDetailRecord }) {
             rowKey={(f) => f.id}
           />
         )}
+      </Card>
+      <Card title="Lab reports">
+        <LabReportsList patientId={p.id} />
       </Card>
       <Card title="Report requests">
         {p.reportRequests.length === 0 ? (
@@ -331,7 +530,7 @@ function Complaints({ p }: { p: PatientDetailRecord }) {
           key: 'subject',
           header: 'Subject',
           render: (c) => (
-            <Link to={`/complaints/${c.id}`} onClick={(e) => e.stopPropagation()}>
+            <Link to={`/support-tickets/${c.id}`} onClick={(e) => e.stopPropagation()}>
               {c.subject}
             </Link>
           ),
@@ -342,7 +541,7 @@ function Complaints({ p }: { p: PatientDetailRecord }) {
       ]}
       rows={p.complaints}
       rowKey={(c) => c.id}
-      onRowClick={(c) => navigate(`/complaints/${c.id}`)}
+      onRowClick={(c) => navigate(`/support-tickets/${c.id}`)}
     />
   );
 }
@@ -358,6 +557,24 @@ function Consents({ p }: { p: PatientDetailRecord }) {
       ]}
       rows={p.consents}
       rowKey={(c) => c.documentType}
+    />
+  );
+}
+
+function LabReportsList({ patientId }: { patientId: string }) {
+  const rows = useStore(labOrders).filter((o) => o.patientId === patientId && o.reportDate);
+  if (rows.length === 0) return <p className="muted">No lab reports yet.</p>;
+  return (
+    <Table
+      caption="Lab reports"
+      columns={[
+        { key: 'order', header: 'Lab order', render: (o) => o.code },
+        { key: 'partner', header: 'Lab partner', render: (o) => partnerName(o.partnerId) },
+        { key: 'at', header: 'Report date', render: (o) => date(o.reportDate) },
+        { key: 'st', header: 'Report status', render: (o) => <StatusBadge status={o.reportStatus} /> },
+      ]}
+      rows={rows}
+      rowKey={(o) => o.id}
     />
   );
 }

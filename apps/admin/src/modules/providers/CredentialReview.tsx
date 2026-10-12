@@ -1,6 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { doctors, type DoctorDocument } from '../../api/admin';
+import { LIVE } from '../../api/live';
+import { isWebUrl } from '../../api/liveProviders';
 import { useMutation, useResource } from '../../lib/useResource';
 import { useToast } from '../../lib/toast';
 import type { AdminLevel } from '../../nav';
@@ -15,28 +17,53 @@ import {
   Notice,
   StatusBadge,
   Table,
+  TableSkeleton,
   humanise,
   may,
 } from '../../ui';
 
 /** The review is grouped the way the doctor's registration form is. */
-export const SECTIONS: { id: string; title: string; types: string[] }[] = [
-  // Nothing to approve here: the profile photo is not a reviewed document.
-  { id: 'basic', title: 'Basic details', types: [] },
-  { id: 'identity', title: 'Proof of identity', types: ['identity_proof', 'address_proof'] },
-  // Two uploads cover the whole qualification section - never one per degree.
-  {
-    id: 'qualification',
-    title: 'Professional qualifications',
-    types: ['degree_certificate', 'registration_certificate'],
-  },
-  { id: 'experience', title: 'Experience', types: ['experience_letter'] },
+export const SECTIONS: { id: string; title: string; profileTitle: string; types: string[] }[] = [
+  // Nothing to approve under Basic details: the profile photo is not a credential, and the
+  // backend approves it itself the moment it is uploaded (see AUTOMATIC below).
+  { id: 'basic', title: 'Basic details', profileTitle: 'Basic details', types: [] },
+  { id: 'identity', title: 'Identity', profileTitle: 'Proof of identity', types: ['identity_proof', 'address_proof'] },
+  { id: 'qualification', title: 'Qualifications', profileTitle: 'Qualifications', types: ['degree_certificate'] },
+  { id: 'registration', title: 'Professional registration', profileTitle: 'Professional registration', types: ['registration_certificate'] },
+  { id: 'experience', title: 'Experience', profileTitle: 'Experience', types: ['experience_letter'] },
   {
     id: 'signature',
-    title: 'Digital signature',
+    title: 'Signature',
+    profileTitle: 'Digital signature',
     types: ['signature', 'prescription_signature', 'digital_signature'],
   },
 ];
+
+/** Fires once when it first appears: used to say "the list is on screen now", not merely "fetched". */
+function Shown({ onShown }: { onShown?: () => void }) {
+  useEffect(() => {
+    onShown?.();
+  }, [onShown]);
+  return null;
+}
+
+/** The document table's shape, so the card keeps its columns while the list loads. */
+export const DocumentTableSkeleton = () => (
+  <TableSkeleton
+    columns={[
+      { kind: 'stack', header: 'Document' },
+      { kind: 'status', header: 'Status' },
+      { kind: 'button', header: '', align: 'end', width: '280px' },
+    ]}
+    rows={3}
+  />
+);
+
+/**
+ * Document types nobody reviews: the backend approves them on upload. They are
+ * not listed in any section and not under "Other documents" either.
+ */
+export const AUTOMATIC: readonly string[] = ['profile_photo'];
 
 /**
  * One provider's credentials, reviewed a document at a time (§17).
@@ -54,11 +81,17 @@ export function CredentialReview({
   doctorId,
   level,
   onReviewed,
+  onLoaded,
   section,
 }: {
   doctorId: string;
   level: AdminLevel;
   onReviewed: () => void;
+  /**
+   * Called when the document list is on screen (documents, or the empty state),
+   * so the page can hold its decision until then. A failed load never calls it.
+   */
+  onLoaded?: () => void;
   /** A SECTIONS id: show only that group. Omitted, every group is shown. */
   section?: string;
 }) {
@@ -69,6 +102,7 @@ export function CredentialReview({
   const [rejecting, setRejecting] = useState<DoctorDocument | null>(null);
   const [viewing, setViewing] = useState<DoctorDocument | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const canReview = may(level, ['clinical_governance', 'operations']);
 
@@ -76,6 +110,32 @@ export function CredentialReview({
     toast.success(message);
     state.reload();
     onReviewed();
+  };
+
+  /**
+   * Live: a short-lived signed link, opened in its own tab. The tab is opened
+   * first, inside the click, so a pop-up blocker lets it through; the link
+   * is read after. Fixtures hold no file, so they keep the placeholder modal.
+   */
+  const view = async (d: DoctorDocument) => {
+    if (!LIVE) {
+      setViewing(d);
+      return;
+    }
+    const tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+    setOpeningId(d.id);
+    try {
+      const { url } = await doctors.downloadUrl(d.id);
+      if (!isWebUrl(url)) throw new Error('The backend returned a link that is not a web address.');
+      if (tab) tab.location.href = url;
+      else window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      tab?.close();
+      toast.fromError(e);
+    } finally {
+      setOpeningId(null);
+    }
   };
 
   const columns: Column<DoctorDocument>[] = [
@@ -97,7 +157,14 @@ export function CredentialReview({
       width: '280px',
       render: (d) => (
         <span className="rowActions">
-          <Button size="sm" variant="ghost" icon="eye" aria-label={`View ${humanise(d.documentType)}`} onClick={() => setViewing(d)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon="eye"
+            loading={openingId === d.id}
+            aria-label={`View ${humanise(d.documentType)}`}
+            onClick={() => view(d)}
+          >
             View
           </Button>
           {canReview && d.status === 'pending' ? (
@@ -146,18 +213,21 @@ export function CredentialReview({
         <Async
           state={state}
           resource="credentials"
-          skeletonRows={3}
+          skeleton={<DocumentTableSkeleton />}
           empty={
-            <EmptyState
-              icon="credentials"
-              title="No documents uploaded yet"
-              description="The doctor uploads these from their own app once they sign in."
-            />
+            <>
+              <EmptyState
+                icon="credentials"
+                title="No documents uploaded yet"
+                description="The doctor uploads these from their own app once they sign in."
+              />
+              <Shown onShown={onLoaded} />
+            </>
           }
         >
           {(rows) => {
             const known = new Set(SECTIONS.flatMap((s) => s.types));
-            const other = rows.filter((d) => !known.has(d.documentType));
+            const other = rows.filter((d) => !known.has(d.documentType) && !AUTOMATIC.includes(d.documentType));
             const groups = [
               ...SECTIONS.filter((s) => !section || s.id === section).map((s) => ({
                 title: s.title,
@@ -165,16 +235,21 @@ export function CredentialReview({
               })),
               ...(!section && other.length > 0 ? [{ title: 'Other documents', docs: other }] : []),
             ];
-            return groups.map((g) => (
-              <section key={g.title} className="credGroup">
-                {!section && <h3>{g.title}</h3>}
-                {g.docs.length === 0 ? (
-                  <p className="muted">Not uploaded yet.</p>
-                ) : (
-                  <Table caption={g.title} columns={columns} rows={g.docs} rowKey={(d) => d.id} />
-                )}
-              </section>
-            ));
+            return (
+              <>
+                {groups.map((g) => (
+                  <section key={g.title} className="credGroup">
+                    {!section && <h3>{g.title}</h3>}
+                    {g.docs.length === 0 ? (
+                      <p className="muted">Not uploaded yet.</p>
+                    ) : (
+                      <Table caption={g.title} columns={columns} rows={g.docs} rowKey={(d) => d.id} />
+                    )}
+                  </section>
+                ))}
+                <Shown onShown={onLoaded} />
+              </>
+            );
           }}
         </Async>
       </Card>
@@ -185,7 +260,7 @@ export function CredentialReview({
         title={viewing ? humanise(viewing.documentType) : 'Document'}
         width={560}
       >
-        {/* ponytail: the mock holds no file bytes; live needs a signed download-url endpoint. */}
+        {/* Fixtures only: a live build opens the signed link in a tab instead. */}
         <p className="muted">
           Preview of {viewing ? humanise(viewing.documentType) : 'document'} (file {viewing?.fileId ?? 'on record'}).
         </p>

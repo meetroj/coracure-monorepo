@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { GROUPS, LEVELS, SECTIONS, SETTINGS_TABS, canSee, landingFor, sectionsFor, settingsTabsFor } from './nav';
+import { GROUPS, LAB_SERVICES_ENABLED, LEVELS, SECTIONS, SETTINGS_TABS, SUB_GROUPS, canSee, landingFor, sectionsFor, settingsTabsFor } from './nav';
 import { brandVars } from './brand-css';
 
 /**
- * The nav map is a transcription of the backend's `assertPermission` calls. A
- * wrong row here does not fail a build - it shows an admin a link that 403s, or
- * hides a section they are paid to use. These are the checks that catch that.
+ * The nav map is a transcription of the backend's `assertPermission` calls and
+ * of the sidebar in docs/ADMIN_PANEL_REQUIREMENTS.md section 98. A wrong row
+ * here does not fail a build - it shows an admin a link that 403s, or hides a
+ * section they are paid to use. These are the checks that catch that.
  */
 
 describe('permission gating', () => {
@@ -20,35 +21,46 @@ describe('permission gating', () => {
   it('gives care_coordinator the alerts-first set and nothing wider', () => {
     const paths = sectionsFor('care_coordinator').map((s) => s.path);
 
-    // SRS 2.2: this level acts on safety and follow-up alerts.
     expect(paths).toContain('safety-alerts');
-    // It reaches availability only to explain why a patient was not covered.
     expect(paths).toContain('availability');
-    // Money, content and the platform sections are not its job.
-    expect(paths).not.toContain('payments');
-    expect(paths).not.toContain('care-hub');
-    expect(paths).not.toContain('deletion-requests');
+    // Money, content, lab and the platform sections are not its job.
+    for (const not of ['provider-payouts', 'app-settings', 'lab-orders', 'users', 'roles']) {
+      expect(paths).not.toContain(not);
+    }
   });
 
   it('keeps finance out of the clinical record and clinical out of payouts', () => {
     const finance = sectionsFor('finance').map((s) => s.path);
-    expect(finance).toContain('payments');
-    expect(finance).not.toContain('credentials');
-    expect(finance).not.toContain('case-review');
+    expect(finance).toContain('provider-payouts');
+    expect(finance).toContain('refunds');
+    expect(finance).not.toContain('verification');
+    expect(finance).not.toContain('case-records');
 
     const clinical = sectionsFor('clinical_governance').map((s) => s.path);
-    expect(clinical).toContain('credentials');
-    expect(clinical).not.toContain('payments');
+    expect(clinical).toContain('verification');
+    expect(clinical).not.toContain('provider-payouts');
   });
 
-  it('reserves the super_admin-only settings tabs to super_admin', () => {
-    for (const path of ['retention', 'admin-accounts']) {
-      const tab = SETTINGS_TABS.find((t) => t.path === path);
-      expect(tab, path).toBeDefined();
-      expect(tab?.levels).toEqual([]);
-      expect(canSee('super_admin', tab!)).toBe(true);
-      expect(canSee('operations', tab!)).toBe(false);
+  it('hides Lab Services while it is switched off, and shows it when it is on', () => {
+    const paths = SECTIONS.map((s) => s.path);
+    for (const p of ['lab-orders', 'lab-partners', 'lab-tests', 'lab-packages', 'lab-allocation', 'lab-reports', 'analytics-lab']) {
+      expect(paths.includes(p), p).toBe(LAB_SERVICES_ENABLED);
     }
+  });
+
+  it('reserves Users and Roles & Permissions to super_admin', () => {
+    for (const path of ['users', 'roles']) {
+      const section = SECTIONS.find((s) => s.path === path);
+      expect(section?.levels).toEqual([]);
+      expect(canSee('super_admin', section!)).toBe(true);
+      expect(canSee('operations', section!)).toBe(false);
+    }
+  });
+
+  it('reserves the super_admin-only settings tab to super_admin', () => {
+    const tab = SETTINGS_TABS.find((t) => t.path === 'retention');
+    expect(tab?.levels).toEqual([]);
+    expect(canSee('super_admin', tab!)).toBe(true);
     expect(settingsTabsFor('finance').map((t) => t.path)).toEqual(['general', 'audit']);
   });
 
@@ -59,27 +71,41 @@ describe('permission gating', () => {
       expect(SECTIONS.some((s) => s.path === landing)).toBe(true);
     }
   });
+});
 
-  it('lists the sidebar in priority order: dashboard, then people, then the care queues', () => {
-    const labels = SECTIONS.map((s) => s.label);
-    expect(labels.slice(0, 4)).toEqual(['Dashboard', 'Doctors', 'Document verification', 'Patients']);
-    // Complaints sit low, just above Settings, and Settings is last.
-    expect(labels.at(-1)).toBe('Settings');
-    expect(labels.at(-2)).toBe('Complaints & feedback');
-    // groups appear in the declared order
+describe('the spec sidebar (requirements section 98)', () => {
+  it('has the eight groups in order', () => {
+    expect([...GROUPS]).toEqual(['Dashboard', 'Healthcare Providers', 'Patients', 'Services', 'Analytics', 'Finances', 'Support', 'Admin']);
     const seen = [...new Set(SECTIONS.map((s) => s.group))];
     expect(seen).toEqual(GROUPS.filter((g) => seen.includes(g)));
   });
 
-  it('merged, renamed and hid what was asked', () => {
-    const paths = SECTIONS.map((s) => s.path);
-    expect(paths).toContain('case-summaries');
-    expect(paths).toContain('case-review');
-    for (const gone of ['pending-summaries', 'clarification', 'allocation-decisions', 'search-config', 'legal', 'audit', 'deletion-requests', 'retention', 'admin-accounts']) {
-      expect(paths, gone).not.toContain(gone);
+  it('lists each group with the labels the spec names', () => {
+    const labels = (group: string, sub?: string) =>
+      SECTIONS.filter((s) => s.group === group && (!sub || s.sub === sub)).map((s) => s.label);
+
+    expect(labels('Healthcare Providers').slice(0, 6)).toEqual(['Doctors', 'Specialists', 'Super-specialists', 'Paramedical Professionals', 'Veterinary Specialists', 'Verification']);
+    expect(labels('Patients')).toEqual(['Patients']);
+    expect(labels('Services', 'Consultations').slice(0, 4)).toEqual(['Appointments', 'Case Records', 'Clarifications', 'Follow-ups']);
+    expect(labels('Services', 'Lab Services')).toEqual(LAB_SERVICES_ENABLED ? ['Lab Orders', 'Lab Partners', 'Individual Lab Tests', 'Lab Test Packages', 'Allocation Settings', 'Reports'] : []);
+    expect(labels('Analytics')).toEqual(['Overview', 'Consultation Analytics', 'Provider Analytics', 'Patient Analytics', ...(LAB_SERVICES_ENABLED ? ['Lab Analytics'] : []), 'Financial Analytics']);
+    expect(labels('Finances')).toEqual(['Patient Payments', 'Provider Payouts', 'Refunds']);
+    expect(labels('Support')).toEqual(['Support Tickets', 'Feedback', 'Notifications']);
+    expect(labels('Admin')).toEqual(['Users', 'Roles & Permissions', 'Master Data', 'Admin Settings', 'App Settings', 'Website Settings']);
+  });
+
+  it('splits Services into Consultations and Lab Services, and nothing else has a sub-group', () => {
+    if (!LAB_SERVICES_ENABLED) return;
+    expect([...SUB_GROUPS]).toEqual(['Consultations', 'Lab Services']);
+    for (const s of SECTIONS) {
+      expect(Boolean(s.sub), s.path).toBe(s.group === 'Services');
     }
-    expect(SECTIONS.find((s) => s.path === 'notifications')?.label).toBe('Notifications');
-    expect(SETTINGS_TABS.map((t) => t.path)).toEqual(['general', 'legal', 'audit', 'deletion-requests', 'retention', 'admin-accounts']);
+  });
+
+  it('uses Provider Payouts, not Doctor Payments', () => {
+    const labels = SECTIONS.map((s) => s.label.toLowerCase());
+    expect(labels).toContain('provider payouts');
+    expect(labels.some((l) => l.includes('doctor payment'))).toBe(false);
   });
 
   it('has no duplicate paths', () => {
@@ -113,5 +139,26 @@ describe('brand tokens reach CSS', () => {
     ]) {
       expect(brandVars[name], name).toBeTruthy();
     }
+  });
+});
+
+describe('the seven roles of requirements section 88', () => {
+  it('are offered in the spec order, with the spec names, and Content Admin is not one of them', async () => {
+    const { SPEC_ROLES, LEVEL_LABEL } = await import('./nav');
+    expect(SPEC_ROLES.map((l) => LEVEL_LABEL[l])).toEqual([
+      'Super Admin',
+      'Operations Admin',
+      'Verification Admin',
+      'Finance Admin',
+      'Support Admin',
+      'Lab Admin',
+      'Analytics User',
+    ]);
+    expect(SPEC_ROLES as readonly string[]).not.toContain('content');
+  });
+
+  it('every offered role is a level the backend knows, so none can be given and then refused', async () => {
+    const { SPEC_ROLES, LEVELS } = await import('./nav');
+    for (const l of SPEC_ROLES) expect(LEVELS).toContain(l);
   });
 });

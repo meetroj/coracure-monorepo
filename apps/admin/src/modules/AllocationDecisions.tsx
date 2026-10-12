@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { governance, type AllocationDecision } from '../api/admin';
 import { useResource } from '../lib/useResource';
 import type { AdminLevel } from '../nav';
-import { Async, Column, EmptyState, Notice, PageHeader, Table } from '../ui';
+import { Async, Column, EmptyState, Notice, PageHeader, Table, TableSkeleton, skeletonColumns } from '../ui';
 
 /**
  * Who was assigned, and on what basis (FR-18.9).
@@ -27,7 +27,7 @@ export function AllocationDecisions({ level }: { level: AdminLevel }) {
       key: 'consultation',
       header: 'Consultation',
       render: (d) => (
-        <Link to={`/consultations/${d.consultationId}`}>{d.consultationId}</Link>
+        <Link to={`/appointments/${d.consultationId}`}>{d.consultationId}</Link>
       ),
     },
     {
@@ -67,6 +67,12 @@ export function AllocationDecisions({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="allocation decisions"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { when: 'date', consultation: 'id', provider: 'name', basis: 'stack' })}
+            rows={8}
+          />
+        }
         empty={
           <EmptyState
             icon="route"

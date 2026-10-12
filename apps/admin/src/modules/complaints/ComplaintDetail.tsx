@@ -9,10 +9,13 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   ConfirmDialog,
   DefinitionList,
+  DefinitionListSkeleton,
   Notice,
   PageHeader,
+  PageHeaderSkeleton,
   StatusBadge,
   TextArea,
   humanise,
@@ -38,7 +41,19 @@ export function ComplaintDetail({ level }: { level: AdminLevel }) {
   const state = useResource<Complaint>(fetcher, [complaintId]);
 
   return (
-    <Async state={state} resource="this complaint">
+    <Async
+      state={state}
+      resource="this complaint"
+      skeleton={
+        <>
+          <PageHeaderSkeleton description actions={3} />
+          <CardSkeleton title="Complaint">
+            <DefinitionListSkeleton items={4} />
+          </CardSkeleton>
+          <CardSkeleton title="Thread" lines={4} />
+        </>
+      }
+    >
       {(complaint) => <Detail complaint={complaint} onChanged={state.reload} />}
     </Async>
   );
@@ -60,8 +75,8 @@ function Detail({ complaint, onChanged }: { complaint: Complaint; onChanged: () 
     <>
       <PageHeader
         title={complaint.subject ?? humanise(complaint.category)}
-        back={{ to: '/complaints', label: 'Complaints' }}
-        crumbs={[{ label: 'Complaints', to: '/complaints' }, { label: 'Detail' }]}
+        back={{ to: '/support-tickets?tab=complaints', label: 'Complaints' }}
+        crumbs={[{ label: 'Complaints', to: '/support-tickets?tab=complaints' }, { label: 'Detail' }]}
         description={
           <span className="row">
             <StatusBadge status={complaint.status} />
@@ -104,6 +119,7 @@ function Detail({ complaint, onChanged }: { complaint: Complaint; onChanged: () 
       <Card title="Complaint">
         <DefinitionList
           items={[
+            { label: 'Reference', value: complaint.referenceCode ?? null },
             { label: 'Category', value: humanise(complaint.category) },
             { label: 'Status', value: <StatusBadge status={complaint.status} /> },
             {
@@ -113,11 +129,17 @@ function Detail({ complaint, onChanged }: { complaint: Complaint; onChanged: () 
             {
               label: 'Consultation',
               value: complaint.consultationId ? (
-                <Link to={`/consultations/${complaint.consultationId}`}>
+                <Link to={`/appointments/${complaint.consultationId}`}>
                   Open the consultation
                 </Link>
               ) : null,
             },
+            {
+              label: 'Patient',
+              value: complaint.patientId ? <Link to={`/patients/${complaint.patientId}`}>Open the patient</Link> : null,
+            },
+            { label: 'What the patient wrote', value: complaint.description ?? null },
+            { label: 'How it ended', value: complaint.resolutionNote ?? null },
           ]}
         />
       </Card>

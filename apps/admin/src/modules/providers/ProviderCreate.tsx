@@ -6,7 +6,9 @@ import { useMutation, useResource } from '../../lib/useResource';
 import { useToast } from '../../lib/toast';
 import type { AdminLevel } from '../../nav';
 import { Button, Card, Notice, PageHeader, SelectField, TextField } from '../../ui';
+import { LIVE } from '../../api/live';
 import { FileField } from './FileField';
+import { CreateProviderLive } from './ProviderFormsLive';
 
 /**
  * Create a provider account (§16), collecting the same details the doctor's
@@ -51,7 +53,7 @@ const blankExperience = (): Experience => ({ designation: '', institute: '', yea
 
 type Errors = Record<string, string>;
 
-export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
+function FixtureProviderCreate({ level: _level }: { level: AdminLevel }) {
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -171,7 +173,9 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
         ],
       });
       toast.success(`${created.fullName} created. They are pending verification.`);
-      navigate(`/providers/${created.id}`);
+      // Replace the form's history entry: Back from the new provider returns to the list it was
+      // opened from, not to an empty create form.
+      navigate(`/providers/${created.id}`, { replace: true });
     } catch (e) {
       // The form keeps everything the admin typed (§50).
       toast.fromError(e, 'Could not create this doctor.');
@@ -297,6 +301,7 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
             <SelectField
               label="Specialty"
               value={specialtyId}
+              disabled={specialties.loading}
               onChange={(e) => setSpecialtyId(e.target.value)}
               options={[
                 { value: '', label: specialties.loading ? 'Loading…' : 'Not set' },
@@ -487,3 +492,6 @@ export function ProviderCreate({ level: _level }: { level: AdminLevel }) {
     </>
   );
 }
+
+/** Live: the fields `POST /admin/doctors` takes. Fixtures: the full registration form. */
+export const ProviderCreate = LIVE ? CreateProviderLive : FixtureProviderCreate;

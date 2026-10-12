@@ -6,7 +6,7 @@ import { inboxChanged, timeAgo, useInboxChanged } from '../lib/inboxEvents';
 import { useMutation, useResource } from '../lib/useResource';
 import { useToast } from '../lib/toast';
 import type { AdminLevel } from '../nav';
-import { Async, Button, EmptyState, Icon, Tabs } from '../ui';
+import { Async, Button, EmptyState, Icon, ListSkeleton, SkeletonBlock, Tabs } from '../ui';
 
 /**
  * This admin's own notifications - the page behind "View all notifications" in
@@ -137,7 +137,16 @@ export function Inbox(_props: { level: AdminLevel }) {
         }}
       />
 
-      <Async state={state} resource="your notifications" empty={<EmptyState icon="bell" title="Nothing here yet" description="Alerts addressed to your admin account appear here." />}>
+      <Async
+        state={state}
+        resource="your notifications"
+        skeleton={
+          <>
+            <SkeletonBlock w={72} h={14} />
+            <ListSkeleton rows={6} avatar={false} trailing={false} />
+          </>
+        }
+        empty={<EmptyState icon="bell" title="Nothing here yet" description="Alerts addressed to your admin account appear here." />}>
         {() =>
           shown.length === 0 ? (
             <EmptyState

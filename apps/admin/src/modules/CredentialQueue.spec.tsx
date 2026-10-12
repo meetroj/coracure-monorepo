@@ -13,8 +13,8 @@ const mount = (start: string) =>
     <MemoryRouter initialEntries={[start]}>
       <ToastProvider>
         <Routes>
-          <Route path="/credentials" element={<CredentialQueue level="super_admin" />} />
-          <Route path="/credentials/:doctorId" element={<ProviderDetail level="super_admin" />} />
+          <Route path="/verification" element={<CredentialQueue level="super_admin" />} />
+          <Route path="/verification/:doctorId" element={<ProviderDetail level="super_admin" />} />
           <Route path="/providers/:doctorId" element={<ProviderDetail level="super_admin" />} />
         </Routes>
         <Where />
@@ -22,35 +22,44 @@ const mount = (start: string) =>
     </MemoryRouter>,
   );
 
-describe('Document verification', () => {
-  it('opens a doctor inside Document verification, not the Doctors section', async () => {
-    mount('/credentials');
+describe('Verification', () => {
+  it('lists every provider in the six spec statuses', async () => {
+    mount('/verification');
+    for (const name of ['Submitted', 'Under review', 'Changes required', 'Approved', 'Rejected', 'Suspended']) {
+      expect(await screen.findByRole('tab', { name: new RegExp(`^${name}`) })).toBeTruthy();
+    }
+  });
+
+  it('opens a provider inside Verification, not the Doctors section', async () => {
+    mount('/verification');
     const [review] = await screen.findAllByRole('button', { name: 'Review' });
     fireEvent.click(review);
 
-    await waitFor(() => expect(screen.getByTestId('where').textContent).toMatch(/^\/credentials\/[^/?]+\?tab=credentials$/));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toMatch(/^\/verification\/[^/?]+$/));
     expect(screen.getByTestId('where').textContent).not.toMatch(/^\/providers/);
   });
 
-  it('the detail page shows the review sections as its tabs, with no Back link', async () => {
-    mount('/credentials');
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Review' }))[0]);
-
-    for (const name of ['Basic details', 'Proof of identity', 'Professional qualifications', 'Experience', 'Digital signature']) {
+  it('shows the review sections as tabs, with the four admin actions', async () => {
+    mount('/verification/dr-4');
+    for (const name of ['Identity', 'Qualifications', 'Professional registration', 'Experience', 'Signature']) {
       expect(await screen.findByRole('tab', { name })).toBeTruthy();
     }
-    expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull();
-    expect(screen.queryByRole('link', { name: /Document verification/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Profile' })).toBeNull();
+    for (const action of ['Approve', 'Changes required', 'Reject', 'Suspend']) {
+      expect(screen.getByRole('button', { name: action })).toBeTruthy();
+    }
   });
 
-  it('the same doctor opened from the Doctors list keeps the full set of tabs', async () => {
-    mount('/credentials');
-    const [review] = await screen.findAllByRole('button', { name: 'Review' });
-    fireEvent.click(review);
-    const id = (await waitFor(() => screen.getByTestId('where').textContent!.match(/\/credentials\/([^/?]+)/)!))[1];
+  it('a non-doctor has no Signature step', async () => {
+    mount('/verification/dr-3');
+    await screen.findByRole('tab', { name: 'Identity' });
+    expect(screen.queryByRole('tab', { name: 'Signature' })).toBeNull();
+  });
 
-    mount(`/providers/${id}`);
-    expect(await screen.findByRole('tab', { name: 'Overview' })).toBeTruthy();
+  it('the same provider opened from the Doctors list keeps the full set of tabs', async () => {
+    mount('/providers/dr-4');
+    expect(await screen.findByRole('tab', { name: 'Profile' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Availability' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Digital signature' })).toBeTruthy();
   });
 });

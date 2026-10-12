@@ -18,12 +18,17 @@ import {
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
   TextField,
   humanise,
+  skeletonColumns,
 } from '../../ui';
+import { APPOINTMENT_STATUSES, appointmentStatus, durationMinutes } from '../../mock/ops/appointment';
+import { LIVE } from '../../api/live';
+import { DISPLAY_STATUSES } from '../../api/liveAppointments';
 
 /**
- * The consultation list (§23).
+ * The Appointments list (requirements §33, §47).
  *
  * Every filter lives in the URL, so Back and refresh keep them. The detail
  * screen reads the query we hand it through router state to link back here
@@ -35,17 +40,8 @@ const PAGE = 15;
 
 const STATUSES = [
   { value: '', label: 'Any status' },
-  ...[
-    'pending_payment',
-    'scheduled',
-    'awaiting_doctor',
-    'in_progress',
-    'awaiting_documentation',
-    'completed',
-    'cancelled',
-    'no_show',
-    'expired',
-  ].map((value) => ({ value, label: humanise(value) })),
+  // Live, the backend's own statuses: it cannot tell Accepted from Upcoming, so the panel does not offer both.
+  ...(LIVE ? DISPLAY_STATUSES : APPOINTMENT_STATUSES).map((value) => ({ value, label: humanise(value) })),
 ];
 
 const MODES = [
@@ -98,7 +94,15 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
     () => consultationsList.list({ search, status, mode, doctorId, from, to, limit }),
     [search, status, mode, doctorId, from, to, limit],
   );
-  const state = useResource<ConsultationsPage>(fetcher, [search, status, mode, doctorId, from, to, limit]);
+  // `limit` pages the same list, so only the filters decide when the rows on screen are stale.
+  const state = useResource<ConsultationsPage>(fetcher, [search, status, mode, doctorId, from, to, limit], true, [
+    search,
+    status,
+    mode,
+    doctorId,
+    from,
+    to,
+  ]);
 
   const filtered = Boolean(search || status || mode || doctorId || from || to);
   const clear = () => setParams({}, { replace: true });
@@ -106,7 +110,7 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
   // The query string rides along so the detail page can return to this view.
   const detailState = { fromList: location.search };
   const open = (c: ListedConsultation) =>
-    navigate(`/consultations/${encodeURIComponent(c.id)}`, { state: detailState });
+    navigate(`/appointments/${encodeURIComponent(c.id)}`, { state: detailState });
 
   /** Enter on an exact reference code jumps straight to it. */
   const jump = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -124,7 +128,7 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
       header: 'Reference',
       render: (c) => (
         <Link
-          to={`/consultations/${encodeURIComponent(c.id)}`}
+          to={`/appointments/${encodeURIComponent(c.id)}`}
           state={detailState}
           onClick={(e) => e.stopPropagation()}
         >
@@ -133,7 +137,7 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
       ),
     },
     { key: 'patient', header: 'Patient', render: (c) => c.patientName },
-    { key: 'doctor', header: 'Doctor', render: (c) => c.doctorName ?? <span className="muted">Unassigned</span> },
+    { key: 'doctor', header: 'Consulting Professional', render: (c) => c.doctorName ?? <span className="muted">Unassigned</span> },
     { key: 'service', header: 'Service', render: (c) => c.serviceName ?? '-' },
     {
       key: 'when',
@@ -150,15 +154,23 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
         </span>
       ),
     },
-    { key: 'status', header: 'Status', render: (c) => <StatusBadge status={c.status} /> },
+    { key: 'status', header: 'Appointment status', render: (c) => <StatusBadge status={c.displayStatus ?? appointmentStatus(c.status, c.id)} /> },
+    {
+      key: 'duration',
+      header: 'Duration',
+      render: (c) => {
+        const m = LIVE ? c.actualDurationMinutes : durationMinutes(c.status, c.id);
+        return m ? `${m} min` : <span className="muted">-</span>;
+      },
+    },
     { key: 'payment', header: 'Payment', render: (c) => <StatusBadge status={c.paymentStatus} /> },
   ];
 
   return (
     <>
       <PageHeader
-        title="Consultations"
-        description="Every consultation, newest first. Open one to see its assignment, evidence and audit trail."
+        title="Appointments"
+        description="Every appointment request and its status, newest first. Open one to see its assignment, evidence and audit trail."
       />
 
       {/* Search gets a row of its own; the filters sit on the line below. */}
@@ -187,9 +199,9 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
           onChange={(e) => setMany({ mode: e.target.value })}
         />
         <SelectField
-          label="Doctor"
+          label="Consulting Professional"
           options={[
-            { value: '', label: 'Any doctor' },
+            { value: '', label: 'Any professional' },
             ...(state.data?.doctors ?? []).map((d) => ({ value: d.id, label: d.name })),
           ]}
           value={doctorId}
@@ -231,7 +243,27 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
         )}
       </div>
 
-      <Async state={state} resource="consultations" skeletonRows={8}>
+      <Async
+        state={state}
+        resource="consultations"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, {
+              ref: 'id',
+              patient: 'name',
+              doctor: 'name',
+              when: 'date',
+              mode: 'stack',
+              status: 'status',
+              duration: 'id',
+              payment: 'status',
+            })}
+            rows={10}
+            chevron
+            footer
+          />
+        }
+      >
         {(page) =>
           page.items.length === 0 ? (
             <EmptyState
@@ -267,6 +299,7 @@ export function Consultations({ level: _level }: { level: AdminLevel }) {
                 {page.items.length < page.matched && (
                   <Button
                     variant="secondary"
+                    loading={state.loading}
                     onClick={() => setMany({ limit: String(limit + PAGE) })}
                   >
                     Show more

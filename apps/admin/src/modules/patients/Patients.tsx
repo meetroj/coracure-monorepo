@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { patients, type PatientStatus, type PatientSummary } from '../../api/patients';
 import { useResource } from '../../lib/useResource';
+import { LIVE } from '../../api/live';
+import { LIVE_PATIENT_STATUSES } from '../../api/livePatients';
 import type { AdminLevel } from '../../nav';
 import {
   Async,
@@ -14,6 +16,8 @@ import {
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -25,12 +29,20 @@ import {
 
 const PAGE = 10;
 
-const STATUSES = [
-  { value: '', label: 'Any status' },
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-  { value: 'pending_deletion', label: 'Pending deletion' },
-];
+const STATUSES = LIVE
+  ? [
+      { value: '', label: 'Any status' },
+      ...LIVE_PATIENT_STATUSES.map((v) => ({
+        value: v,
+        label: v === 'pending' ? 'Pending (profile incomplete)' : v === 'suspended' ? 'Suspended' : 'Active',
+      })),
+    ]
+  : [
+      { value: '', label: 'Any status' },
+      { value: 'active', label: 'Active' },
+      { value: 'inactive', label: 'Inactive' },
+      { value: 'pending_deletion', label: 'Pending deletion' },
+    ];
 
 const COMPLAINT = [
   { value: '', label: 'Any' },
@@ -46,6 +58,8 @@ const STATUS_TONE = {
   active: 'positive',
   inactive: 'neutral',
   pending_deletion: 'warning',
+  pending: 'warning',
+  suspended: 'danger',
 } as const;
 
 export const PatientStatusBadge = ({ status }: { status: PatientStatus }) => (
@@ -66,8 +80,9 @@ export function Patients(_props: { level: AdminLevel }) {
 
   const search = params.get('search') ?? '';
   const status = params.get('status') ?? '';
-  const hasOpenComplaint = params.get('hasOpenComplaint') ?? '';
-  const hasActiveFollowUp = params.get('hasActiveFollowUp') ?? '';
+  // The backend has no complaint or follow-up filter on the roster, so live they are neither offered nor sent.
+  const hasOpenComplaint = LIVE ? '' : (params.get('hasOpenComplaint') ?? '');
+  const hasActiveFollowUp = LIVE ? '' : (params.get('hasActiveFollowUp') ?? '');
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -85,7 +100,13 @@ export function Patients(_props: { level: AdminLevel }) {
     () => patients.list({ search, status, hasOpenComplaint, hasActiveFollowUp, limit }),
     [search, status, hasOpenComplaint, hasActiveFollowUp, limit],
   );
-  const state = useResource(fetcher, [search, status, hasOpenComplaint, hasActiveFollowUp, limit]);
+  // `limit` pages the same list, so only the filters decide when the rows on screen are stale.
+  const state = useResource(fetcher, [search, status, hasOpenComplaint, hasActiveFollowUp, limit], true, [
+    search,
+    status,
+    hasOpenComplaint,
+    hasActiveFollowUp,
+  ]);
 
   const filtered = Boolean(search || status || hasOpenComplaint || hasActiveFollowUp);
 
@@ -103,7 +124,7 @@ export function Patients(_props: { level: AdminLevel }) {
             <Link
               to={`/patients/${p.id}`}
               onClick={(e) => e.stopPropagation()}
-              style={{ fontWeight: 600 }}
+              style={{ fontWeight: 'var(--weight-strong)' }}
             >
               {p.fullName}
             </Link>
@@ -113,7 +134,7 @@ export function Patients(_props: { level: AdminLevel }) {
       ),
     },
     { key: 'mobile', header: 'Mobile', render: (p) => p.mobileNumber },
-    { key: 'agegender', header: 'Age / gender', render: (p) => `${p.age} · ${p.gender}` },
+    { key: 'agegender', header: 'Age / gender', render: (p) => `${p.age ?? '-'} · ${p.gender}` },
     { key: 'region', header: 'Region', render: (p) => p.region },
     {
       key: 'count',
@@ -153,26 +174,35 @@ export function Patients(_props: { level: AdminLevel }) {
           value={status}
           onChange={(e) => setParam('status', e.target.value)}
         />
-        <SelectField
-          label="Complaints"
-          options={COMPLAINT}
-          value={hasOpenComplaint}
-          onChange={(e) => setParam('hasOpenComplaint', e.target.value)}
-        />
-        <SelectField
-          label="Follow-up"
-          options={FOLLOW_UP}
-          value={hasActiveFollowUp}
-          onChange={(e) => setParam('hasActiveFollowUp', e.target.value)}
-        />
-        {filtered && (
-          <Button variant="ghost" icon="close" onClick={clear}>
-            Clear
-          </Button>
+        {!LIVE && (
+          <>
+            <SelectField
+              label="Complaints"
+              options={COMPLAINT}
+              value={hasOpenComplaint}
+              onChange={(e) => setParam('hasOpenComplaint', e.target.value)}
+            />
+            <SelectField
+              label="Follow-up"
+              options={FOLLOW_UP}
+              value={hasActiveFollowUp}
+              onChange={(e) => setParam('hasActiveFollowUp', e.target.value)}
+            />
+          </>
         )}
       </div>
 
-      <Async state={state} resource="patients">
+      <Async
+        state={state}
+        resource="patients"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { name: 'person', count: 'amount', last: 'date', status: 'status' })}
+            chevron
+            footer
+          />
+        }
+      >
         {({ rows, total }) =>
           rows.length === 0 ? (
             <EmptyState
@@ -203,7 +233,7 @@ export function Patients(_props: { level: AdminLevel }) {
                   Showing {rows.length} of {total}
                 </p>
                 {rows.length < total && (
-                  <Button variant="secondary" onClick={() => setLimit((l) => l + PAGE)}>
+                  <Button variant="secondary" loading={state.loading} onClick={() => setLimit((l) => l + PAGE)}>
                     Show more
                   </Button>
                 )}

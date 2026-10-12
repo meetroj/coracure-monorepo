@@ -9,9 +9,11 @@ import {
   Async,
   Button,
   Card,
+  CardSkeleton,
   EmptyState,
   IconButton,
   Notice,
+  SkeletonBlock,
   TextField,
   may,
 } from '../../ui';
@@ -88,7 +90,7 @@ export function AvailabilityEditor({
   const state = useResource<AvailabilityRule[]>(fetcher, [doctorId]);
 
   return (
-    <Async state={state} resource="this diary">
+    <Async state={state} resource="this diary" skeleton={<DiarySkeleton />}>
       {(rules) => (
         <Weekly
           doctorId={doctorId}
@@ -100,6 +102,33 @@ export function AvailabilityEditor({
         />
       )}
     </Async>
+  );
+}
+
+/** The weekly pattern as it will stand: seven days, each with its hours, then the slot preview. */
+function DiarySkeleton() {
+  return (
+    <>
+      <CardSkeleton title="Weekly pattern">
+        <div className="weekDays">
+          {Array.from({ length: 7 }, (_, i) => (
+            <div className="weekDay" key={i}>
+              <span className="weekDay__name">
+                <SkeletonBlock w={96} h={18} />
+              </span>
+              <div className="weekDay__ranges">
+                <div className="weekDay__range">
+                  <SkeletonBlock w="100%" h={40} />
+                  <span />
+                  <SkeletonBlock w="100%" h={40} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardSkeleton>
+      <CardSkeleton title="Resulting slots" lines={2} />
+    </>
   );
 }
 
@@ -405,7 +434,15 @@ function SlotPreview({ doctorId }: { doctorId: string }) {
       <Async
         state={state}
         resource="slots"
-        skeletonRows={2}
+        skeleton={
+          <ul className="slotList" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, i) => (
+              <li key={i}>
+                <SkeletonBlock w={56} h={16} />
+              </li>
+            ))}
+          </ul>
+        }
         empty={
           <EmptyState
             icon="clock"

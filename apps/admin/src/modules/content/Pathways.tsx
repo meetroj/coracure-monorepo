@@ -16,9 +16,11 @@ import {
   StatusBadge,
   SelectField,
   Table,
+  TableSkeleton,
   TextArea,
   TextField,
   may,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -102,6 +104,12 @@ export function Pathways({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="pathways"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { code: 'stack', published: 'date', live: 'status', actions: 'button' })}
+            rows={4}
+          />
+        }
         empty={
           <EmptyState
             icon="pathway"

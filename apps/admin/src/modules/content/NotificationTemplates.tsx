@@ -21,10 +21,12 @@ import {
   SelectField,
   StatusBadge,
   Table,
+  TableSkeleton,
   Tabs,
   TextArea,
   TextField,
   may,
+  skeletonColumns,
 } from '../../ui';
 
 /**
@@ -79,7 +81,7 @@ const AUDIENCE_OF: Record<string, string[]> = {
   consultation_reminder: ['patient', 'doctor'],
   provider_assigned: ['patient', 'doctor'],
 };
-const audienceOf = (code: string) => AUDIENCE_OF[code] ?? ['patient'];
+const audienceOf = (t: NotificationTemplate) => t.audience ?? AUDIENCE_OF[t.code] ?? ['patient'];
 
 function TemplatesTab({ level }: { level: AdminLevel }) {
   const toast = useToast();
@@ -164,13 +166,19 @@ function TemplatesTab({ level }: { level: AdminLevel }) {
       <Async
         state={state}
         resource="notification templates"
+        skeleton={
+          <TableSkeleton
+            columns={skeletonColumns(columns, { code: 'stack', body: 'text', customised: 'status', actions: 'button' })}
+            rows={8}
+          />
+        }
         empty={<EmptyState icon="bell" title="No templates registered" />}
       >
         {(all) => {
           const q = search.trim().toLowerCase();
           const rows = all.filter(
             (t) =>
-              (!audience || audienceOf(t.code).includes(audience)) &&
+              (!audience || audienceOf(t).includes(audience)) &&
               (!q || t.code.toLowerCase().includes(q) || (t.title ?? '').toLowerCase().includes(q)),
           );
           return rows.length === 0 ? (
